@@ -1,0 +1,8 @@
+{
+    "name": "Coalfire Release Workflow",
+    "description": "Coalfire Release Organization starter workflow.",
+    "iconName": "octicon tag",
+    "categories": [
+        "dependency-management"
+    ]
+}
