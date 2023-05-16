@@ -7,11 +7,13 @@ Source repository for github actions used by Coalfire Advisory.
 Central location to consume actions in other repos.
 
 ## Actions
+
 Current list of actions and their usage
 
 ### Release
 
 Creates a new tag and release on the repo.  This action is triggered by a merged PR to the main branch.
+
 ### Checkov
 
 Static code analysis of terraform. This action is triggered by an opened PR to the main branch.
