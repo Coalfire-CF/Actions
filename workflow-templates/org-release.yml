@@ -5,6 +5,8 @@ on:
       - closed
     branches:
       - [ $default-branch]
+    workflow_call: 
+    
 jobs:
   release:
     if: github.event.pull_request.merged == true
