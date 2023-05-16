@@ -1,5 +1,10 @@
 name: Tag and Release
 on:
+  pull_request:
+    types:
+    - closed
+    branches:
+    - main
   workflow_call:
     
 jobs:
