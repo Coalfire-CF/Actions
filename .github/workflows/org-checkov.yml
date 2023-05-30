@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - '**.tf'
+  workflow_call:
 
 jobs:
   checkov_scan:
