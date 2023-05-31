@@ -3,7 +3,10 @@ name: Checkov PR Scan
 on:
   pull_request:
     paths:
-      - '**.tf'
+      - '**.md'
+    branches:
+      - main
+  workflow_call:
 
 jobs:
   checkov_scan:
