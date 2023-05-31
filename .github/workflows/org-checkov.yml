@@ -55,46 +55,41 @@ jobs:
     - name: Create comments with Checkov results
       uses: actions/github-script@v5
       with:
-            github-token: ${{ secrets.GITHUB_TOKEN }}
-            script: |
-              const checks = JSON.parse(process.env.CHECKOV_OUTPUT);
-              const files = [...new Set(checks.map((check) => check.file_path))];
-        
-              if (files.length == 0) {
-                // No Terraform files were modified in this PR.
-                const output = `🌟 No Terraform files were modified in this PR or all modified Terraform files passed the Checkov checks. Good job! 🌟`;
-        
-                await github.rest.issues.createComment({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  issue_number: context.issue.number,
-                  body: output
-                });
-              } else {
-                for (const file of files) {
-                  const fileChecks = checks.filter((check) => check.file_path === file);
-                  
-                  let output = `#### Checkov Scan Results 📖 for file ${file}:\n\n` +
-                    `| Check ID | Description | Resource | Checkov Result |\n` +
-                    `| -------- | ----------- | -------- | -------------- |` +
-                    fileChecks
-                        .map((check) => {
-                            return `\n| ${check.check_id} | ${check.check_name} | ${check.resource} | ${check.check_result.result} |`;
-                        })
-                        .join("");
-        
-                  if (fileChecks.every((check) => check.check_result.result === 'PASSED')) {
-                    output += '\n🌟 All checks passed! 🌟';
-                  }
-        
-                  output += `\n\n*Pusher: @${{ github.actor }}, Action: ${{ github.event_name }}, Working Directory: ${{ github.workspace }}, Workflow: ${{ github.workflow }}*`;
-        
-                  await github.rest.issues.createComment({
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    issue_number: context.issue.number,
-                    body: output
-                  });
-                }
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        script: |
+          const checks = JSON.parse(process.env.CHECKOV_OUTPUT);
+          const files = [...new Set(checks.map((check) => check.file_path))];
+          let output = '';
+
+          if (files.length == 0) {
+            // No Terraform files were modified in this PR.
+            output = `🌟 No Terraform files were modified in this PR or all modified Terraform files passed the Checkov checks. Good job! 🌟`;
+          } else {
+            for (const file of files) {
+              const fileChecks = checks.filter((check) => check.file_path === file);
+
+              output += `#### Checkov Scan Results 📖 for file ${file}:\n\n` +
+                `| Check ID | Description | Resource | Checkov Result |\n` +
+                `| -------- | ----------- | -------- | -------------- |` +
+                fileChecks
+                  .map((check) => {
+                    return `\n| ${check.check_id} | ${check.check_name} | ${check.resource} | ${check.check_result.result} |`;
+                  })
+                  .join("");
+
+              if (fileChecks.every((check) => check.check_result.result === 'PASSED')) {
+                output += '\n🌟 All checks passed! 🌟';
               }
+
+              output += `\n\n*Pusher: @${{ github.actor }}, Action: ${{ github.event_name }}, Working Directory: ${{ github.workspace }}, Workflow: ${{ github.workflow }}*\n\n`;
+            }
+          }
+
+          await github.rest.issues.createComment({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.issue.number,
+            body: output
+          });
+
                 
