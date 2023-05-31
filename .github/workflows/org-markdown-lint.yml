@@ -15,13 +15,18 @@ jobs:
     - name: Check out code
       uses: actions/checkout@v2
 
-    - name: Lint README file
+    - name: Get list of changed Markdown files
+      id: get-md-files
+      run: |
+        echo "::set-output name=files::$(git diff --name-only --diff-filter=d origin/main... | grep .md)"
+        
+    - name: Lint Markdown files
       uses: docker://avtodev/markdown-lint:v1 # fastest way
       id: lintFile
       with:
         config: '/lint/config/changelog.yml'
         output: './.github/md_lint_output.txt'
-        args: './README.md'
+        args: ${{ steps.get-md-files.outputs.files }}
 
     - name: Output file contents
       id: outputCont
