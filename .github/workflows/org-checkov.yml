@@ -35,20 +35,20 @@ jobs:
       id: checkov
       run: |
           IFS=$'\n' read -ra FILES <<< "$(echo ${{ steps.get_changed_files.outputs.files }} | tr ' ' '\n')"
-          echo "[]" > results.json
           PASSED=true
+          RESULTS=()
           for file in "${FILES[@]}"; do
             if [ -n "$file" ]; then
               OUTPUT=$(checkov -f "$file" --output json || true)
-              echo "$OUTPUT" >> results.json
+              RESULTS+=("$OUTPUT")
               if [[ "$(echo "$OUTPUT" | jq '.results.failed_checks | length')" -gt 0 ]]; then
                 PASSED=false
               fi
             fi
           done
-          cp results.json $GITHUB_WORKSPACE/checkov_results.json
+          echo "["$(IFS=,; echo "${RESULTS[*]}")"]" > $GITHUB_WORKSPACE/checkov_results.json
           echo "CHECKOV_PASSED=$PASSED" | tee -a $GITHUB_ENV
-          rm results.json
+     
       
     - name: Create comments with Checkov results
       uses: actions/github-script@v5
