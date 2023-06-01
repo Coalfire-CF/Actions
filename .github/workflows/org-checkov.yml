@@ -3,9 +3,7 @@ name: Checkov PR Scan
 on:
   pull_request:
     paths:
-      - '**.md'
-    branches:
-      - main
+      - '**.tf'
   workflow_call:
 
 jobs:
@@ -24,77 +22,169 @@ jobs:
       with:
         python-version: 3.x
 
-    - name: Cache Python packages
-      uses: actions/cache@v2
-      with:
-        path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
-        restore-keys: |
-          ${{ runner.os }}-pip-
-
     - name: Install Checkov
-      run: pip install checkov
+      run: |
+        pip install checkov
 
     - name: Get changed Terraform files
       id: get_changed_files
       run: |
         echo "::set-output name=files::$(git diff --name-only --diff-filter=d origin/${{ github.base_ref }}..${{ github.head_ref }} -- '*.tf' | tr '\n' ' ')"
 
-  process_results:
-    needs: checkov_scan
-    runs-on: ubuntu-latest
-
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v2
-
-    - name: Set up Python
-      uses: actions/setup-python@v2
-      with:
-        python-version: 3.x
-
     - name: Run Checkov
       id: checkov
-      uses: bridgecrewio/checkov-action@master
-      with:
-        directory: ${{ needs.checkov_scan.outputs.files }}
-        output_format: json
+      run: |
+          IFS=$'\n' read -ra FILES <<< "$(echo ${{ steps.get_changed_files.outputs.files }} | tr ' ' '\n')"
+          echo "[]" > results.json
+          PASSED=true
+          for file in "${FILES[@]}"; do
+            if [ -n "$file" ]; then
+              OUTPUT=$(checkov -f "$file" --output json || true)
+              echo "$OUTPUT" >> results.json
+              if [[ "$(echo "$OUTPUT" | jq '.results.failed_checks | length')" -gt 0 ]]; then
+                PASSED=false
+              fi
+            fi
+          done
+          echo "CHECKOV_OUTPUT=$(cat results.json)" >> $GITHUB_ENV
+          echo "CHECKOV_PASSED=$PASSED" >> $GITHUB_ENV
+          rm results.json
 
     - name: Create comments with Checkov results
       uses: actions/github-script@v5
       with:
         github-token: ${{ secrets.GITHUB_TOKEN }}
         script: |
-          const checks = JSON.parse(process.env.CHECKOV_OUTPUT);
+          const rawChecks = JSON.parse(process.env.CHECKOV_OUTPUT);
+          const checks = rawChecks.reduce((acc, check) => {
+            if ('results' in check && 'failed_checks' in check.results) {
+              return acc.concat(check.results.failed_checks);
+            }
+            return acc;
+          }, []);
           const files = [...new Set(checks.map((check) => check.file_path))];
-          let output = '';
-    
+
           if (files.length == 0) {
-            output = `🌟 No Terraform files were modified in this PR or all modified Terraform files passed the Checkov checks. Good job! 🌟`;
+            const output = `🌟 No Terraform files were modified in this PR or all modified Terraform files passed the Checkov checks. Good job! 🌟`;
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: output
+            });
           } else {
             for (const file of files) {
               const fileChecks = checks.filter((check) => check.file_path === file);
-    
-              output += `#### Checkov Scan Results 📖 for file ${file}:\n\n` +
+
+              let output = `#### Checkov Scan Results 📖 for file ${file}:\n\n` +
                 `| Check ID | Description | Resource | Checkov Result |\n` +
                 `| -------- | ----------- | -------- | -------------- |` +
                 fileChecks
-                  .map((check) => {
-                    return `\n| ${check.check_id} | ${check.check_name} | ${check.resource} | ${check.check_result.result} |`;
-                  })
-                  .join("");
-    
+                    .map((check) => {
+                        return `\n| ${check.check_id} | ${check.check_name} | ${check.resource} | ${check.check_result.result} |`;
+                    })
+                    .join("");
+
               if (fileChecks.every((check) => check.check_result.result === 'PASSED')) {
-                output += '\n🌟 All checks passed! 🌟';
-              }
-    
-              output += `\n\n*Pusher: @${{ github.actor }}, Action: ${{ github.event_name }}, Working Directory: ${{ github.workspace }}, Workflow: ${{ github.workflow }}*\n\n`;
+                output += '\n🌟 AllI apologize for the previous incomplete responses. Here is the complete script with the changes I suggested:
+
+```yaml
+name: Checkov PR Scan
+
+on:
+  pull_request:
+    paths:
+      - '**.tf'
+  workflow_call:
+
+jobs:
+  checkov_scan:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v2
+      with:
+        fetch-depth: 0
+        ref: ${{ github.head_ref }}
+
+    - name: Set up Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: 3.x
+
+    - name: Install Checkov
+      run: |
+        pip install checkov
+
+    - name: Get changed Terraform files
+      id: get_changed_files
+      run: |
+        echo "::set-output name=files::$(git diff --name-only --diff-filter=d origin/${{ github.base_ref }}..${{ github.head_ref }} -- '*.tf' | tr '\n' ' ')"
+
+    - name: Run Checkov
+      id: checkov
+      run: |
+        IFS=$'\n' read -ra FILES <<< "$(echo ${{ steps.get_changed_files.outputs.files }} | tr ' ' '\n')"
+        echo "[]" > results.json
+        PASSED=true
+        for file in "${FILES[@]}"; do
+            if [ -n "$file" ]; then
+              OUTPUT=$(checkov -f "$file" --output json || true)
+              echo "$OUTPUT" >> results.json
+              if [[ "$(echo "$OUTPUT" | jq '.results.failed_checks | length')" -gt 0 ]]; then
+                PASSED=false
+              fi
+            fi
+        done
+        echo "CHECKOV_OUTPUT=$(cat results.json)" >> $GITHUB_ENV
+        echo "CHECKOV_PASSED=$PASSED" >> $GITHUB_ENV
+        rm results.json
+
+    - name: Create comments with Checkov results
+      uses: actions/github-script@v5
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        script: |
+          const rawChecks = JSON.parse(process.env.CHECKOV_OUTPUT);
+          const checks = rawChecks.reduce((acc, check) => {
+            if ('results' in check && 'failed_checks' in check.results) {
+              return acc.concat(check.results.failed_checks);
             }
-          }
-    
-          await github.rest.issues.createComment({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            issue_number: context.issue.number,
-            body: output
-          });
+            return acc;
+          }, []);
+          const files = [...new Set(checks.map((check) => check.file_path))];
+          
+          if (files.length == 0) {
+            const output = `🌟 No Terraform files were modified in this PR or all modified Terraform files passed the Checkov checks. Good job! 🌟`;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: output
+            });
+          } else {
+            for (const file of files) {
+              const fileChecks = checks.filter((check) => check.file_path === file);
+              let output = `#### Checkov Scan Results 📖 for file ${file}:\n\n` +
+                `| Check ID | Description | Resource | Checkov Result |\n` +
+                `| -------- | ----------- | -------- | -------------- |` +
+                fileChecks
+                    .map((check) => {
+                        return `\n| ${check.check_id} | ${check.check_name} | ${check.resource} | ${check.check_result.result} |`;
+                    })
+                    .join("");
+                    if (fileChecks.every((check) => check.check_result.result === 'PASSED')) {
+                      output += '\n🌟 All checks have passed for this file! 🌟';
+                    } else {
+                      output += '\n⚠️ Some checks have failed. Please review the above report. ⚠️';
+                    }
+                    
+                    await github.rest.issues.createComment({
+                      owner: context.repo.owner,
+                      repo: context.repo.repo,
+                      issue_number: context.issue.number,
+                      body: output
+                    });
+                     
