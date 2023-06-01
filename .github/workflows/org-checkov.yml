@@ -34,10 +34,10 @@ jobs:
     - name: Run Checkov
       id: checkov
       run: |
-        IFS=$'\n' read -ra FILES <<< "$(echo ${{ steps.get_changed_files.outputs.files }} | tr ' ' '\n')"
-        echo "[]" > results.json
-        PASSED=true
-        for file in "${FILES[@]}"; do
+          IFS=$'\n' read -ra FILES <<< "$(echo ${{ steps.get_changed_files.outputs.files }} | tr ' ' '\n')"
+          echo "[]" > results.json
+          PASSED=true
+          for file in "${FILES[@]}"; do
             if [ -n "$file" ]; then
               OUTPUT=$(checkov -f "$file" --output json || true)
               echo "$OUTPUT" >> results.json
@@ -45,17 +45,18 @@ jobs:
                 PASSED=false
               fi
             fi
-        done
-        echo "CHECKOV_OUTPUT=$(cat results.json)" >> $GITHUB_ENV
-        echo "CHECKOV_PASSED=$PASSED" >> $GITHUB_ENV
-        rm results.json
-
+          done
+          cp results.json $GITHUB_WORKSPACE/checkov_results.json
+          echo "CHECKOV_PASSED=$PASSED" | tee -a $GITHUB_ENV
+          rm results.json
+      
     - name: Create comments with Checkov results
       uses: actions/github-script@v5
       with:
         github-token: ${{ secrets.GITHUB_TOKEN }}
         script: |
-          const rawChecks = JSON.parse(process.env.CHECKOV_OUTPUT);
+          const fs = require('fs');
+          const rawChecks = JSON.parse(fs.readFileSync(`${process.env.GITHUB_WORKSPACE}/checkov_results.json`, 'utf8'));
           const checks = rawChecks.reduce((acc, check) => {
             if ('results' in check && 'failed_checks' in check.results) {
               return acc.concat(check.results.failed_checks);
@@ -63,7 +64,7 @@ jobs:
             return acc;
           }, []);
           const files = [...new Set(checks.map((check) => check.file_path))];
-          
+            
           if (files.length == 0) {
             const output = `🌟 No Terraform files were modified in this PR or all modified Terraform files passed the Checkov checks. Good job! 🌟`;
             await github.rest.issues.createComment({
@@ -88,11 +89,13 @@ jobs:
                     } else {
                       output += '\n⚠️ Some checks have failed. Please review the above report. ⚠️';
                     }
-                    
+                      
                     await github.rest.issues.createComment({
                       owner: context.repo.owner,
                       repo: context.repo.repo,
                       issue_number: context.issue.number,
                       body: output
                     });
-                     
+            }
+          }
+      
