@@ -58,44 +58,39 @@ jobs:
           const fs = require('fs');
           const rawChecks = JSON.parse(fs.readFileSync(`${process.env.GITHUB_WORKSPACE}/checkov_results.json`, 'utf8'));
           const checks = rawChecks.reduce((acc, check) => {
-            if ('results' in check && 'failed_checks' in check.results) {
-              return acc.concat(check.results.failed_checks);
-            }
-            return acc;
-          }, []);
-          const files = [...new Set(checks.map((check) => check.file_path))];
-            
-          if (files.length == 0) {
-            const output = `🌟 No Terraform files were modified in this PR or all modified Terraform files passed the Checkov checks. Good job! 🌟`;
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-              body: output
-            });
-          } else {
-            for (const file of files) {
-              const fileChecks = checks.filter((check) => check.file_path === file);
-              let output = `#### Checkov Scan Results 📖 for file ${file}:\n\n` +
-                `| Check ID | Description | Resource | Checkov Result |\n` +
-                `| -------- | ----------- | -------- | -------------- |` +
-                fileChecks
-                    .map((check) => {
-                        return `\n| ${check.check_id} | ${check.check_name} | ${check.resource} | ${check.check_result.result} |`;
-                    })
-                    .join("");
-                    if (fileChecks.every((check) => check.check_result.result === 'PASSED')) {
-                      output += '\n🌟 All checks have passed for this file! 🌟';
-                    } else {
-                      output += '\n⚠️ Some checks have failed. Please review the above report. ⚠️';
-                    }
-                      
-                    await github.rest.issues.createComment({
-                      owner: context.repo.owner,
-                      repo: context.repo.repo,
-                      issue_number: context.issue.number,
-                      body: output
-                    });
-            }
+             if ('results' in check && 'failed_checks' in check.results) {
+               return acc.concat(check.results.failed_checks);
+             }
+             return acc;
+           }, []);
+           const files = [...new Set(checks.map((check) => check.file_path))];
+        
+           if (files.length == 0) {
+             const output = `🌟 No Terraform files were modified in this PR or all modified Terraform files passed the Checkov checks. Good job! 🌟`;
+             await github.rest.issues.createComment({
+               owner: context.repo.owner,
+               repo: context.repo.repo,
+               issue_number: context.issue.number,
+               body: output
+             });
+           } else {
+             let output = `#### Checkov Scan Results 📖:\n\n` +
+               `| File | Check ID | Description | Resource | Checkov Result |\n` +
+               `| ---- | -------- | ----------- | -------- | -------------- |\n`;
+             for (const file of files) {
+               const fileChecks = checks.filter((check) => check.file_path === file);
+               output += fileChecks
+                   .map((check) => {
+                       return `| ${file} | ${check.check_id} | ${check.check_name} | ${check.resource} | ${check.check_result.result} |\n`;
+                   })
+                   .join("");
+             }
+             output += `\n\nPlease review the above report. ⚠️`;
+             await github.rest.issues.createComment({
+               owner: context.repo.owner,
+               repo: context.repo.repo,
+               issue_number: context.issue.number,
+               body: output
+             });
           }
-      
+        
