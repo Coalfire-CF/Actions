@@ -26,7 +26,6 @@
 #             output-method: inject
 #             git-push: "true"
 
-@@ -0,0 +1,22 @@
 name: 'Terraform-Docs'
 
 on: [pull_request]
