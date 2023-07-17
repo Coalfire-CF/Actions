@@ -1,6 +1,7 @@
 name: 'Terraform-Docs'
 
 on: [pull_request]
+workflow_call:
 
 env:
   TF_LOG: INFO
