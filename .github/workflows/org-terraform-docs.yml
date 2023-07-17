@@ -1,7 +1,12 @@
 name: 'Terraform-Docs'
 
-on: [pull_request]
-workflow_call:
+on:
+  pull_request:
+    types:
+    - closed
+    branches:
+    - main
+  workflow_call:
 
 env:
   TF_LOG: INFO
