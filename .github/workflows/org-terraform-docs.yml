@@ -3,9 +3,11 @@ name: 'Terraform-Docs'
 on:
   pull_request:
   workflow_call:
-
-env:
-  TF_LOG: INFO
+    inputs:
+      recursive:
+        required: false
+        type: boolean
+        default: false
 
 jobs:
     docs:
@@ -18,7 +20,9 @@ jobs:
         - name: Render terraform docs inside the README.md and push changes back to PR branch
           uses: terraform-docs/gh-actions@v1.0.0
           with:
-            working-dir: .,modules
+            working-dir: .
+            recursive: ${{ inputs.recursive }}
+            recursive-path: modules
             output-file: README.md
             output-method: inject
             git-push: "true"
