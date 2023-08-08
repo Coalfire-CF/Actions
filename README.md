@@ -32,6 +32,19 @@ Generate Terraform modules documentation then commit and push the changes. Trigg
 | ---- | ----------- | ------- | -------- |
 | recursive | if true it will generate documentation for submodules recursively | false | no |
 
+#### Usage
+
+```
+name: Org Terraform Docs
+on:
+    pull_request:
+    workflow_call:
+
+jobs:
+  terraform-docs:
+    uses: Coalfire-CF/Actions/.github/workflows/org-terraform-docs.yml@main
+```
+
 ### **Issues**
 
 Bug fixes and enhancements are managed, tracked, and discussed through the GitHub issues on this repository.
