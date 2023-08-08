@@ -3,9 +3,11 @@ name: 'Terraform-Docs'
 on:
   pull_request:
   workflow_call:
-
-env:
-  TF_LOG: INFO
+    inputs:
+      recursive:
+        required: false
+        type: boolean
+        default: false
 
 jobs:
     docs:
@@ -19,7 +21,7 @@ jobs:
           uses: terraform-docs/gh-actions@v1.0.0
           with:
             working-dir: .
-            recursive: true
+            recursive: ${{ inputs.recursive }}
             recursive-path: modules
             output-file: README.md
             output-method: inject
