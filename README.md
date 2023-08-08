@@ -39,29 +39,3 @@ Issues should be flagged appropriately.
 - Backup Code owner: Michael Scribellito (@mscribellito-cf)
 
 The responsibility of the code owners is to approve and Merge PR's on the repository, and generally manage and direct issue discussions.
-
-<!-- BEGIN_TF_DOCS -->
-## Requirements
-
-No requirements.
-
-## Providers
-
-No providers.
-
-## Modules
-
-No modules.
-
-## Resources
-
-No resources.
-
-## Inputs
-
-No inputs.
-
-## Outputs
-
-No outputs.
-<!-- END_TF_DOCS -->
