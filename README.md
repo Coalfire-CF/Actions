@@ -10,10 +10,6 @@ Central location to consume actions in other repos.
 
 Current list of actions and their usage
 
-### Release
-
-Creates a new tag and release on the repo.  This action is triggered by a merged PR to the main branch.
-
 ### Checkov
 
 Static code analysis of terraform. This action is triggered by an opened PR to the main branch.
@@ -21,6 +17,20 @@ Static code analysis of terraform. This action is triggered by an opened PR to t
 ### Markdown Linter
 
 Markdown linter. Triggered on PR to main branch.
+
+### Release
+
+Creates a new tag and release on the repo.  This action is triggered by a merged PR to the main branch.
+
+### Terraform Docs
+
+Generate Terraform modules documentation then commit and push the changes. Triggered on PR to main branch.
+
+#### Inputs
+
+| Name | Description | Default | Required |
+| ---- | ----------- | ------- | -------- |
+| recursive | if true it will generate documentation for submodules recursively | false | no |
 
 ### **Issues**
 
