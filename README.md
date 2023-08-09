@@ -26,13 +26,20 @@ Creates a new tag and release on the repo.  This action is triggered by a merged
 
 Generate Terraform modules documentation then commit and push the changes. Triggered on PR to main branch.
 
+This is a wrapper around [terraform-docs GitHub Actions](https://github.com/terraform-docs/gh-actions).
+
 #### Inputs
 
 | Name | Description | Default | Required |
 | ---- | ----------- | ------- | -------- |
-| recursive | if true it will generate documentation for submodules recursively | false | no |
+| find-dir | name of root directory to extract list of directories | `disabled` | no |
+| recursive | if true it will update submodules recursively | `false` | no |
+| recursive-path | submodules path to recursively update | `modules` | no |
+| working-dir | comma separated list of directories to generate docs for | `.` | no |
 
 #### Usage
+
+**Root module only**
 
 ```
 name: Org Terraform Docs
@@ -43,6 +50,36 @@ on:
 jobs:
   terraform-docs:
     uses: Coalfire-CF/Actions/.github/workflows/org-terraform-docs.yml@main
+```
+
+**Root module and submodules**
+
+```
+name: Org Terraform Docs
+on:
+    pull_request:
+    workflow_call:
+
+jobs:
+  terraform-docs:
+    uses: Coalfire-CF/Actions/.github/workflows/org-terraform-docs.yml@main
+    with:
+      recursive: true
+```
+
+**Submodules only**
+
+```
+name: Org Terraform Docs
+on:
+    pull_request:
+    workflow_call:
+
+jobs:
+  terraform-docs:
+    uses: Coalfire-CF/Actions/.github/workflows/org-terraform-docs.yml@main
+    with:
+      find-dir: modules
 ```
 
 ### **Issues**
