@@ -1,0 +1,26 @@
+name: Terraform fmt
+
+on:
+  workflow_call:
+
+jobs:
+  verify:
+    name: Check Terraform Formatting
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: 1.5.0
+
+    - name: Run Terraform fmt
+      run: terraform fmt -recursive
+
+    - name: Commit changes
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git diff --quiet && git diff --staged --quiet || (git add -A && git commit -m "Apply terraform fmt")
