@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Check out code
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4
 
     - name: Get list of changed Markdown files
       id: get-md-files
@@ -51,15 +51,15 @@ jobs:
             body: `${{steps.outputCont.outputs.outFile}}`
           })
 
-    - name: Create Success Comment
-      uses: actions/github-script@v5
-      if: ${{ success() }}
-      with:
-        github-token: ${{secrets.GITHUB_TOKEN}}
-        script: |
-          github.rest.issues.createComment({
-            issue_number: context.issue.number,
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            body: 'Markdown Valid'
-          })
+    # - name: Create Success Comment
+    #   uses: actions/github-script@v5
+    #   if: ${{ success() }}
+    #   with:
+    #     github-token: ${{secrets.GITHUB_TOKEN}}
+    #     script: |
+    #       github.rest.issues.createComment({
+    #         issue_number: context.issue.number,
+    #         owner: context.repo.owner,
+    #         repo: context.repo.repo,
+    #         body: 'Markdown Valid'
+    #       })

@@ -1,0 +1,42 @@
+name: Validate Terraform Configuration
+on:
+  workflow_call:
+
+jobs:
+  verify:
+    name: Validate Terraform Configuration
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: 1.5.0
+
+    - name: Initialise with no backend
+      run: terraform init -backend=false
+
+    - name: Validate the configuration
+      id: validate
+      run: |
+        set +e
+        OUTPUT=$(terraform validate)
+        echo "::set-output name=result::$OUTPUT"
+        set -e
+      continue-on-error: true
+
+    - name: Create comment
+      if: steps.validate.outcome == 'failure'
+      uses: actions/github-script@v4
+      with:
+        script: |
+          const issue_number = context.payload.pull_request.number;
+          const result = `${{ steps.validate.outputs.result }}`;
+          github.rest.issues.createComment({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: issue_number,
+            body: `Terraform validation failed with the following error:\n\`\`\`\n${result}\n\`\`\``
+          });
