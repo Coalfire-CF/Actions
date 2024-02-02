@@ -18,11 +18,12 @@ jobs:
     - name: Initialise with no backend
       run: terraform init -backend=false
 
-    - name: Validate the configuration
+    - name: Validate Terraform
       id: validate
       run: |
         set +e
         OUTPUT=$(terraform validate)
+        echo "$OUTPUT"
         echo "::set-output name=result::$OUTPUT"
         set -e
       continue-on-error: true
