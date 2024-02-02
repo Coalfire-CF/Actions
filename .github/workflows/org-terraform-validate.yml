@@ -1,4 +1,4 @@
-name: Validate Terraform Configuration
+name: Terraform Validate
 on:
   workflow_call:
 
@@ -28,7 +28,6 @@ jobs:
       continue-on-error: true
 
     - name: Create comment
-      if: steps.validate.outcome == 'failure'
       uses: actions/github-script@v4
       with:
         script: |
@@ -38,5 +37,5 @@ jobs:
             owner: context.repo.owner,
             repo: context.repo.repo,
             issue_number: issue_number,
-            body: `Terraform validation failed with the following error:\n\`\`\`\n${result}\n\`\`\``
+            body: `Terraform validation output:\n\`\`\`\n${result}\n\`\`\``
           });
