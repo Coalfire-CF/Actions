@@ -31,11 +31,11 @@ jobs:
       uses: actions/github-script@v4
       with:
         script: |
-          const issue_number = context.payload.pull_request.number;
+          const issue_number = github.context.payload.pull_request.number;
           const result = `${{ steps.validate.outputs.result }}`;
           github.rest.issues.createComment({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
+            owner: github.context.repo.owner,
+            repo: github.context.repo.repo,
             issue_number: issue_number,
             body: `Terraform validation output:\n\`\`\`\n${result}\n\`\`\``
           });
