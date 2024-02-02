@@ -30,12 +30,13 @@ jobs:
     - name: Create comment
       uses: actions/github-script@v4
       with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
         script: |
-          const issue_number = github.context.payload.pull_request.number;
+          const issue_number = context.issue.number;
           const result = `${{ steps.validate.outputs.result }}`;
           github.rest.issues.createComment({
-            owner: github.context.repo.owner,
-            repo: github.context.repo.repo,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
             issue_number: issue_number,
             body: `Terraform validation output:\n\`\`\`\n${result}\n\`\`\``
           });
