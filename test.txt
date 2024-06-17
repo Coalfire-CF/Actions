@@ -1,0 +1,1 @@
+This is a dummy file. I put it here to test the Pull Request template that was recently merged to main.
