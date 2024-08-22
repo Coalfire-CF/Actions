@@ -29,8 +29,9 @@ jobs:
       run: |
         set +e
         OUTPUT=$(terraform validate)
-        echo "$OUTPUT"
-        echo "::set-output name=result::$OUTPUT"
+        CLEAN_OUTPUT=$(echo "$OUTPUT" | sed -r "s/\x1B\[([0-9]{1,2}(;[0-9]{1,2})?)?[m|K]//g")
+        echo "$CLEAN_OUTPUT"
+        echo "::set-output name=result::$CLEAN_OUTPUT"
         set -e
       continue-on-error: true
 
