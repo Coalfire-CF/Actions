@@ -1,17 +1,12 @@
-# This GitHub Actions workflow validates Terraform configuration.
-
-# The job performs the following steps:
-# 1. Checks out the code using the 'actions/checkout' action.
-# 2. Sets up Terraform using the 'hashicorp/setup-terraform' action
-# 3. Initializes Terraform with no backend using the 'terraform init' command.
-# 4. Validates the Terraform configuration using the 'terraform validate' command.
-# 5. Creates a comment on the associated GitHub issue with the validation output using the 'actions/github-script' action.
-# The comment includes the Terraform validation output enclosed in code blocks.
-# The workflow continues even if the validation step fails.
-
 name: Terraform Validate
 on:
   workflow_call:
+    inputs:
+      terraform_version:
+        description: 'The version of Terraform to use'
+        required: true
+        default: '1.5.0'
+        type: string
 
 jobs:
   verify:
@@ -24,7 +19,7 @@ jobs:
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3
       with:
-        terraform_version: 1.5.0
+        terraform_version: ${{ inputs.terraform_version }}
 
     - name: Initialise with no backend
       run: terraform init -backend=false
