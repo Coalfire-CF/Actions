@@ -1,6 +1,13 @@
 name: Terraform Validate
+
 on:
-  workflow_call:
+  push:
+    branches:
+      - '**'
+  pull_request:
+    branches:
+      - '**'
+  workflow_dispatch:
     inputs:
       terraform_version:
         description: 'The version of Terraform to use'
@@ -19,8 +26,14 @@ jobs:
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3
       with:
-        terraform_version: ${{ inputs.terraform_version }}
+        terraform_version: ${{ inputs.terraform_version || '1.5.0' }}
 
+    - name: Configure Git for private modules
+      env:
+        GH_TOKEN: ${{ secrets.ORG_GITHUB_PAT }}
+      run: |
+        git config --global url."https://${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+        
     - name: Initialise with no backend
       run: terraform init -backend=false
 
@@ -31,11 +44,12 @@ jobs:
         OUTPUT=$(terraform validate)
         CLEAN_OUTPUT=$(echo "$OUTPUT" | sed -r "s/\x1B\[([0-9]{1,2}(;[0-9]{1,2})?)?[m|K]//g")
         echo "$CLEAN_OUTPUT"
-        echo "::set-output name=result::$CLEAN_OUTPUT"
+        echo "result=$CLEAN_OUTPUT" >> $GITHUB_OUTPUT
         set -e
       continue-on-error: true
 
     - name: Create comment
+      if: github.event_name == 'pull_request'
       uses: actions/github-script@v7
       with:
         github-token: ${{ secrets.GITHUB_TOKEN }}
