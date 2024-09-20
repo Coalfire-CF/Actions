@@ -4,12 +4,9 @@ on:
   workflow_call:
 
   workflow_dispatch:
-    inputs:
-      terraform_version:
-        description: 'The version of Terraform to use'
-        required: true
-        default: '1.9.0'
-        type: string    
+
+env:
+  TERRAFORM_VERSION: '1.9.0'
 
 jobs:
   verify:
@@ -22,7 +19,7 @@ jobs:
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3.1.2
       with:
-        terraform_version: ${{ inputs.terraform_version || '1.9.0' }}
+        terraform_version: ${{ env.TERRAFORM_VERSION }}
 
     - name: Run Terraform fmt
       run: terraform fmt -recursive
@@ -32,3 +29,9 @@ jobs:
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
         git diff --quiet && git diff --staged --quiet || (git add -A && git commit -m "Apply terraform fmt")
+
+    - name: Push changes
+      if: success()
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: git push
