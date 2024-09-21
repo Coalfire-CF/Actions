@@ -1,15 +1,11 @@
-name: Terraform fmt
+inputs:
+  terraform_version:
+    description: 'The version of Terraform to use'
+    required: false
+    default: '1.9.0'
+    type: string
 
-on:
-  workflow_call:
-    inputs:
-      terraform_version:
-        description: 'The version of Terraform to use'
-        required: false
-        default: '1.9.0'
-        type: string
-
-  workflow_dispatch:
+workflow_dispatch:
 
 jobs:
   verify:
@@ -37,4 +33,6 @@ jobs:
       if: success()
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: git push
+      run: |
+        BRANCH_NAME=$(echo $GITHUB_REF | sed 's/refs\/heads\///')
+        git push origin HEAD:$BRANCH_NAME
