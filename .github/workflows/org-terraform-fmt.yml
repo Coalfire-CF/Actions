@@ -36,10 +36,14 @@ jobs:
         git config --local user.name "GitHub Action"
         git diff --quiet && git diff --staged --quiet || (git add -A && git commit -m "Apply terraform fmt")
 
-    - name: Push changes
-      if: success()
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: |
-        # Push the changes back to the PR's source branch
-        git push origin HEAD:${{ github.head_ref }}
+    - name: Post comment on failure
+      if: failure()
+      uses: actions/github-script@v6
+      with:
+        script: |
+          github.rest.issues.createComment({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.issue.number,
+            body: "Terraform fmt failed. We recommend setting up your IDE to automatically run terraform fmt on save or before pushing."
+          });
