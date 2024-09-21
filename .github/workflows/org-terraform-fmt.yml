@@ -39,5 +39,5 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         BRANCH_NAME=$(echo $GITHUB_REF | sed 's/refs\/heads\///')
-        git pull origin HEAD:$BRANCH_NAME
+        git pull --rebase origin HEAD:$BRANCH_NAME
         git push origin HEAD:$BRANCH_NAME
