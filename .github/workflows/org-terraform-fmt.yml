@@ -10,6 +10,7 @@ on:
         type: string
 
   workflow_dispatch:
+  pull_request:
 
 jobs:
   verify:
@@ -19,7 +20,7 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4.1.7
       with:
-        ref: ${{ github.head_ref }}  # Ensure we're working on the PR's branch
+        ref: ${{ github.head_ref }}  # Checkout the PR source branch
 
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3.1.2
@@ -40,5 +41,5 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        # Push changes to the branch that triggered the pull request
+        # Push the changes back to the PR's source branch
         git push origin HEAD:${{ github.head_ref }}
