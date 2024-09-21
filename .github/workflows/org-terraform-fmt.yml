@@ -40,6 +40,5 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        # Get the actual branch name from the ref (strip the 'refs/heads/' part)
-        BRANCH_NAME=$(echo "${{ github.ref }}" | sed 's/refs\/heads\///')
-        git push origin HEAD:$BRANCH_NAME
+        # Push changes to the branch that triggered the pull request
+        git push origin HEAD:${{ github.head_ref }}
