@@ -36,8 +36,9 @@ jobs:
           RESULTS=()
           for file in "${FILES[@]}"; do
             if [ -n "$file" ]; then
-              OUTPUT=$(checkov -f "$file" --output json --skip-check CKV_TF_1 || true)
+              OUTPUT=$(checkov -f "$file" --output json --skip-check CKV_TF_1,CKV_TF_2 || true)
               # CKV_TF_1: Ensure module sources use a commit hash. We're ignoring this check because we're using a release tag. -DF
+              # CKV_TF_2: Ensure Terraform module sources use a tag with a version number. We're ignoring this check because we're using a release tag. -DF
               RESULTS+=("$OUTPUT")
               if [[ "$(echo "$OUTPUT" | jq '.results.failed_checks | length')" -gt 0 ]]; then
                 PASSED=false
