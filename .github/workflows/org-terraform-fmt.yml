@@ -18,6 +18,8 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v4.1.7
+      with:
+        ref: ${{ github.head_ref }}  # Ensure we're working on the PR's branch
 
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3.1.2
@@ -38,7 +40,6 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        #BRANCH_NAME=$(echo $GITHUB_REF | sed 's/refs\/heads\///')
-        #git pull --rebase origin HEAD:$BRANCH_NAME
-        #git push origin HEAD:$BRANCH_NAME
-        git push origin HEAD:${{ github.ref }}
+        # Get the actual branch name from the ref (strip the 'refs/heads/' part)
+        BRANCH_NAME=$(echo "${{ github.ref }}" | sed 's/refs\/heads\///')
+        git push origin HEAD:$BRANCH_NAME
