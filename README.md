@@ -10,6 +10,10 @@ Central location to consume actions in other repos.
 
 Current list of actions and their usage
 
+### Readme Tree Writer
+
+Creates a Tree structure of the repo and inserts it under the Tree section of a README.md
+
 ### Checkov
 
 Static code analysis of terraform. This action is triggered by an opened PR to the main branch.
