@@ -1,0 +1,22 @@
+name: Check README on push
+
+on: [push, pull_request]
+
+jobs:
+  readme-tree-writer:
+    runs-on: ubuntu-latest
+    steps:
+      # Checkout the repository to the GitHub Actions runner
+      - uses: actions/checkout@v3
+      # creates tree structure of repo
+      - name: Write tree outputs to README
+        uses: shirakiya/readme-tree-writer@v1
+      # check diff of readme.md
+      - name: Check diff
+        run: |
+          if [ "$(git diff --ignore-space-at-eol . | wc -l)" -gt "0" ]; then
+            echo "Detected diff.  See status below:"
+            git --no-pager diff HEAD .
+            git status
+            exit 1
+          fi
