@@ -32,6 +32,8 @@ Generate Terraform modules documentation then commit and push the changes. Trigg
 
 This is a wrapper around [terraform-docs GitHub Actions](https://github.com/terraform-docs/gh-actions).
 
+#### Tree
+
 #### Inputs
 
 | Name | Description | Default | Required |
