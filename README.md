@@ -10,6 +10,10 @@ Central location to consume actions in other repos.
 
 Current list of actions and their usage
 
+### Readme Tree Writer
+
+Creates a Tree structure of the repo and inserts it under the Tree section of a README.md
+
 ### Checkov
 
 Static code analysis of terraform. This action is triggered by an opened PR to the main branch.
@@ -27,6 +31,14 @@ Creates a new tag and release on the repo.  This action is triggered by a merged
 Generate Terraform modules documentation then commit and push the changes. Triggered on PR to main branch.
 
 This is a wrapper around [terraform-docs GitHub Actions](https://github.com/terraform-docs/gh-actions).
+
+#### Tree
+
+```
+.
+└── README.md
+
+```
 
 #### Inputs
 
