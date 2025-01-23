@@ -12,11 +12,12 @@ jobs:
       - name: Write tree outputs to README
         uses: shirakiya/readme-tree-writer@v1
       # check diff of readme.md
-      - name: Check diff
+      - name: Commit if diff exists
         run: |
           if [ "$(git diff --ignore-space-at-eol . | wc -l)" -gt "0" ]; then
-            echo "Detected diff.  See status below:"
-            git --no-pager diff HEAD .
-            git status
-            exit 1
+            git config user.name github-actions
+            git config user.email github-actions@github.com
+            git add .
+            git commit -m "commit by shirakiya/readme-tree-writer"
+            git push
           fi
