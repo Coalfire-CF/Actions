@@ -34,6 +34,12 @@ This is a wrapper around [terraform-docs GitHub Actions](https://github.com/terr
 
 #### Tree
 
+```
+.
+└── README.md
+
+```
+
 #### Inputs
 
 | Name | Description | Default | Required |
