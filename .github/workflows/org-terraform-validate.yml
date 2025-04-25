@@ -8,6 +8,13 @@ on:
         required: true
         default: '1.11.4'
         type: string
+    secrets:
+      APP_CLIENT_ID:
+        description: 'The GitHub App client ID for Terraform authentication'
+        required: true
+      APP_PRIVATE_KEY:
+        description: 'The GitHub App private key for Terraform authentication'
+        required: true
 
   workflow_dispatch:
     inputs:
@@ -34,8 +41,8 @@ jobs:
       id: checkout-token
       uses: actions/create-github-app-token@v1
       with:
-        app-id: ${{ secrets.CF_TF_PULL_PRIVATE_APP_CLIENTID }}
-        private-key: ${{ secrets.CF_TF_PULL_PRIVATE_APP_PRIVATE_KEY }}
+        app-id: ${{ secrets.APP_CLIENT_ID }}
+        private-key: ${{ secrets.APP_PRIVATE_KEY }}
         owner: ${{ github.repository_owner }}
     
     - name: Configure Git
