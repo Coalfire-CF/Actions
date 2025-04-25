@@ -10,11 +10,11 @@ on:
         type: string
     secrets:
       APP_CLIENT_ID:
-        description: 'The GitHub App client ID for Terraform authentication'
-        required: true
+        description: 'The GitHub App client ID for Terraform authentication (only needed for private repositories)'
+        required: false
       APP_PRIVATE_KEY:
-        description: 'The GitHub App private key for Terraform authentication'
-        required: true
+        description: 'The GitHub App private key for Terraform authentication (only needed for private repositories)'
+        required: false
 
   workflow_dispatch:
     inputs:
@@ -37,8 +37,21 @@ jobs:
       with:
         terraform_version: ${{ inputs.terraform_version }}
 
+    - name: Check for secrets
+      id: check-secrets
+      run: |
+        if [ -n "$APP_CLIENT_ID" ] && [ -n "$APP_PRIVATE_KEY" ]; then
+          echo "has_secrets=true" >> $GITHUB_OUTPUT
+        else
+          echo "has_secrets=false" >> $GITHUB_OUTPUT
+        fi
+      env:
+        APP_CLIENT_ID: ${{ secrets.APP_CLIENT_ID }}
+        APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+        
     - name: Get Checkout Token
       id: checkout-token
+      if: steps.check-secrets.outputs.has_secrets == 'true'
       uses: actions/create-github-app-token@v1
       with:
         app-id: ${{ secrets.APP_CLIENT_ID }}
@@ -46,6 +59,7 @@ jobs:
         owner: ${{ github.repository_owner }}
     
     - name: Configure Git
+      if: steps.check-secrets.outputs.has_secrets == 'true'
       run: |
         git config --global url."https://actions:${{ steps.checkout-token.outputs.token }}@github.com".insteadOf https://github.com
         git config --global url."https://actions:${{ steps.checkout-token.outputs.token }}@github.com/".insteadOf ssh://git@github.com/ 
