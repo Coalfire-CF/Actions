@@ -6,7 +6,7 @@ on:
       terraform_version:
         description: 'The version of Terraform to use'
         required: true
-        default: '1.9.0'
+        default: '1.11.4'
         type: string
 
   workflow_dispatch:
@@ -14,7 +14,7 @@ on:
       terraform_version:
         description: 'The version of Terraform to use'
         required: true
-        default: '1.9.0'
+        default: '1.11.4'
         type: string
 
 jobs:
@@ -28,13 +28,20 @@ jobs:
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3.1.2
       with:
-        terraform_version: ${{ inputs.terraform_version || '1.9.0' }}
+        terraform_version: ${{ inputs.terraform_version }}
 
-    - name: Configure Git for private modules
-      env:
-        GH_TOKEN: ${{ secrets.ORG_GITHUB_PAT }}
+    - name: Get Checkout Token
+      id: checkout-token
+      uses: actions/create-github-app-token@v1
+      with:
+        app-id: ${{ secrets.CF_TF_PULL_PRIVATE_APP_CLIENTID }}
+        private-key: ${{ secrets.CF_TF_PULL_PRIVATE_APP_PRIVATE_KEY }}
+        owner: ${{ github.repository_owner }}
+    
+    - name: Configure Git
       run: |
-        git config --global url."https://${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+        git config --global url."https://actions:${{ steps.checkout-token.outputs.token }}@github.com".insteadOf https://github.com
+        git config --global url."https://actions:${{ steps.checkout-token.outputs.token }}@github.com/".insteadOf ssh://git@github.com/ 
         
     - name: Initialise with no backend
       run: terraform init -backend=false
