@@ -26,6 +26,77 @@ Markdown linter. Triggered on PR to main branch.
 
 Creates a new tag and release on the repo.  This action is triggered by a merged PR to the main branch.
 
+### Terraform Validate
+#### Private Repository Access
+Access to private repositories is controlled using a custom Github App that is installed on Coalfire-CF (Github Organization).
+
+Both the "App ID" and this private key are stored as Github Organization Secrets:
+- CF_TF_PULL_PRIVATE_APP_CLIENTID
+- CF_TF_PULL_PRIVATE_APP_PRIVATE_KEY
+
+Out of an abundance of caution, the visibility for these secrets is only set for "Private repositories".
+
+#### Usage
+These secrets are then used in workflows to allow GHA to pull from private Github Repositories:
+(Upstream workflow in this repository)
+```yaml
+- name: Get Checkout Token
+      id: checkout-token
+      if: steps.check-secrets.outputs.has_secrets == 'true'
+      uses: actions/create-github-app-token@v1
+      with:
+        app-id: ${{ secrets.APP_CLIENT_ID }}
+        private-key: ${{ secrets.APP_PRIVATE_KEY }}
+        owner: ${{ github.repository_owner }}
+    
+    - name: Configure Git
+      if: steps.check-secrets.outputs.has_secrets == 'true'
+      run: |
+        git config --global url."https://actions:${{ steps.checkout-token.outputs.token }}@github.com".insteadOf https://github.com
+        git config --global url."https://actions:${{ steps.checkout-token.outputs.token }}@github.com/".insteadOf ssh://git@github.com/ 
+```
+
+(Downstream workflow in another pak repository):
+```yaml
+# First determine if we're in a private repo
+jobs:
+  check-visibility:
+    runs-on: ubuntu-latest
+    outputs:
+      is_private: ${{ steps.check.outputs.is_private }}
+    steps:
+      - id: check
+        run: |
+          REPO_VISIBILITY=$(curl -s -H "Authorization: token ${{ github.token }}" \
+          "https://api.github.com/repos/${{ github.repository }}" | jq -r '.private')
+          echo "is_private=$REPO_VISIBILITY" >> $GITHUB_OUTPUT
+
+  # Only run this job if we're in a private repo
+  private-validation:
+    needs: check-visibility
+    if: needs.check-visibility.outputs.is_private == 'true'
+    uses: Coalfire-CF/Actions/.github/workflows/org-terraform-validate.yml@26244cc890299238dcd63dc69dc1499e610d5966
+    with:
+      terraform_version: 1.11.4
+    secrets:
+      APP_CLIENT_ID: ${{ secrets.CF_TF_PULL_PRIVATE_APP_CLIENTID }}
+      APP_PRIVATE_KEY: ${{ secrets.CF_TF_PULL_PRIVATE_APP_PRIVATE_KEY }}
+      
+  # Run this job if we're in a public repo (no secrets passed)
+  public-validation:
+    needs: check-visibility
+    if: needs.check-visibility.outputs.is_private != 'true'
+    uses: Coalfire-CF/Actions/.github/workflows/org-terraform-validate.yml@26244cc890299238dcd63dc69dc1499e610d5966
+    with:
+      terraform_version: 1.11.4
+```
+
+The Organization secrets are only directly referenced in the downstream (calling) workflow.  In my experience, trying to use them in the upstream workflow does not work.
+
+The Github App Token job steps will be skipped if the downstream workflow is a public repository (in which case, access to the secrets is denied).
+
+Adjust "terraform_version" as needed.
+
 ### Terraform Docs
 
 Generate Terraform modules documentation then commit and push the changes. Triggered on PR to main branch.
