@@ -24,7 +24,7 @@ Markdown linter. Triggered on PR to main branch.
 
 ### Release
 
-Creates a new tag and release on the repo.  This action is triggered by a merged PR to the main branch.
+Creates a new tag and release PR on the repo.  This action is triggered by a merged PR to the main branch.
 
 ### Terraform Docs
 
