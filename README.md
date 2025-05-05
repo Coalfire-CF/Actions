@@ -36,7 +36,8 @@ This is a wrapper around [terraform-docs GitHub Actions](https://github.com/terr
 
 ```
 .
-└── README.md
+├── README.md
+└── release-please-config.json
 
 ```
 
