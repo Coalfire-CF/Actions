@@ -10,7 +10,7 @@ jobs:
       - uses: actions/checkout@v3
       # creates tree structure of repo
       - name: Write tree outputs to README
-        uses: shirakiya/readme-tree-writer@v1
+        uses: shirakiya/readme-tree-writer@v2
       # check diff of readme.md
       - name: Commit if diff exists
         run: |
