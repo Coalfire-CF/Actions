@@ -50,7 +50,7 @@ jobs:
      
       
     - name: Create comments with Checkov results
-      uses: actions/github-script@v7.0.1
+      uses: actions/github-script@v7
       with:
         github-token: ${{ secrets.GITHUB_TOKEN }}
         script: |
