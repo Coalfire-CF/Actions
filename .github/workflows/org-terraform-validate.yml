@@ -2,12 +2,26 @@ name: Terraform Validate
 
 on:
   workflow_call:
+    inputs:
+      terraform_version:
+        description: 'The version of Terraform to use'
+        required: true
+        default: '1.11.4'
+        type: string
+    secrets:
+      APP_CLIENT_ID:
+        description: 'The GitHub App client ID for Terraform authentication (only needed for private repositories)'
+        required: false
+      APP_PRIVATE_KEY:
+        description: 'The GitHub App private key for Terraform authentication (only needed for private repositories)'
+        required: false
+
   workflow_dispatch:
     inputs:
       terraform_version:
         description: 'The version of Terraform to use'
         required: true
-        default: '1.9.0'
+        default: '1.11.4'
         type: string
 
 jobs:
@@ -21,13 +35,34 @@ jobs:
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3.1.2
       with:
-        terraform_version: ${{ inputs.terraform_version || '1.9.0' }}
+        terraform_version: ${{ inputs.terraform_version }}
 
-    - name: Configure Git for private modules
-      env:
-        GH_TOKEN: ${{ secrets.ORG_GITHUB_PAT }}
+    - name: Check for secrets
+      id: check-secrets
       run: |
-        git config --global url."https://${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+        if [ -n "$APP_CLIENT_ID" ] && [ -n "$APP_PRIVATE_KEY" ]; then
+          echo "has_secrets=true" >> $GITHUB_OUTPUT
+        else
+          echo "has_secrets=false" >> $GITHUB_OUTPUT
+        fi
+      env:
+        APP_CLIENT_ID: ${{ secrets.APP_CLIENT_ID }}
+        APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+        
+    - name: Get Checkout Token
+      id: checkout-token
+      if: steps.check-secrets.outputs.has_secrets == 'true'
+      uses: actions/create-github-app-token@v1
+      with:
+        app-id: ${{ secrets.APP_CLIENT_ID }}
+        private-key: ${{ secrets.APP_PRIVATE_KEY }}
+        owner: ${{ github.repository_owner }}
+    
+    - name: Configure Git
+      if: steps.check-secrets.outputs.has_secrets == 'true'
+      run: |
+        git config --global url."https://actions:${{ steps.checkout-token.outputs.token }}@github.com".insteadOf https://github.com
+        git config --global url."https://actions:${{ steps.checkout-token.outputs.token }}@github.com/".insteadOf ssh://git@github.com/ 
         
     - name: Initialise with no backend
       run: terraform init -backend=false
