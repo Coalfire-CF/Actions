@@ -36,8 +36,12 @@ This is a wrapper around [terraform-docs GitHub Actions](https://github.com/terr
 
 ```
 .
+├── CONTRIBUTING.md
+├── License.md
 ├── README.md
-└── release-please-config.json
+├── coalfire_logo.png
+├── release-please-config.json
+└── update-readme-tree.sh
 
 ```
 
