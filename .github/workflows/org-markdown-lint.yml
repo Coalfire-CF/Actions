@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Check out code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
 
     - name: Get list of changed Markdown files
       id: get-md-files
@@ -39,7 +39,7 @@ jobs:
         echo "::set-output name=outFile::$OUTPUT_STRING"
 
     - name: Create Fail Comment
-      uses: actions/github-script@v5
+      uses: actions/github-script@v8
       if: ${{ failure() }}
       with:
         github-token: ${{secrets.GITHUB_TOKEN}}
@@ -52,7 +52,7 @@ jobs:
           })
 
     # - name: Create Success Comment
-    #   uses: actions/github-script@v5
+    #   uses: actions/github-script@v8
     #   if: ${{ success() }}
     #   with:
     #     github-token: ${{secrets.GITHUB_TOKEN}}
