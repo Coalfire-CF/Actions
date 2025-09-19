@@ -37,7 +37,9 @@ This is a wrapper around [terraform-docs GitHub Actions](https://github.com/terr
 ```
 .
 ├── README.md
-└── release-please-config.json
+├── release-please-config.json
+└── scripts
+    └── dependabot_refresh.sh
 
 ```
 

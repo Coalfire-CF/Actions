@@ -1,0 +1,89 @@
+name: Refresh dependabot.yml & Terraform sources
+
+on:
+  workflow_call:
+    inputs:
+      org:
+        required: false
+        type: string
+      head_branch:
+        required: true
+        type: string
+      base_branch:
+        required: true
+        type: string
+      include_github_actions:
+        required: false
+        type: string
+        default: "true"
+      default_interval:
+        required: false
+        type: string
+        default: "daily"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate GitHub App Token
+        id: generate_token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: ${{ inputs.org || github.repository_owner }}
+
+      - name: Checkout PR head branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.head_branch }}
+          fetch-depth: 0
+          token: ${{ steps.generate_token.outputs.token }}
+          persist-credentials: false
+          lfs: false
+
+      - name: Set Git identity to App bot
+        env:
+          GH_TOKEN: ${{ steps.generate_token.outputs.token }}
+        run: |
+          set -euo pipefail
+          BOT_SLUG="${{ steps.generate_token.outputs.app-slug }}"
+          BOT_ID=$(gh api "/users/${BOT_SLUG}[bot]" --jq .id)
+          git config --global user.name "${BOT_SLUG}[bot]"
+          git config --global user.email "${BOT_ID}+${BOT_SLUG}[bot]@users.noreply.github.com"
+          git config --global --add safe.directory '*'
+          gh auth setup-git
+
+      - name: Make script executable
+        run: chmod +x scripts/dependabot_refresh.sh
+
+      - name: Run refresh script
+        env:
+          INCLUDE_GITHUB_ACTIONS: ${{ inputs.include_github_actions }}
+          DEFAULT_INTERVAL: ${{ inputs.default_interval }}
+          REPO_ROOT: ${{ github.workspace }}
+          DEPB_PATH: ".github/dependabot.yml"
+        run: |
+          set -euo pipefail
+          ./scripts/dependabot_refresh.sh
+          git status --short
+          git diff -- . ':!**/.git/**' || true
+
+      - name: Commit & push back to the PR branch
+        env:
+          HEAD_BRANCH: ${{ inputs.head_branch }}
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- . ':!**/.git/**'; then
+            echo "No changes detected; nothing to commit."
+            exit 0
+          fi
+          git checkout "${HEAD_BRANCH}"
+          git pull --ff-only origin "${HEAD_BRANCH}" || true
+          git add -A
+          git commit -m "chore: refresh dependabot.yml & Terraform sources"
+          git push origin "HEAD:${HEAD_BRANCH}"
