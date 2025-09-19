@@ -20,7 +20,7 @@ jobs:
     steps:
     # Checkout the repository to the GitHub Actions runner
     - name: Checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
 
     # Install the preferred version of Terraform CLI 
     - name: Setup Terraform
@@ -56,7 +56,7 @@ jobs:
     # Add a comment to pull requests with plan results
     - name: add-plan-comment
       id: comment
-      uses: actions/github-script@v5
+      uses: actions/github-script@v8
       if: github.event_name == 'pull_request'
       env:
         PLAN: "terraform\n${{ steps.plan.outputs.stdout }}"

@@ -7,7 +7,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # Checkout the repository to the GitHub Actions runner
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v5
       # creates tree structure of repo
       - name: Write tree outputs to README
         uses: shirakiya/readme-tree-writer@v1
