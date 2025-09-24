@@ -12,7 +12,6 @@ on:
       working_directory:
         type: string
         default: "."
-      # External script location (public repo)
       script_repo:
         description: "owner/repo that contains the script"
         type: string
@@ -43,18 +42,18 @@ jobs:
       - name: Install tree
         run: sudo apt-get update && sudo apt-get install -y tree
 
-      - name: Checkout script repo (public, outside workspace)
+      - name: Checkout script repo (public, inside workspace)
         uses: actions/checkout@v5
         with:
           repository: ${{ inputs.script_repo }}
           ref: ${{ inputs.script_ref }}
-          path: ${{ runner.temp }}/_script_repo
+          path: _script_repo
           fetch-depth: 1
 
       - name: Verify script exists
         run: |
           set -e
-          SCRIPT="${{ runner.temp }}/_script_repo/${{ inputs.script_path }}"
+          SCRIPT="_script_repo/${{ inputs.script_path }}"
           test -f "$SCRIPT" || { echo "Missing script: $SCRIPT"; exit 1; }
           chmod +x "$SCRIPT"
 
@@ -64,10 +63,40 @@ jobs:
           EXCLUDE_PATTERN: ${{ inputs.exclude_pattern }}
         run: |
           set +e
-          "${{ runner.temp }}/_script_repo/${{ inputs.script_path }}"
+          "_script_repo/${{ inputs.script_path }}"
           code=$?
           echo "exit_code=$code" >> $GITHUB_OUTPUT
           exit 0
+
+      # ---- keep the script checkout out of commits ----
+      - name: Keep _script_repo out of the index
+        run: |
+          set -e
+          # Never stage it
+          echo "_script_repo" >> .git/info/exclude
+          git restore --staged _script_repo || true
+          # Remove working tree copy so add -A can't see it
+          rm -rf _script_repo || true
+
+      # ---- one-time heal if a stray submodule pointer landed previously ----
+      - name: remove stray _script_repo gitlink if present
+        run: |
+          # gitlink shows as mode 160000 in ls-files
+          if git ls-files -s _script_repo 2>/dev/null | grep -q '^160000'; then
+            echo "Removing stray _script_repo gitlink from index…"
+            git rm -f --cached _script_repo || true
+            if [ -f .gitmodules ]; then
+              git config -f .gitmodules --remove-section submodule._script_repo 2>/dev/null || true
+              # If .gitmodules is empty now, delete it
+              if ! git config -f .gitmodules -l >/dev/null 2>&1; then
+                rm -f .gitmodules
+              fi
+              git add .gitmodules || true
+            fi
+            git commit -m "chore: remove stray _script_repo gitlink" || true
+          else
+            echo "No _script_repo gitlink present."
+          fi
 
       - name: Commit & push if changed
         if: ${{ steps.run.outputs.exit_code == '10' }}
