@@ -34,13 +34,36 @@ jobs:
       - name: Install tree
         run: sudo apt-get install -y tree
 
+      # Parse repo/ref of THIS reusable workflow (e.g.
+      # "Coalfire-CF/Actions/.github/workflows/org-tree-readme.yml@refs/heads/fix/org-tree-readme")
+      - name: Derive actions repo/ref from workflow_ref
+        id: derive
+        run: |
+          WF_REF="${{ github.workflow_ref }}"
+          # extract part before "@"
+          left="${WF_REF%@*}"
+          # strip "/.github/workflows/..." -> owner/repo
+          ACTIONS_REPO="${left%/.github/workflows/*}"
+          # extract ref after "@"
+          ACTIONS_REF="${WF_REF#*@}"
+          echo "repo=$ACTIONS_REPO" >> $GITHUB_OUTPUT
+          echo "ref=$ACTIONS_REF" >> $GITHUB_OUTPUT
+
+      - name: Checkout Actions repo (to get script)
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ steps.derive.outputs.repo }}
+          ref: ${{ steps.derive.outputs.ref }}
+          path: _actions_repo
+          fetch-depth: 1
+
       - name: Run updater
         id: run
         env:
           EXCLUDE_PATTERN: ${{ inputs.exclude_pattern }}
         run: |
           set +e
-          bash "${GITHUB_WORKSPACE}/scripts/update-readme-tree.sh"
+          bash "_actions_repo/scripts/update-readme-tree.sh"
           code=$?
           echo "exit_code=$code" >> $GITHUB_OUTPUT
           exit 0
