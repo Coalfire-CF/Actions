@@ -88,10 +88,15 @@ jobs:
         run: |
           git config user.name "${{ github.actor }}"
           git config user.email "${{ github.actor }}@users.noreply.github.com"
+
+          # Stage everything except the script checkout
           git add -A
+          git restore --staged _script_repo || true   # ensure nothing from there is staged
+
           if git diff --cached --quiet; then
             echo "No changes to commit."
             exit 0
           fi
+
           git commit -m "${{ inputs.commit_message }}"
           git push origin HEAD
