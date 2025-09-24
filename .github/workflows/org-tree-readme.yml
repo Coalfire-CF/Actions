@@ -39,6 +39,11 @@ jobs:
           ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
           fetch-depth: 0
 
+      - name: Configure git identity (early)
+        run: |
+          git config user.name "${{ github.actor }}"
+          git config user.email "${{ github.actor }}@users.noreply.github.com"
+
       - name: Install tree
         run: sudo apt-get update && sudo apt-get install -y tree
 
@@ -68,41 +73,52 @@ jobs:
           echo "exit_code=$code" >> $GITHUB_OUTPUT
           exit 0
 
-      # ---- keep the script checkout out of commits ----
+      # Ensure the script checkout never gets committed
       - name: Keep _script_repo out of the index
         run: |
           set -e
-          # Never stage it
           echo "_script_repo" >> .git/info/exclude
           git restore --staged _script_repo || true
-          # Remove working tree copy so add -A can't see it
           rm -rf _script_repo || true
 
-      # ---- one-time heal if a stray submodule pointer landed previously ----
+      # One-time self-heal if a stray submodule pointer landed previously
       - name: remove stray _script_repo gitlink if present
+        id: heal
         run: |
+          set -e
+          changed=0
           # gitlink shows as mode 160000 in ls-files
           if git ls-files -s _script_repo 2>/dev/null | grep -q '^160000'; then
             echo "Removing stray _script_repo gitlink from index…"
             git rm -f --cached _script_repo || true
+
+            # Clean up .gitmodules if needed
             if [ -f .gitmodules ]; then
               git config -f .gitmodules --remove-section submodule._script_repo 2>/dev/null || true
-              # If .gitmodules is empty now, delete it
+              # If .gitmodules is now empty, delete it
               if ! git config -f .gitmodules -l >/dev/null 2>&1; then
                 rm -f .gitmodules
               fi
               git add .gitmodules || true
             fi
-            git commit -m "chore: remove stray _script_repo gitlink" || true
+
+            # Commit only if something is staged
+            if ! git diff --cached --quiet; then
+              git commit -m "chore: remove stray _script_repo gitlink"
+              changed=1
+            fi
           else
             echo "No _script_repo gitlink present."
           fi
+          echo "changed=$changed" >> "$GITHUB_OUTPUT"
+
+      - name: Push self-heal commit (if any)
+        if: ${{ steps.heal.outputs.changed == '1' }}
+        run: git push origin HEAD
 
       - name: Commit & push if changed
         if: ${{ steps.run.outputs.exit_code == '10' }}
         run: |
-          git config user.name "${{ github.actor }}"
-          git config user.email "${{ github.actor }}@users.noreply.github.com"
           git add -A
           if git diff --cached --quiet; then
             echo "No changes to commit."
