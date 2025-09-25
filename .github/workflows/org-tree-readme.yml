@@ -45,7 +45,7 @@ jobs:
           git config user.email "${{ github.actor }}@users.noreply.github.com"
 
       - name: Install tree
-        run: sudo apt-get update && sudo apt-get install -y tree
+        run: sudo apt-get install -y tree
 
       - name: Checkout script repo (public, inside workspace)
         uses: actions/checkout@v5
