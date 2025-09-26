@@ -61,17 +61,11 @@ jobs:
           #!/usr/bin/env bash
           set -euo pipefail
 
-          # =========================
-          # Config (override via env)
-          # =========================
           DEPB_PATH="${DEPB_PATH:-.github/dependabot.yml}"
-          INCLUDE_GITHUB_ACTIONS="${INCLUDE_GITHUB_ACTIONS:-true}"   # "false" to skip GH Actions stanza
-          DEFAULT_INTERVAL="${DEFAULT_INTERVAL:-daily}"               # dependabot schedule for terraform dirs
+          INCLUDE_GITHUB_ACTIONS="${INCLUDE_GITHUB_ACTIONS:-true}"
+          DEFAULT_INTERVAL="${DEFAULT_INTERVAL:-daily}"
           REPO_ROOT="${REPO_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 
-          # =========================
-          # Helpers
-          # =========================
           log() { printf '%s\n' "$*" >&2; }
           die() { log "❌ $*"; exit 1; }
 
@@ -81,16 +75,14 @@ jobs:
             done
           }
 
-          # Return unique, absolute-style dirs (/...) that contain at least one .tf file
+          # Find unique repo-relative dirs (as /paths) that contain at least one .tf file
           find_tf_dirs() {
             mapfile -d '' -t files < <(find "$REPO_ROOT" -type f -name '*.tf' -not -path '*/.git/*' -print0)
-
             declare -A seen=()
             declare -a out=()
 
             for f in "${files[@]}"; do
               dir="$(dirname "$f")"
-              # normalize to repo-relative
               if [[ "$dir" == "$REPO_ROOT" ]]; then
                 dir="/"
               else
@@ -98,10 +90,8 @@ jobs:
                 [[ -z "$dir" ]] && dir="/"
                 [[ "${dir:0:1}" != "/" ]] && dir="/$dir"
               fi
-              # sanitize
               dir="$(printf '%s' "$dir" | sed -E 's#/+#/#g; s#/\./#/#g; s#/$##')"
               [[ -z "$dir" ]] && dir="/"
-
               if [[ -z "${seen[$dir]+x}" ]]; then
                 seen[$dir]=1
                 out+=("$dir")
@@ -111,7 +101,6 @@ jobs:
             printf "%s\n" "${out[@]}" | sort -u
           }
 
-          # Build dependabot.yml content to stdout
           generate_dependabot_yaml() {
             local -a dirs=("$@")
 
@@ -135,11 +124,9 @@ jobs:
           YAML
             fi
 
-            # Only emit Terraform blocks if we actually found Terraform directories
+            # Emit Terraform blocks only if dirs were found
             if ((${#dirs[@]} > 0)); then
               for d in "${dirs[@]}"; do
-                [[ "$d" == "." || -z "$d" ]] && d="/"
-                [[ "${d:0:1}" != "/" ]] && d="/$d"
                 cat <<YAML
             - package-ecosystem: "terraform"
               directory: "${d}"
@@ -153,51 +140,42 @@ jobs:
             fi
           }
 
-          # Safe write to a path (no backup); returns 0 if wrote/changed, 1 if no change
           safe_write_file() {
             local target="$1"
             local temp="$2"
             mkdir -p "$(dirname "$target")"
-
-            if [[ -f "$target" ]]; then
-              if diff -q "$target" "$temp" >/dev/null 2>&1; then
-                rm -f "$temp"
-                return 1
-              fi
+            if [[ -f "$target" ]] && diff -q "$target" "$temp" >/dev/null 2>&1; then
+              rm -f "$temp"
+              return 1
             fi
             mv -f "$temp" "$target"
             return 0
           }
 
-          # Rewrite Terraform module sources: github.com/... → git::https://github.com/...
           rewrite_tf_sources() {
-            local changed_files=0
-            local matched_lines=0
-
-            while IFS= read -r -d '' tf; do
+            local changed_files=0 matched_lines=0
+            mapfile -d '' -t tfs < <(find "$REPO_ROOT" -type f -name '*.tf' -not -path '*/.git/*' -print0)
+            for tf in "${tfs[@]}"; do
               if grep -Eq 'source\s*=\s*"\s*github\.com/' "$tf"; then
-                local count
                 count=$(grep -E 'source\s*=\s*"\s*github\.com/' -n "$tf" | wc -l | tr -d ' ')
                 matched_lines=$((matched_lines + count))
                 perl -0777 -i -pe 's/(source\s*=\s*")\s*github\.com\//${1}git::https:\/\/github.com\//g' "$tf"
                 changed_files=$((changed_files + 1))
               fi
-            done < <(find "$REPO_ROOT" -type f -name '*.tf' -not -path '*/.git/*' -print0)
-
+            done
             log "🔧 Rewrote module sources in $changed_files file(s); matched $matched_lines source line(s)."
             (( changed_files > 0 ))
           }
 
-          # =========================
-          # Main
-          # =========================
+          # ---- main ----
           require_tools
-
           log "📂 Repo root: $REPO_ROOT"
+
+          # IMPORTANT: No phantom empty element — use mapfile directly
           mapfile -t tf_dirs < <(find_tf_dirs)
 
           if ((${#tf_dirs[@]} == 0)); then
-            log "ℹ️  No .tf files found; generating dependabot.yml with GitHub Actions only (if enabled)."
+            log "ℹ️  No .tf files found; generating dependabot.yml with GitHub Actions only."
           fi
 
           tmpfile="$(mktemp)"
