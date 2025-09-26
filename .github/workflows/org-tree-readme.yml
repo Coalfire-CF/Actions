@@ -51,7 +51,7 @@ jobs:
           # ---- Defaults if config file is missing ----
           DEFAULT_FILES=("README.md")
           DEFAULT_CHAPTER="Tree"
-          DEFAULT_INCLUDE(".")
+          DEFAULT_INCLUDE=(".")
 
           # Allow override via env (optional)
           EXCLUDE_PATTERN="${EXCLUDE_PATTERN:-.git|node_modules|.github}"
