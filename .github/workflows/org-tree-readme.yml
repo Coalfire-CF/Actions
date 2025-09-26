@@ -44,34 +44,49 @@ jobs:
         run: |
           sudo apt-get install -y tree
 
-      # Derive the reusable workflow's ref (the part after '@' in github.workflow_ref)
+      # --- derive the ref used in `uses: owner/repo/.github/workflows/...@<ref>` ---
       - name: Derive script ref from reusable workflow ref
         id: derive
+        shell: bash
         run: |
-          # e.g., "Coalfire-CF/Actions/.github/workflows/org-tree-readme.yml@refs/heads/fix/org-tree-readme"
+          set -euo pipefail
+          # Example: "Coalfire-CF/Actions/.github/workflows/org-tree-readme.yml@refs/heads/fix/org-tree-readme"
           WF_REF="${{ github.workflow_ref }}"
-          SCRIPT_REF="${WF_REF#*@}"   # take the substring after '@' -> refs/heads/...
-          echo "wf_ref=$SCRIPT_REF" >> "$GITHUB_OUTPUT"
+          REF="${WF_REF#*@}"     # take substring after '@' → "refs/heads/..." or "refs/tags/..." or a SHA
+          # If GitHub ever hands a PR merge ref, ignore it so we fallback to default branch
+          if [[ "$REF" == refs/pull/* ]]; then
+            echo "Derived PR ref ($REF) — will use default branch of script repo."
+            REF=""
+          fi
+          echo "ref=$REF" >> "$GITHUB_OUTPUT"
 
-      # Try to checkout the script repo at the same ref as the reusable workflow
+      # Try to checkout the script repo at the SAME ref as the reusable workflow…
       - name: Checkout script repo (match reusable ref)
-        id: checkout_wfref
+        id: checkout_match
+        if: ${{ steps.derive.outputs.ref != '' }}
         uses: actions/checkout@v5
         continue-on-error: true
         with:
           repository: ${{ inputs.script_repo }}
-          ref: ${{ steps.derive.outputs.wf_ref }}
+          ref: ${{ steps.derive.outputs.ref }}
           path: _script_repo
           fetch-depth: 1
 
-      # Fallback to default branch of the script repo if matching ref didn't exist
+      # …otherwise (or if that ref doesn't exist there) fallback to script repo default branch
       - name: Checkout script repo (default branch fallback)
-        if: ${{ steps.checkout_wfref.outcome == 'failure' }}
+        if: ${{ steps.derive.outputs.ref == '' || steps.checkout_match.outcome == 'failure' }}
         uses: actions/checkout@v5
         with:
           repository: ${{ inputs.script_repo }}
           path: _script_repo
           fetch-depth: 1
+
+      # (Optional) show what we actually pulled (handy for debugging)
+      - name: Show script checkout
+        run: |
+          git -C _script_repo rev-parse --abbrev-ref HEAD || true
+          git -C _script_repo rev-parse --short=12 HEAD || true
+          ls -la _script_repo/scripts || true
 
       - name: Verify script exists
         run: |
