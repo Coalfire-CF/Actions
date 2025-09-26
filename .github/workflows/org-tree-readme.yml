@@ -16,6 +16,7 @@ on:
         description: "owner/repo that contains the script"
         type: string
         required: true
+      # script_ref intentionally removed – we auto-derive from the 'uses:' ref
       script_path:
         description: "path to script inside script_repo"
         type: string
@@ -44,20 +45,35 @@ jobs:
         run: |
           sudo apt-get install -y tree
 
-      # --- derive the ref used in `uses: owner/repo/.github/workflows/...@<ref>` ---
-      - name: Derive script ref from reusable workflow ref
+      # --- Derive the ref used in `uses: owner/repo/.github/workflows/...@<ref>` ---
+      - name: Derive script ref from caller
         id: derive
         shell: bash
         run: |
           set -euo pipefail
-          # Example: "Coalfire-CF/Actions/.github/workflows/org-tree-readme.yml@refs/heads/fix/org-tree-readme"
-          WF_REF="${{ github.workflow_ref }}"
-          REF="${WF_REF#*@}"     # take substring after '@' → "refs/heads/..." or "refs/tags/..." or a SHA
-          # If GitHub ever hands a PR merge ref, ignore it so we fallback to default branch
+          echo "github.action_ref='${{ github.action_ref }}'"
+          echo "github.workflow_ref='${{ github.workflow_ref }}'"
+          echo "env.GITHUB_ACTION_REF='${GITHUB_ACTION_REF:-}'"
+
+          # Prefer environment variable first (set by the runner for actions/reusables),
+          # then GitHub context, then workflow_ref parsing.
+          REF="${GITHUB_ACTION_REF:-}"
+          if [ -z "$REF" ]; then
+            REF="${{ github.action_ref }}"
+          fi
+          if [ -z "$REF" ]; then
+            WF="${{ github.workflow_ref }}"     # e.g. org/repo/.github/...@refs/heads/branch
+            REF="${WF#*@}"                      # take substring after '@'
+          fi
+
+          # If GitHub handed us a PR merge ref, do NOT use it for the script repo
           if [[ "$REF" == refs/pull/* ]]; then
             echo "Derived PR ref ($REF) — will use default branch of script repo."
             REF=""
+          else
+            echo "Using script ref: '${REF}'"
           fi
+
           echo "ref=$REF" >> "$GITHUB_OUTPUT"
 
       # Try to checkout the script repo at the SAME ref as the reusable workflow…
@@ -81,11 +97,12 @@ jobs:
           path: _script_repo
           fetch-depth: 1
 
-      # (Optional) show what we actually pulled (handy for debugging)
+      # Optional: show what we actually pulled
       - name: Show script checkout
         run: |
           git -C _script_repo rev-parse --abbrev-ref HEAD || true
           git -C _script_repo rev-parse --short=12 HEAD || true
+          ls -la _script_repo || true
           ls -la _script_repo/scripts || true
 
       - name: Verify script exists
