@@ -16,10 +16,6 @@ on:
         description: "owner/repo that contains the script"
         type: string
         required: true
-      script_ref:
-        description: "branch, tag, or SHA to fetch from script_repo"
-        type: string
-        required: true
       script_path:
         description: "path to script inside script_repo"
         type: string
@@ -39,19 +35,20 @@ jobs:
           ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
           fetch-depth: 0
 
+      # May need to change this when we move to Signed Commits  
       - name: Configure git identity (early)
         run: |
           git config user.name "${{ github.actor }}"
           git config user.email "${{ github.actor }}@users.noreply.github.com"
 
       - name: Install tree
-        run: sudo apt-get install -y tree
+        run: |
+          sudo apt-get install -y tree
 
-      - name: Checkout script repo (public, inside workspace)
+      - name: Checkout script repo (default branch)
         uses: actions/checkout@v5
         with:
           repository: ${{ inputs.script_repo }}
-          ref: ${{ inputs.script_ref }}
           path: _script_repo
           fetch-depth: 1
 
@@ -78,7 +75,7 @@ jobs:
         run: |
           set -e
           echo "_script_repo" >> .git/info/exclude
-          git restore --staged _script_repo || true
+          git restore --staged _script_repo 2>/dev/null || true
           rm -rf _script_repo || true
 
       # One-time self-heal if a stray submodule pointer landed previously
@@ -91,8 +88,6 @@ jobs:
           if git ls-files -s _script_repo 2>/dev/null | grep -q '^160000'; then
             echo "Removing stray _script_repo gitlink from index…"
             git rm -f --cached _script_repo || true
-
-            # Clean up .gitmodules if needed
             if [ -f .gitmodules ]; then
               git config -f .gitmodules --remove-section submodule._script_repo 2>/dev/null || true
               # If .gitmodules is now empty, delete it
@@ -101,7 +96,6 @@ jobs:
               fi
               git add .gitmodules || true
             fi
-
             # Commit only if something is staged
             if ! git diff --cached --quiet; then
               git commit -m "chore: remove stray _script_repo gitlink"
