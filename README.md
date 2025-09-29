@@ -24,7 +24,7 @@ Markdown linter. Triggered on PR to main branch.
 
 ### Release
 
-Creates a new tag and release on the repo.  This action is triggered by a merged PR to the main branch.
+Creates a new tag and release PR on the repo.  This action is triggered by a merged PR to the main branch.
 
 ### Terraform Validate
 #### Private Repository Access
@@ -107,7 +107,8 @@ This is a wrapper around [terraform-docs GitHub Actions](https://github.com/terr
 
 ```
 .
-└── README.md
+├── README.md
+└── release-please-config.json
 
 ```
 
