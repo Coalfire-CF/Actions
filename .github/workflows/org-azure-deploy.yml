@@ -20,7 +20,7 @@ jobs:
     steps:
     # Checkout the repository to the GitHub Actions runner
     - name: Checkout
-      uses: actions/checkout@v5
+      uses: actions/checkout@v6
 
     # Install the preferred version of Terraform CLI 
     - name: Setup Terraform
