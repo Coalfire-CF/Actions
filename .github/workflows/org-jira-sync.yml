@@ -42,6 +42,7 @@ jobs:
         JIRA_API_VERSION: ${{ vars.JIRA_API_VERSION }}
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
+        set -x  # Enable debug output
         # Determine authentication method and set AUTH_HEADER
         if [ -n "$JIRA_PAT" ]; then
           # Use Personal Access Token (for Jira Data Center/Server)
