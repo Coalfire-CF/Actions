@@ -51,7 +51,7 @@ jobs:
         elif [ -n "$JIRA_API_TOKEN" ] && [ -n "$JIRA_USER_EMAIL" ]; then
           # Use API Token with Basic Auth (for Jira Cloud)
           echo "Using API Token (Basic Auth) authentication"
-          AUTH=$(echo -n "$JIRA_USER_EMAIL:$JIRA_API_TOKEN" | base64)
+          AUTH=$(echo -n "$JIRA_USER_EMAIL:$JIRA_API_TOKEN" | base64 | tr -d '\n')
           AUTH_HEADER="Authorization: Basic $AUTH"
         else
           echo "❌ Error: Neither JIRA_PAT nor JIRA_API_TOKEN/JIRA_USER_EMAIL are configured"
