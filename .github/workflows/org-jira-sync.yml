@@ -1,8 +1,29 @@
 name: Sync GitHub Issue to Jira
 
 on:
-  issues:
-    types: [opened]
+  workflow_call:
+    inputs:
+      issue_title:
+        description: 'GitHub issue title'
+        required: true
+        type: string
+      issue_body:
+        description: 'GitHub issue body'
+        required: true
+        type: string
+      issue_number:
+        description: 'GitHub issue number'
+        required: true
+        type: number
+      issue_url:
+        description: 'GitHub issue URL'
+        required: true
+        type: string
+    secrets:
+      JIRA_API_TOKEN:
+        required: false
+      JIRA_PAT:
+        required: false
 
 jobs:
   create_jira_issue:
@@ -13,8 +34,8 @@ jobs:
       env:
         JIRA_BASE_URL: ${{ vars.JIRA_BASE_URL }}
         JIRA_USER_EMAIL: ${{ vars.JIRA_USER_EMAIL }}
-        JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
-        JIRA_PAT: ${{ secrets.JIRA_PAT }}
+        JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN != '' && secrets.JIRA_API_TOKEN || secrets.JIRA_API_TOKEN }}
+        JIRA_PAT: ${{ secrets.JIRA_PAT != '' && secrets.JIRA_PAT || secrets.JIRA_PAT }}
         JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
         JIRA_ISSUE_TYPE_ID: ${{ vars.JIRA_ISSUE_TYPE_ID }}
         JIRA_LABEL: ${{ vars.JIRA_LABEL }}
@@ -40,9 +61,9 @@ jobs:
         API_VERSION="${JIRA_API_VERSION:-3}"
 
         # Prepare the issue description with link back to GitHub
-        GITHUB_ISSUE_URL="${{ github.event.issue.html_url }}"
+        GITHUB_ISSUE_URL="${{ inputs.issue_url }}"
         ISSUE_BODY=$(cat <<EOF
-        ${{ github.event.issue.body }}
+        ${{ inputs.issue_body }}
 
         ---
         Created from GitHub Issue: $GITHUB_ISSUE_URL
@@ -50,7 +71,7 @@ jobs:
         )
 
         # Escape JSON special characters in summary and description
-        SUMMARY=$(echo "${{ github.event.issue.title }}" | jq -Rs .)
+        SUMMARY=$(echo "${{ inputs.issue_title }}" | jq -Rs .)
         DESCRIPTION=$(echo "$ISSUE_BODY" | jq -Rs .)
 
         # Build the JSON payload
@@ -105,7 +126,7 @@ jobs:
           echo "🔗 Jira URL: $JIRA_URL"
 
           # Comment on the GitHub issue with the Jira link
-          gh issue comment ${{ github.event.issue.number }} \
+          gh issue comment ${{ inputs.issue_number }} \
             --body "📋 Jira issue created: [$JIRA_KEY]($JIRA_URL)"
         else
           echo "❌ Failed to create Jira issue. HTTP Status: $HTTP_STATUS"
