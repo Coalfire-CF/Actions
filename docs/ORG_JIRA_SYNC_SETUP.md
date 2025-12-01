@@ -30,7 +30,7 @@ Navigate to your repository Settings → Secrets and variables → Actions → S
   5. Copy the token and save it as a secret
 - **Note**: API tokens created before December 15, 2024 will expire between March 14 and May 12, 2026
 
-You will also need to set the `JIRA_USER_EMAIL` variable (see below).
+You will also need to set the `JIRA_USER_EMAIL` secret (see below).
 
 ### Option 2: Jira Data Center/Server (Personal Access Token)
 
@@ -49,33 +49,36 @@ Navigate to your repository Settings → Secrets and variables → Actions → S
 - **Note**: PATs are only available for Jira Data Center/Server (v8.14+), not Jira Cloud
 - **Authentication**: Uses Bearer token authentication (no email required)
 
-## Required Variables
+## Required Secrets (All Configuration)
 
-Navigate to your repository Settings → Secrets and variables → Actions → Variables
+**Important**: All configuration values are stored as secrets to prevent exposure in public repositories.
 
-### 1. `JIRA_BASE_URL` (Variable)
-- **Type**: Repository Variable
+Navigate to your repository Settings → Secrets and variables → Actions → Secrets
+
+### 1. `JIRA_BASE_URL` (Secret)
+- **Type**: Repository Secret
 - **Description**: Your Jira instance URL
 - **Example Cloud**: `https://yourcompany.atlassian.net`
 - **Example Data Center**: `https://jira.yourcompany.com`
 - **Format**: No trailing slash
 - **Required for**: Both authentication methods
 
-### 2. `JIRA_USER_EMAIL` (Variable)
-- **Type**: Repository Variable
+### 2. `JIRA_USER_EMAIL` (Secret)
+- **Type**: Repository Secret
 - **Description**: The email address associated with your Jira API token
 - **Example**: `your.email@company.com`
 - **Required for**: Jira Cloud (API Token authentication) only
 - **Not needed for**: Jira Data Center/Server (PAT authentication)
 
-### 3. `JIRA_PROJECT_KEY` (Variable)
-- **Type**: Repository Variable
+### 3. `JIRA_PROJECT_KEY` (Secret)
+- **Type**: Repository Secret
 - **Description**: The project key where issues will be created
 - **Example**: `PROJ` or `DEV`
 - **How to find it**: Look at your Jira project URL or any issue key (the letters before the dash)
+- **Required for**: Both authentication methods
 
-### 4. `JIRA_ISSUE_TYPE_ID` (Variable)
-- **Type**: Repository Variable
+### 4. `JIRA_ISSUE_TYPE_ID` (Secret)
+- **Type**: Repository Secret
 - **Description**: The numeric ID of the issue type you want to create
 - **Common values**:
   - `10001` - Story
@@ -90,16 +93,17 @@ Navigate to your repository Settings → Secrets and variables → Actions → V
     --header 'Authorization: Basic YOUR_BASE64_ENCODED_CREDENTIALS' \
     --header 'Accept: application/json' | jq '.projects[].issuetypes[] | {id, name}'
   ```
+- **Required for**: Both authentication methods
 
-### 5. `JIRA_LABEL` (Variable)
-- **Type**: Repository Variable
+### 5. `JIRA_LABEL` (Secret)
+- **Type**: Repository Secret
 - **Description**: Label to add to all synced Jira issues
 - **Example**: `github-sync`, `automated`, or `from-github`
 - **Note**: This helps identify issues that were created automatically from GitHub
 - **Required for**: Both authentication methods
 
-### 6. `JIRA_API_VERSION` (Variable) - Optional
-- **Type**: Repository Variable
+### 6. `JIRA_API_VERSION` (Secret) - Optional
+- **Type**: Repository Secret
 - **Description**: Jira REST API version to use
 - **Default**: `3` (used if not specified)
 - **When to change**: Set to `2` if you're using an older Jira Data Center/Server instance
@@ -115,7 +119,7 @@ When a GitHub issue is opened:
    - Same description as the GitHub issue body
    - Link back to the original GitHub issue
    - The specified label
-3. A comment is added to the GitHub issue with a link to the Jira issue
+3. The Jira issue key and URL are logged in the workflow output (visible only to those with repository access)
 
 ## Testing the Setup
 
@@ -158,29 +162,53 @@ When a GitHub issue is opened:
 
 ## Quick Reference
 
+All configuration values are **Repository Secrets** (Settings → Secrets and variables → Actions → Secrets)
+
 ### For Jira Cloud
 
-**Secrets:**
+**Required Secrets:**
 - `JIRA_API_TOKEN` - Your API token from id.atlassian.com
-
-**Variables:**
 - `JIRA_BASE_URL` - Your Atlassian URL (e.g., `https://yourcompany.atlassian.net`)
 - `JIRA_USER_EMAIL` - Email associated with the API token
 - `JIRA_PROJECT_KEY` - Project key (e.g., `PROJ`)
 - `JIRA_ISSUE_TYPE_ID` - Issue type ID (e.g., `10002`)
 - `JIRA_LABEL` - Label for synced issues (e.g., `github-sync`)
-- `JIRA_API_VERSION` - (Optional) Set to `2` if needed, defaults to `3`
+
+**Optional Secrets:**
+- `JIRA_API_VERSION` - Set to `2` if needed, defaults to `3`
 
 ### For Jira Data Center/Server
 
-**Secrets:**
+**Required Secrets:**
 - `JIRA_PAT` - Your Personal Access Token from Jira profile
-
-**Variables:**
 - `JIRA_BASE_URL` - Your Jira instance URL (e.g., `https://jira.yourcompany.com`)
 - `JIRA_PROJECT_KEY` - Project key (e.g., `PROJ`)
 - `JIRA_ISSUE_TYPE_ID` - Issue type ID (e.g., `10002`)
 - `JIRA_LABEL` - Label for synced issues (e.g., `github-sync`)
-- `JIRA_API_VERSION` - (Optional) Set to `2` for older instances, defaults to `3`
+
+**Optional Secrets:**
+- `JIRA_API_VERSION` - Set to `2` for older instances, defaults to `3`
 
 **Note:** `JIRA_USER_EMAIL` is NOT needed for PAT authentication
+
+### Example Usage
+
+```bash
+name: Test - Sync GitHub Issue to Jira
+
+on:
+  issues:
+    types: [opened]
+
+jobs:
+  sync_to_jira:
+    uses: Coalfire-CF/Actions/.github/workflows/org-jira-sync.yml@v0.2.0
+    with:
+      issue_title: ${{ github.event.issue.title }}
+      issue_body: ${{ github.event.issue.body }}
+      issue_number: ${{ github.event.issue.number }}
+      issue_url: ${{ github.event.issue.html_url }}
+    secrets:
+      JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+      JIRA_PAT: ${{ secrets.JIRA_PAT }}
+```

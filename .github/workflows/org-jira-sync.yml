@@ -32,17 +32,15 @@ jobs:
     steps:
     - name: Create Jira Issue
       env:
-        JIRA_BASE_URL: ${{ vars.JIRA_BASE_URL }}
-        JIRA_USER_EMAIL: ${{ vars.JIRA_USER_EMAIL }}
-        JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN != '' && secrets.JIRA_API_TOKEN || secrets.JIRA_API_TOKEN }}
-        JIRA_PAT: ${{ secrets.JIRA_PAT != '' && secrets.JIRA_PAT || secrets.JIRA_PAT }}
-        JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
-        JIRA_ISSUE_TYPE_ID: ${{ vars.JIRA_ISSUE_TYPE_ID }}
-        JIRA_LABEL: ${{ vars.JIRA_LABEL }}
-        JIRA_API_VERSION: ${{ vars.JIRA_API_VERSION }}
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+        JIRA_USER_EMAIL: ${{ secrets.JIRA_USER_EMAIL }}
+        JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+        JIRA_PAT: ${{ secrets.JIRA_PAT }}
+        JIRA_PROJECT_KEY: ${{ secrets.JIRA_PROJECT_KEY }}
+        JIRA_ISSUE_TYPE_ID: ${{ secrets.JIRA_ISSUE_TYPE_ID }}
+        JIRA_LABEL: ${{ secrets.JIRA_LABEL }}
+        JIRA_API_VERSION: ${{ secrets.JIRA_API_VERSION }}
       run: |
-        set -x  # Enable debug output
         # Determine authentication method and set AUTH_HEADER
         if [ -n "$JIRA_PAT" ]; then
           # Use Personal Access Token (for Jira Data Center/Server)
@@ -125,10 +123,6 @@ jobs:
           JIRA_URL="$JIRA_BASE_URL/browse/$JIRA_KEY"
           echo "✅ Successfully created Jira issue: $JIRA_KEY"
           echo "🔗 Jira URL: $JIRA_URL"
-
-          # Comment on the GitHub issue with the Jira link
-          gh issue comment ${{ inputs.issue_number }} \
-            --body "📋 Jira issue created: [$JIRA_KEY]($JIRA_URL)"
         else
           echo "❌ Failed to create Jira issue. HTTP Status: $HTTP_STATUS"
           echo "Response: $RESPONSE_BODY"
