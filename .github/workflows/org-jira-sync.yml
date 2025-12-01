@@ -1,0 +1,114 @@
+name: Sync GitHub Issue to Jira
+
+on:
+  issues:
+    types: [opened]
+
+jobs:
+  create_jira_issue:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Create Jira Issue
+      env:
+        JIRA_BASE_URL: ${{ vars.JIRA_BASE_URL }}
+        JIRA_USER_EMAIL: ${{ vars.JIRA_USER_EMAIL }}
+        JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+        JIRA_PAT: ${{ secrets.JIRA_PAT }}
+        JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
+        JIRA_ISSUE_TYPE_ID: ${{ vars.JIRA_ISSUE_TYPE_ID }}
+        JIRA_LABEL: ${{ vars.JIRA_LABEL }}
+        JIRA_API_VERSION: ${{ vars.JIRA_API_VERSION }}
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        # Determine authentication method and set AUTH_HEADER
+        if [ -n "$JIRA_PAT" ]; then
+          # Use Personal Access Token (for Jira Data Center/Server)
+          echo "Using Personal Access Token (Bearer) authentication"
+          AUTH_HEADER="Authorization: Bearer $JIRA_PAT"
+        elif [ -n "$JIRA_API_TOKEN" ] && [ -n "$JIRA_USER_EMAIL" ]; then
+          # Use API Token with Basic Auth (for Jira Cloud)
+          echo "Using API Token (Basic Auth) authentication"
+          AUTH=$(echo -n "$JIRA_USER_EMAIL:$JIRA_API_TOKEN" | base64)
+          AUTH_HEADER="Authorization: Basic $AUTH"
+        else
+          echo "❌ Error: Neither JIRA_PAT nor JIRA_API_TOKEN/JIRA_USER_EMAIL are configured"
+          exit 1
+        fi
+
+        # Set API version (default to 3 for Cloud, can be overridden to 2 for older instances)
+        API_VERSION="${JIRA_API_VERSION:-3}"
+
+        # Prepare the issue description with link back to GitHub
+        GITHUB_ISSUE_URL="${{ github.event.issue.html_url }}"
+        ISSUE_BODY=$(cat <<EOF
+        ${{ github.event.issue.body }}
+
+        ---
+        Created from GitHub Issue: $GITHUB_ISSUE_URL
+        EOF
+        )
+
+        # Escape JSON special characters in summary and description
+        SUMMARY=$(echo "${{ github.event.issue.title }}" | jq -Rs .)
+        DESCRIPTION=$(echo "$ISSUE_BODY" | jq -Rs .)
+
+        # Build the JSON payload
+        PAYLOAD=$(cat <<EOF
+        {
+          "fields": {
+            "project": {
+              "key": "$JIRA_PROJECT_KEY"
+            },
+            "summary": $SUMMARY,
+            "description": {
+              "type": "doc",
+              "version": 1,
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": $DESCRIPTION
+                    }
+                  ]
+                }
+              ]
+            },
+            "issuetype": {
+              "id": "$JIRA_ISSUE_TYPE_ID"
+            },
+            "labels": ["$JIRA_LABEL"]
+          }
+        }
+        EOF
+        )
+
+        # Create the Jira issue
+        RESPONSE=$(curl -s -w "\n%{http_code}" --request POST \
+          --url "$JIRA_BASE_URL/rest/api/$API_VERSION/issue" \
+          --header "$AUTH_HEADER" \
+          --header "Accept: application/json" \
+          --header "Content-Type: application/json" \
+          --data "$PAYLOAD")
+
+        # Extract HTTP status code and response body
+        HTTP_STATUS=$(echo "$RESPONSE" | tail -n 1)
+        RESPONSE_BODY=$(echo "$RESPONSE" | sed '$d')
+
+        # Check if the request was successful
+        if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
+          JIRA_KEY=$(echo "$RESPONSE_BODY" | jq -r '.key')
+          JIRA_URL="$JIRA_BASE_URL/browse/$JIRA_KEY"
+          echo "✅ Successfully created Jira issue: $JIRA_KEY"
+          echo "🔗 Jira URL: $JIRA_URL"
+
+          # Comment on the GitHub issue with the Jira link
+          gh issue comment ${{ github.event.issue.number }} \
+            --body "📋 Jira issue created: [$JIRA_KEY]($JIRA_URL)"
+        else
+          echo "❌ Failed to create Jira issue. HTTP Status: $HTTP_STATUS"
+          echo "Response: $RESPONSE_BODY"
+          exit 1
+        fi
