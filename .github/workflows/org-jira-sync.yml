@@ -53,6 +53,16 @@ jobs:
         JIRA_LABEL: ${{ secrets.JIRA_LABEL }}
         JIRA_API_VERSION: ${{ secrets.JIRA_API_VERSION }}
       run: |
+        # Sanitize all secrets by trimming whitespace and newlines
+        JIRA_BASE_URL=$(echo "$JIRA_BASE_URL" | tr -d '\n\r' | xargs)
+        JIRA_USER_EMAIL=$(echo "$JIRA_USER_EMAIL" | tr -d '\n\r' | xargs)
+        JIRA_API_TOKEN=$(echo "$JIRA_API_TOKEN" | tr -d '\n\r' | xargs)
+        JIRA_PAT=$(echo "$JIRA_PAT" | tr -d '\n\r' | xargs)
+        JIRA_PROJECT_KEY=$(echo "$JIRA_PROJECT_KEY" | tr -d '\n\r' | xargs)
+        JIRA_ISSUE_TYPE_ID=$(echo "$JIRA_ISSUE_TYPE_ID" | tr -d '\n\r' | xargs)
+        JIRA_LABEL=$(echo "$JIRA_LABEL" | tr -d '\n\r' | xargs)
+        JIRA_API_VERSION=$(echo "$JIRA_API_VERSION" | tr -d '\n\r' | xargs)
+
         # Determine authentication method and set AUTH_HEADER
         if [ -n "$JIRA_PAT" ]; then
           # Use Personal Access Token (for Jira Data Center/Server)
