@@ -191,10 +191,14 @@ All configuration values are **Repository Secrets** (Settings → Secrets and va
 
 **Note:** `JIRA_USER_EMAIL` is NOT needed for PAT authentication
 
-### Example Usage
+## Usage in Your Repository
 
-```bash
-name: Test - Sync GitHub Issue to Jira
+To use this workflow in your repository, create a workflow file (e.g., `.github/workflows/jira-sync.yml`) with the following content:
+
+### For Jira Cloud (API Token)
+
+```yaml
+name: Sync GitHub Issue to Jira
 
 on:
   issues:
@@ -202,7 +206,7 @@ on:
 
 jobs:
   sync_to_jira:
-    uses: Coalfire-CF/Actions/.github/workflows/org-jira-sync.yml@v0.2.0
+    uses: Coalfire-CF/Actions/.github/workflows/org-jira-sync.yml@main
     with:
       issue_title: ${{ github.event.issue.title }}
       issue_body: ${{ github.event.issue.body }}
@@ -210,5 +214,45 @@ jobs:
       issue_url: ${{ github.event.issue.html_url }}
     secrets:
       JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+      JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+      JIRA_USER_EMAIL: ${{ secrets.JIRA_USER_EMAIL }}
+      JIRA_PROJECT_KEY: ${{ secrets.JIRA_PROJECT_KEY }}
+      JIRA_ISSUE_TYPE_ID: ${{ secrets.JIRA_ISSUE_TYPE_ID }}
+      JIRA_LABEL: ${{ secrets.JIRA_LABEL }}
+      JIRA_API_VERSION: ${{ secrets.JIRA_API_VERSION }}
       JIRA_PAT: ${{ secrets.JIRA_PAT }}
 ```
+
+### For Jira Data Center/Server (Personal Access Token)
+
+```yaml
+name: Sync GitHub Issue to Jira
+
+on:
+  issues:
+    types: [opened]
+
+jobs:
+  sync_to_jira:
+    uses: Coalfire-CF/Actions/.github/workflows/org-jira-sync.yml@main
+    with:
+      issue_title: ${{ github.event.issue.title }}
+      issue_body: ${{ github.event.issue.body }}
+      issue_number: ${{ github.event.issue.number }}
+      issue_url: ${{ github.event.issue.html_url }}
+    secrets:
+      JIRA_PAT: ${{ secrets.JIRA_PAT }}
+      JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+      JIRA_PROJECT_KEY: ${{ secrets.JIRA_PROJECT_KEY }}
+      JIRA_ISSUE_TYPE_ID: ${{ secrets.JIRA_ISSUE_TYPE_ID }}
+      JIRA_LABEL: ${{ secrets.JIRA_LABEL }}
+      JIRA_API_VERSION: ${{ secrets.JIRA_API_VERSION }}
+      JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+      JIRA_USER_EMAIL: ${{ secrets.JIRA_USER_EMAIL }}
+```
+
+**Important Notes:**
+- All secrets must be passed explicitly when calling the reusable workflow
+- You can use **organization secrets** or **repository secrets** - both work identically
+- Even if a secret is not needed for your authentication method (e.g., `JIRA_USER_EMAIL` for PAT auth), you still need to include it in the secrets list (it will simply be ignored)
+- Replace `@main` with a specific version tag (e.g., `@v1.0.0`) for production use
