@@ -24,6 +24,18 @@ on:
         required: false
       JIRA_PAT:
         required: false
+      JIRA_BASE_URL:
+        required: true
+      JIRA_USER_EMAIL:
+        required: false
+      JIRA_PROJECT_KEY:
+        required: true
+      JIRA_ISSUE_TYPE_ID:
+        required: true
+      JIRA_LABEL:
+        required: true
+      JIRA_API_VERSION:
+        required: false
 
 jobs:
   create_jira_issue:
