@@ -117,17 +117,34 @@ jobs:
         EOF
         )
 
-        # Create the Jira issue
+        # Debug: Show the URL we're posting to (without auth details)
+        echo "📍 Posting to: $JIRA_BASE_URL/rest/api/$API_VERSION/issue"
+        echo "📦 Project: $JIRA_PROJECT_KEY | Issue Type ID: $JIRA_ISSUE_TYPE_ID | Label: $JIRA_LABEL"
+
+        # Create the Jira issue (disable exit on error for better error handling)
+        set +e
         RESPONSE=$(curl -s -w "\n%{http_code}" --request POST \
           --url "$JIRA_BASE_URL/rest/api/$API_VERSION/issue" \
           --header "$AUTH_HEADER" \
           --header "Accept: application/json" \
           --header "Content-Type: application/json" \
           --data "$PAYLOAD")
+        CURL_EXIT_CODE=$?
+        set -e
+
+        # Check if curl itself failed
+        if [ $CURL_EXIT_CODE -ne 0 ]; then
+          echo "❌ curl command failed with exit code: $CURL_EXIT_CODE"
+          exit 1
+        fi
 
         # Extract HTTP status code and response body
         HTTP_STATUS=$(echo "$RESPONSE" | tail -n 1)
         RESPONSE_BODY=$(echo "$RESPONSE" | sed '$d')
+
+        # Debug: Show response details
+        echo "📊 HTTP Status: $HTTP_STATUS"
+        echo "📄 Response Body: $RESPONSE_BODY"
 
         # Check if the request was successful
         if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
