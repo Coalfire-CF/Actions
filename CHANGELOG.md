@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.1.1](https://github.com/Coalfire-CF/Actions/compare/v0.1.0...v0.1.1) (2026-01-06)
+
+
+### Miscellaneous
+
+* **deps:** bump actions/checkout from 5 to 6 ([8f9bf7c](https://github.com/Coalfire-CF/Actions/commit/8f9bf7c1583e2e430eb18b63c68de4e8eda0d177))
+* **deps:** bump actions/checkout from 5 to 6 ([86693b9](https://github.com/Coalfire-CF/Actions/commit/86693b95d94bd1ca10c588c952d223b1668f852f))
+* **deps:** bump actions/create-github-app-token from 1 to 2 ([3087278](https://github.com/Coalfire-CF/Actions/commit/308727810f805e706936a9b9918cbb372da853ad))
+* **deps:** bump actions/create-github-app-token from 1 to 2 ([7b235ba](https://github.com/Coalfire-CF/Actions/commit/7b235ba636248705addb1b0d891cdc20e41b0ab6))
+* **deps:** bump actions/setup-python from 6.0.0 to 6.1.0 ([387642e](https://github.com/Coalfire-CF/Actions/commit/387642eab769f76bd907b5cf74210778d2d14514))
+* **deps:** bump actions/setup-python from 6.0.0 to 6.1.0 ([000abaa](https://github.com/Coalfire-CF/Actions/commit/000abaa2b1a9b40f28a20c2183f2dfc9ec87c47a))
+* **deps:** bump googleapis/release-please-action from 4.3.0 to 4.4.0 ([10cf66f](https://github.com/Coalfire-CF/Actions/commit/10cf66f0ef1fae5f140132c3e0b92faed0cf2f07))
+* **deps:** bump googleapis/release-please-action from 4.3.0 to 4.4.0 ([9b8560b](https://github.com/Coalfire-CF/Actions/commit/9b8560b03c26221cd3357314091b21830dfef5c8))
+
 ## [0.1.0](https://github.com/Coalfire-CF/Actions/compare/v0.0.20...v0.1.0) (2025-09-29)
 
 
