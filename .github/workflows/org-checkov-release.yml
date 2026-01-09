@@ -1,0 +1,74 @@
+name: Checkov Release Scan
+
+on:
+  workflow_call:
+
+permissions:
+  contents: write  # Required to upload to releases
+  actions: read
+
+jobs:
+  checkov_release_scan:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v6
+
+    - name: Set up Python
+      uses: actions/setup-python@v6.1.0
+      with:
+        python-version: 3.11
+
+    - name: Install Checkov
+      run: |
+        pip install checkov
+
+    - name: Run Checkov on entire repository
+      id: checkov
+      run: |
+          # Run checkov on the entire directory
+          checkov -d . --output json --skip-check CKV_TF_1,CKV_TF_2 --compact --quiet > $GITHUB_WORKSPACE/checkov_release_results.json || true
+          # CKV_TF_1: Ensure module sources use a commit hash. We're ignoring this check because we're using a release tag. -DF
+          # CKV_TF_2: Ensure Terraform module sources use a tag with a version number. We're ignoring this check because we're using a release tag. -DF
+
+          # Check if there are any failed checks across all check types
+          FAILED_COUNT=$(jq '[.[] | .summary.failed] | add' $GITHUB_WORKSPACE/checkov_release_results.json)
+          if [ "$FAILED_COUNT" -gt 0 ]; then
+            echo "CHECKOV_PASSED=false" | tee -a $GITHUB_ENV
+          else
+            echo "CHECKOV_PASSED=true" | tee -a $GITHUB_ENV
+          fi
+
+    - name: Upload Checkov release scan results
+      uses: actions/upload-artifact@v6
+      if: always()
+      with:
+        name: checkov-release-scan-results
+        path: checkov_release_results.json
+        retention-days: 30
+
+    - name: Upload results to GitHub Release
+      if: always()
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        # Get the latest release tag
+        LATEST_TAG=$(gh release list --limit 1 --json tagName --jq '.[0].tagName')
+        if [ -n "$LATEST_TAG" ]; then
+          gh release upload "$LATEST_TAG" checkov_release_results.json --clobber
+        else
+          echo "No release found to upload results to"
+        fi
+
+    - name: Generate summary
+      if: always()
+      run: |
+        echo "## Checkov Release Scan Results" >> $GITHUB_STEP_SUMMARY
+        if [ "${{ env.CHECKOV_PASSED }}" == "true" ]; then
+          echo "✅ All Terraform files passed Checkov security checks" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "⚠️ Some Terraform files have security findings. Download the artifact for details." >> $GITHUB_STEP_SUMMARY
+        fi
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "Scan results have been uploaded as an artifact: \`checkov-release-scan-results\`" >> $GITHUB_STEP_SUMMARY

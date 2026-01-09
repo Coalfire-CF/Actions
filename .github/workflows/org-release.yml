@@ -16,6 +16,21 @@ jobs:
       pull-requests: write
       issues: write
 
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+
     steps:
       - name: Run Release Please
+        id: release
         uses: googleapis/release-please-action@v4.4.0
+
+  checkov-scan:
+    name: Run Checkov Security Scan
+    needs: release
+    if: needs.release.outputs.release_created == 'true'
+    uses: Coalfire-CF/Actions/.github/workflows/org-checkov-release.yml@feat/checkov-release-scan
+    permissions:
+      contents: write
+      actions: read
+    secrets: inherit
