@@ -1,9 +1,6 @@
 name: Checkov Release Scan
 
 on:
-  push:
-    tags:
-      - '*'
   workflow_call:
 
 jobs:
