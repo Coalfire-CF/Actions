@@ -24,31 +24,21 @@ jobs:
       run: |
         pip install checkov
 
-    - name: Find all Terraform files
-      id: find_tf_files
-      run: |
-        FILES=$(find . -type f -name "*.tf" | tr '\n' ' ')
-        echo "files=${FILES}" >> $GITHUB_OUTPUT
-
     - name: Run Checkov on entire repository
       id: checkov
       run: |
-          IFS=$'\n' read -ra FILES <<< "$(echo ${{ steps.find_tf_files.outputs.files }} | tr ' ' '\n')"
-          PASSED=true
-          RESULTS=()
-          for file in "${FILES[@]}"; do
-            if [ -n "$file" ]; then
-              OUTPUT=$(checkov -f "$file" --output json --skip-check CKV_TF_1,CKV_TF_2 || true)
-              # CKV_TF_1: Ensure module sources use a commit hash. We're ignoring this check because we're using a release tag. -DF
-              # CKV_TF_2: Ensure Terraform module sources use a tag with a version number. We're ignoring this check because we're using a release tag. -DF
-              RESULTS+=("$OUTPUT")
-              if [[ "$(echo "$OUTPUT" | jq '.results.failed_checks | length')" -gt 0 ]]; then
-                PASSED=false
-              fi
-            fi
-          done
-          echo "["$(IFS=,; echo "${RESULTS[*]}")"]" > $GITHUB_WORKSPACE/checkov_release_results.json
-          echo "CHECKOV_PASSED=$PASSED" | tee -a $GITHUB_ENV
+          # Run checkov on the entire directory
+          checkov -d . --output json --skip-check CKV_TF_1,CKV_TF_2 --compact --quiet > $GITHUB_WORKSPACE/checkov_release_results.json || true
+          # CKV_TF_1: Ensure module sources use a commit hash. We're ignoring this check because we're using a release tag. -DF
+          # CKV_TF_2: Ensure Terraform module sources use a tag with a version number. We're ignoring this check because we're using a release tag. -DF
+
+          # Check if there are any failed checks across all check types
+          FAILED_COUNT=$(jq '[.[] | .summary.failed] | add' $GITHUB_WORKSPACE/checkov_release_results.json)
+          if [ "$FAILED_COUNT" -gt 0 ]; then
+            echo "CHECKOV_PASSED=false" | tee -a $GITHUB_ENV
+          else
+            echo "CHECKOV_PASSED=true" | tee -a $GITHUB_ENV
+          fi
 
     - name: Upload Checkov release scan results
       uses: actions/upload-artifact@v6
