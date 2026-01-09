@@ -1,0 +1,71 @@
+name: Checkov Release Scan
+
+on:
+  push:
+    tags:
+      - '*'
+  workflow_call:
+
+jobs:
+  checkov_release_scan:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v6
+
+    - name: Set up Python
+      uses: actions/setup-python@v6.1.0
+      with:
+        python-version: 3.11
+
+    - name: Install Checkov
+      run: |
+        pip install checkov
+
+    - name: Find all Terraform files
+      id: find_tf_files
+      run: |
+        echo "files<<EOF" >> $GITHUB_OUTPUT
+        find . -type f -name "*.tf" | tr '\n' ' ' >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+
+    - name: Run Checkov on entire repository
+      id: checkov
+      run: |
+          IFS=$'\n' read -ra FILES <<< "$(echo ${{ steps.find_tf_files.outputs.files }} | tr ' ' '\n')"
+          PASSED=true
+          RESULTS=()
+          for file in "${FILES[@]}"; do
+            if [ -n "$file" ]; then
+              OUTPUT=$(checkov -f "$file" --output json --skip-check CKV_TF_1,CKV_TF_2 || true)
+              # CKV_TF_1: Ensure module sources use a commit hash. We're ignoring this check because we're using a release tag. -DF
+              # CKV_TF_2: Ensure Terraform module sources use a tag with a version number. We're ignoring this check because we're using a release tag. -DF
+              RESULTS+=("$OUTPUT")
+              if [[ "$(echo "$OUTPUT" | jq '.results.failed_checks | length')" -gt 0 ]]; then
+                PASSED=false
+              fi
+            fi
+          done
+          echo "["$(IFS=,; echo "${RESULTS[*]}")"]" > $GITHUB_WORKSPACE/checkov_release_results.json
+          echo "CHECKOV_PASSED=$PASSED" | tee -a $GITHUB_ENV
+
+    - name: Upload Checkov release scan results
+      uses: actions/upload-artifact@v6
+      if: always()
+      with:
+        name: checkov-release-scan-results
+        path: checkov_release_results.json
+        retention-days: 90
+
+    - name: Generate summary
+      if: always()
+      run: |
+        echo "## Checkov Release Scan Results" >> $GITHUB_STEP_SUMMARY
+        if [ "${{ env.CHECKOV_PASSED }}" == "true" ]; then
+          echo "✅ All Terraform files passed Checkov security checks" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "⚠️ Some Terraform files have security findings. Download the artifact for details." >> $GITHUB_STEP_SUMMARY
+        fi
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "Scan results have been uploaded as an artifact: \`checkov-release-scan-results\`" >> $GITHUB_STEP_SUMMARY
