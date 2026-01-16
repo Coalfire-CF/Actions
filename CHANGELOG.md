@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.2.1](https://github.com/Coalfire-CF/Actions/compare/v0.2.0...v0.2.1) (2026-01-16)
+
+
+### Bug Fixes
+
+* skip github release creation temporarily to unblock release-please ([4a28c61](https://github.com/Coalfire-CF/Actions/commit/4a28c61ae0ee008029be78909dfecc0791689c83))
+* splitting local and reusable release process ([a3ddaed](https://github.com/Coalfire-CF/Actions/commit/a3ddaedd64655287ed5f8112254257180494bf3f))
+* splitting local and reusable release process ([24ac2af](https://github.com/Coalfire-CF/Actions/commit/24ac2af662d8ea4602bcdc7e29d05d5eab1b77f3))
+* testing new release fix ([b978089](https://github.com/Coalfire-CF/Actions/commit/b978089f0759cd94275a7d5ec1722d2326d1b637))
+* testing new release fix ([d3b272d](https://github.com/Coalfire-CF/Actions/commit/d3b272da334287bcb9729ab3feb9856e9ac0d463))
+* updating pinned branch to main for temp workaround. ([4819e1c](https://github.com/Coalfire-CF/Actions/commit/4819e1c3160c90bbfdd538c4eaa9c875930d3869))
+* updating pinned branch to main for temp workaround. ([36f11df](https://github.com/Coalfire-CF/Actions/commit/36f11dfe11e66e160c9e1982e9697ec822b6dd7f))
+
+
+### Miscellaneous
+
+* trigger release-please after fixing v0.2.0 tag ([895a4b7](https://github.com/Coalfire-CF/Actions/commit/895a4b7945d78e30a932c975c55e8a2b08670191))
+* trigger release-please after updating PR label ([e1225f7](https://github.com/Coalfire-CF/Actions/commit/e1225f75c26d99c33170f657a0ca3b5419fbd5fc))
+* trigger release-please to create new PR ([e7357fb](https://github.com/Coalfire-CF/Actions/commit/e7357fb61d5ab3718839683e0c8f5842a6b39ce1))
+
 ## [0.2.0](https://github.com/Coalfire-CF/Actions/compare/v0.1.1...v0.2.0) (2026-01-07)
 
 
