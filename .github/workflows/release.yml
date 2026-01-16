@@ -19,5 +19,3 @@ jobs:
     steps:
       - name: Run Release Please
         uses: googleapis/release-please-action@v4.4.0
-        with:
-          skip-github-release: true  # Temporarily skip - v0.2.0 was created manually
