@@ -29,7 +29,7 @@ jobs:
     name: Run Checkov Security Scan
     needs: release
     if: needs.release.outputs.release_created == 'true'
-    uses: Coalfire-CF/Actions/.github/workflows/org-checkov-release.yml@feat/checkov-release-scan
+    uses: Coalfire-CF/Actions/.github/workflows/org-checkov-release.yml@main # This is a temp fix, will be investigating manually changing this to match versions after a cut to avoid loops.
     permissions:
       contents: write
       actions: read
