@@ -24,6 +24,8 @@ jobs:
       - name: Run Release Please
         id: release
         uses: googleapis/release-please-action@v4.4.0
+        with:
+          token: ${{ github.token }}
 
   checkov-scan:
     name: Run Checkov Security Scan
