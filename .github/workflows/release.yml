@@ -1,7 +1,12 @@
 name: Release Please
 
+# This workflow is for creating releases in the Actions repo itself.
+# For downstream repos using the reusable workflow, see org-release.yml
+
 on:
-  push:
+  pull_request:
+    types:
+      - closed
     branches:
       - main
   workflow_call:

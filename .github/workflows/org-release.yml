@@ -1,5 +1,14 @@
 name: Release Please
 
+# This is a reusable workflow for downstream repos to call.
+# NOTE: This workflow is NOT used for Actions repo releases - see release.yml instead.
+#
+# Usage in downstream repos:
+#   jobs:
+#     create-release:
+#       uses: Coalfire-CF/Actions/.github/workflows/org-release.yml@v0.2.1
+#       secrets: inherit
+
 on:
   workflow_call:
 
