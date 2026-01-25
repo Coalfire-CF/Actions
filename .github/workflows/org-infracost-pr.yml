@@ -8,15 +8,16 @@ on:
         required: false
         default: 'USD'
         type: string
-      show_all_projects:
-        description: 'Show all projects in the comment, even if they have no cost changes'
-        required: false
-        default: true
-        type: boolean
     secrets:
       INFRACOST_API_KEY:
         description: 'Infracost API key'
         required: true
+      INFRACOST_APP_ID:
+        description: 'The GitHub App ID for private module access'
+        required: false
+      INFRACOST_APP_PRIVATE_KEY:
+        description: 'The GitHub App private key for private module access'
+        required: false
 
 permissions:
   contents: read
@@ -31,6 +32,33 @@ jobs:
       uses: actions/checkout@v6
       with:
         ref: ${{ github.event.pull_request.base.ref }}
+
+    - name: Check for private repo secrets
+      id: check-secrets
+      run: |
+        if [ -n "$APP_CLIENT_ID" ] && [ -n "$APP_PRIVATE_KEY" ]; then
+          echo "has_secrets=true" >> $GITHUB_OUTPUT
+        else
+          echo "has_secrets=false" >> $GITHUB_OUTPUT
+        fi
+      env:
+        APP_CLIENT_ID: ${{ secrets.INFRACOST_APP_ID }}
+        APP_PRIVATE_KEY: ${{ secrets.INFRACOST_APP_PRIVATE_KEY }}
+
+    - name: Get Checkout Token
+      id: checkout-token
+      if: steps.check-secrets.outputs.has_secrets == 'true'
+      uses: actions/create-github-app-token@v2
+      with:
+        app-id: ${{ secrets.INFRACOST_APP_ID }}
+        private-key: ${{ secrets.INFRACOST_APP_PRIVATE_KEY }}
+        owner: ${{ github.repository_owner }}
+
+    - name: Configure Git for private modules
+      if: steps.check-secrets.outputs.has_secrets == 'true'
+      run: |
+        git config --global url."https://actions:${{ steps.checkout-token.outputs.token }}@github.com".insteadOf https://github.com
+        git config --global url."https://actions:${{ steps.checkout-token.outputs.token }}@github.com/".insteadOf ssh://git@github.com/
 
     - name: Setup Infracost
       uses: infracost/actions/setup@v3
@@ -61,4 +89,3 @@ jobs:
       with:
         path: /tmp/infracost-diff.json
         behavior: update
-        show-all-projects: ${{ inputs.show_all_projects }}
