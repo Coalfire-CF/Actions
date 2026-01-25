@@ -70,6 +70,10 @@ jobs:
       env:
         INFRACOST_ENABLE_CLOUD: false
       run: |
+        echo "=== Infracost Baseline Breakdown (Table) ==="
+        infracost breakdown --path=. --format=table || true
+        echo ""
+        echo "=== Generating JSON output ==="
         infracost breakdown --path=. \
           --format=json \
           --out-file=/tmp/infracost-base.json
@@ -83,10 +87,17 @@ jobs:
       env:
         INFRACOST_ENABLE_CLOUD: false
       run: |
+        echo "=== Infracost PR Branch Breakdown (Table) ==="
+        infracost breakdown --path=. --format=table || true
+        echo ""
+        echo "=== Generating Diff JSON ==="
         infracost diff --path=. \
           --format=json \
           --compare-to=/tmp/infracost-base.json \
           --out-file=/tmp/infracost-diff.json
+        echo ""
+        echo "=== Diff Summary ==="
+        cat /tmp/infracost-diff.json | jq '.diffTotalMonthlyCost, .totalMonthlyCost' || true
 
     - name: Post Infracost comment
       uses: infracost/actions/comment@v1
