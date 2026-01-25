@@ -42,3 +42,13 @@ jobs:
       contents: write
       actions: read
     secrets: inherit
+
+  infracost-breakdown:
+    name: Run Infracost Cost Breakdown
+    needs: release
+    if: needs.release.outputs.release_created == 'true'
+    uses: Coalfire-CF/Actions/.github/workflows/org-infracost-release.yml@main
+    permissions:
+      contents: write
+      actions: read
+    secrets: inherit

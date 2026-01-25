@@ -1,0 +1,64 @@
+name: Infracost PR Scan
+
+on:
+  workflow_call:
+    inputs:
+      currency:
+        description: 'Currency to display costs in (USD, EUR, GBP, etc.)'
+        required: false
+        default: 'USD'
+        type: string
+      show_all_projects:
+        description: 'Show all projects in the comment, even if they have no cost changes'
+        required: false
+        default: true
+        type: boolean
+    secrets:
+      INFRACOST_API_KEY:
+        description: 'Infracost API key'
+        required: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  infracost_pr_scan:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout base branch
+      uses: actions/checkout@v6
+      with:
+        ref: ${{ github.event.pull_request.base.ref }}
+
+    - name: Setup Infracost
+      uses: infracost/actions/setup@v3
+      with:
+        api-key: ${{ secrets.INFRACOST_API_KEY }}
+        currency: ${{ inputs.currency }}
+
+    - name: Generate Infracost baseline
+      run: |
+        infracost breakdown --path=. \
+          --format=json \
+          --out-file=/tmp/infracost-base.json
+
+    - name: Checkout PR branch
+      uses: actions/checkout@v6
+      with:
+        ref: ${{ github.event.pull_request.head.ref }}
+
+    - name: Generate Infracost diff
+      run: |
+        infracost diff --path=. \
+          --format=json \
+          --compare-to=/tmp/infracost-base.json \
+          --out-file=/tmp/infracost-diff.json
+
+    - name: Post Infracost comment
+      uses: infracost/actions/comment@v1
+      with:
+        path: /tmp/infracost-diff.json
+        behavior: update
+        show-all-projects: ${{ inputs.show_all_projects }}
