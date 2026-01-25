@@ -52,3 +52,13 @@ jobs:
       contents: write
       actions: read
     secrets: inherit
+
+  trivy-scan:
+    name: Run Trivy Security Scan
+    needs: release
+    if: needs.release.outputs.release_created == 'true'
+    uses: Coalfire-CF/Actions/.github/workflows/org-trivy-release.yml@feat/trivy-scanning
+    permissions:
+      contents: write
+      actions: read
+    secrets: inherit

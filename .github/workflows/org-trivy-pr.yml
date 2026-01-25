@@ -1,0 +1,144 @@
+name: Trivy PR Scan
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  trivy_scan:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+        ref: ${{ github.head_ref }}
+
+    - name: Get changed Terraform files
+      id: get_changed_files
+      run: |
+        CHANGED_FILES=$(git diff --name-only --diff-filter=d origin/${{ github.base_ref }}..${{ github.head_ref }} -- '*.tf' | tr '\n' ' ')
+        echo "files=$CHANGED_FILES" >> $GITHUB_OUTPUT
+        if [ -z "$CHANGED_FILES" ]; then
+          echo "has_tf_files=false" >> $GITHUB_OUTPUT
+        else
+          echo "has_tf_files=true" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Run Trivy scanner
+      if: steps.get_changed_files.outputs.has_tf_files == 'true'
+      uses: aquasecurity/trivy-action@v0.33.1
+      with:
+        scan-type: 'config'
+        scan-ref: '.'
+        format: 'json'
+        output: 'trivy_results.json'
+        exit-code: '0'
+        severity: 'CRITICAL,HIGH,MEDIUM'
+
+    - name: Run Trivy for table output
+      if: steps.get_changed_files.outputs.has_tf_files == 'true'
+      uses: aquasecurity/trivy-action@v0.33.1
+      with:
+        scan-type: 'config'
+        scan-ref: '.'
+        format: 'table'
+        output: 'trivy_results.txt'
+        exit-code: '0'
+        severity: 'CRITICAL,HIGH,MEDIUM'
+
+    - name: Create comment with Trivy results
+      if: always()
+      uses: actions/github-script@v8
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        script: |
+          const fs = require('fs');
+          const hasTfFiles = '${{ steps.get_changed_files.outputs.has_tf_files }}' === 'true';
+
+          if (!hasTfFiles) {
+            const output = `🌟 No Terraform files were modified in this PR. Trivy scan skipped. 🌟`;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: output
+            });
+            return;
+          }
+
+          let trivyResults;
+          try {
+            trivyResults = JSON.parse(fs.readFileSync('trivy_results.json', 'utf8'));
+          } catch (e) {
+            const output = `⚠️ Failed to parse Trivy results. Check workflow logs for details.`;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: output
+            });
+            return;
+          }
+
+          // Count vulnerabilities
+          let totalVulns = 0;
+          let critical = 0;
+          let high = 0;
+          let medium = 0;
+
+          if (trivyResults.Results) {
+            for (const result of trivyResults.Results) {
+              if (result.Misconfigurations) {
+                for (const misconfig of result.Misconfigurations) {
+                  totalVulns++;
+                  if (misconfig.Severity === 'CRITICAL') critical++;
+                  else if (misconfig.Severity === 'HIGH') high++;
+                  else if (misconfig.Severity === 'MEDIUM') medium++;
+                }
+              }
+            }
+          }
+
+          let output;
+          if (totalVulns === 0) {
+            output = `#### Trivy Security Scan Results 🛡️\n\n` +
+              `✅ No security misconfigurations found in Terraform files. Good job! 🌟`;
+          } else {
+            output = `#### Trivy Security Scan Results 🛡️\n\n` +
+              `| Severity | Count |\n` +
+              `| -------- | ----- |\n` +
+              `| 🔴 Critical | ${critical} |\n` +
+              `| 🟠 High | ${high} |\n` +
+              `| 🟡 Medium | ${medium} |\n` +
+              `| **Total** | **${totalVulns}** |\n\n`;
+
+            // Add details table
+            output += `<details>\n<summary>Click to see detailed findings</summary>\n\n` +
+              `| File | Severity | ID | Title |\n` +
+              `| ---- | -------- | -- | ----- |\n`;
+
+            if (trivyResults.Results) {
+              for (const result of trivyResults.Results) {
+                if (result.Misconfigurations) {
+                  for (const misconfig of result.Misconfigurations) {
+                    const severity = misconfig.Severity === 'CRITICAL' ? '🔴 CRITICAL' :
+                                    misconfig.Severity === 'HIGH' ? '🟠 HIGH' : '🟡 MEDIUM';
+                    output += `| ${result.Target} | ${severity} | ${misconfig.ID} | ${misconfig.Title} |\n`;
+                  }
+                }
+              }
+            }
+            output += `\n</details>\n\n⚠️ Please review the security findings above.`;
+          }
+
+          await github.rest.issues.createComment({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.issue.number,
+            body: output
+          });
