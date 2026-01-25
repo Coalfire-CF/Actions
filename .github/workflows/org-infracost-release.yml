@@ -77,12 +77,16 @@ jobs:
         currency: ${{ inputs.currency }}
 
     - name: Generate Infracost breakdown (JSON)
+      env:
+        INFRACOST_ENABLE_CLOUD: false
       run: |
         infracost breakdown --path=. \
           --format=json \
           --out-file=$GITHUB_WORKSPACE/infracost_release_results.json
 
     - name: Generate Infracost breakdown (Markdown)
+      env:
+        INFRACOST_ENABLE_CLOUD: false
       run: |
         # Generate table format for the markdown file
         INFRACOST_OUTPUT=$(infracost breakdown --path=. --format=table 2>/dev/null || true)

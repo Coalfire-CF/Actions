@@ -67,6 +67,8 @@ jobs:
         currency: ${{ inputs.currency }}
 
     - name: Generate Infracost baseline
+      env:
+        INFRACOST_ENABLE_CLOUD: false
       run: |
         infracost breakdown --path=. \
           --format=json \
@@ -78,6 +80,8 @@ jobs:
         ref: ${{ github.event.pull_request.head.ref }}
 
     - name: Generate Infracost diff
+      env:
+        INFRACOST_ENABLE_CLOUD: false
       run: |
         infracost diff --path=. \
           --format=json \
