@@ -9,10 +9,10 @@ on:
         default: '1.11.4'
         type: string
     secrets:
-      APP_CLIENT_ID:
+      TF_VALIDATE_APP_CLIENT_ID:
         description: 'The GitHub App client ID for Terraform authentication (only needed for private repositories)'
         required: false
-      APP_PRIVATE_KEY:
+      TF_VALIDATE_APP_PRIVATE_KEY:
         description: 'The GitHub App private key for Terraform authentication (only needed for private repositories)'
         required: false
 
@@ -40,22 +40,22 @@ jobs:
     - name: Check for secrets
       id: check-secrets
       run: |
-        if [ -n "$APP_CLIENT_ID" ] && [ -n "$APP_PRIVATE_KEY" ]; then
+        if [ -n "$TF_VALIDATE_APP_CLIENT_ID" ] && [ -n "$TF_VALIDATE_APP_PRIVATE_KEY" ]; then
           echo "has_secrets=true" >> $GITHUB_OUTPUT
         else
           echo "has_secrets=false" >> $GITHUB_OUTPUT
         fi
       env:
-        APP_CLIENT_ID: ${{ secrets.APP_CLIENT_ID }}
-        APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+        TF_VALIDATE_APP_CLIENT_ID: ${{ secrets.TF_VALIDATE_APP_CLIENT_ID }}
+        TF_VALIDATE_APP_PRIVATE_KEY: ${{ secrets.TF_VALIDATE_APP_PRIVATE_KEY }}
         
     - name: Get Checkout Token
       id: checkout-token
       if: steps.check-secrets.outputs.has_secrets == 'true'
       uses: actions/create-github-app-token@v2
       with:
-        app-id: ${{ secrets.APP_CLIENT_ID }}
-        private-key: ${{ secrets.APP_PRIVATE_KEY }}
+        app-id: ${{ secrets.TF_VALIDATE_APP_CLIENT_ID }}
+        private-key: ${{ secrets.TF_VALIDATE_APP_PRIVATE_KEY }}
         owner: ${{ github.repository_owner }}
     
     - name: Configure Git
