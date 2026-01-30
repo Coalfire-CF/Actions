@@ -1,0 +1,89 @@
+name: Trivy Release Scan
+
+on:
+  workflow_call:
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  trivy_release_scan:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v6
+
+    - name: Run Trivy scanner (JSON)
+      uses: aquasecurity/trivy-action@0.33.1
+      with:
+        scan-type: 'config'
+        scan-ref: '.'
+        format: 'json'
+        output: 'trivy_release_results.json'
+        exit-code: '0'
+        severity: 'CRITICAL,HIGH,MEDIUM,LOW'
+
+    - name: Run Trivy scanner (Table)
+      uses: aquasecurity/trivy-action@0.33.1
+      with:
+        scan-type: 'config'
+        scan-ref: '.'
+        format: 'table'
+        output: 'trivy_release_results.txt'
+        exit-code: '0'
+        severity: 'CRITICAL,HIGH,MEDIUM,LOW'
+
+    - name: Generate SBOM (CycloneDX)
+      uses: aquasecurity/trivy-action@0.33.1
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'cyclonedx'
+        output: 'sbom-cyclonedx.json'
+
+    - name: Check for vulnerabilities
+      id: check_vulns
+      run: |
+        # Count misconfigurations
+        VULN_COUNT=$(jq '[.Results[]?.Misconfigurations // [] | length] | add // 0' trivy_release_results.json)
+        echo "vuln_count=$VULN_COUNT" >> $GITHUB_OUTPUT
+        if [ "$VULN_COUNT" -gt 0 ]; then
+          echo "TRIVY_PASSED=false" >> $GITHUB_ENV
+        else
+          echo "TRIVY_PASSED=true" >> $GITHUB_ENV
+        fi
+
+    - name: Upload results to GitHub Release
+      if: always()
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        # Get the latest release tag
+        LATEST_TAG=$(gh release list --limit 1 --json tagName --jq '.[0].tagName')
+        if [ -n "$LATEST_TAG" ]; then
+          gh release upload "$LATEST_TAG" trivy_release_results.json trivy_release_results.txt sbom-cyclonedx.json --clobber || echo "Failed to upload to release"
+        else
+          echo "No release found to upload results to"
+        fi
+
+    - name: Generate summary
+      if: always()
+      run: |
+        echo "## Trivy Release Scan Results" >> $GITHUB_STEP_SUMMARY
+        if [ "${{ env.TRIVY_PASSED }}" == "true" ]; then
+          echo "✅ No security misconfigurations found in Terraform files" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "⚠️ Security misconfigurations found. Download the artifact for details." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Summary" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat trivy_release_results.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+        fi
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Release Assets" >> $GITHUB_STEP_SUMMARY
+        echo "- \`trivy_release_results.json\` - Security scan results (JSON)" >> $GITHUB_STEP_SUMMARY
+        echo "- \`trivy_release_results.txt\` - Security scan results (Table)" >> $GITHUB_STEP_SUMMARY
+        echo "- \`sbom-cyclonedx.json\` - Software Bill of Materials (CycloneDX)" >> $GITHUB_STEP_SUMMARY

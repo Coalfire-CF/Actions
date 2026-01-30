@@ -1,0 +1,108 @@
+name: Infracost PR Scan
+
+on:
+  workflow_call:
+    inputs:
+      currency:
+        description: 'Currency to display costs in (USD, EUR, GBP, etc.)'
+        required: false
+        default: 'USD'
+        type: string
+    secrets:
+      INFRACOST_API_KEY:
+        description: 'Infracost API key'
+        required: true
+      INFRACOST_APP_ID:
+        description: 'The GitHub App ID for private module access'
+        required: false
+      INFRACOST_APP_PRIVATE_KEY:
+        description: 'The GitHub App private key for private module access'
+        required: false
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  infracost_pr_scan:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout base branch
+      uses: actions/checkout@v6
+      with:
+        ref: ${{ github.event.pull_request.base.ref }}
+
+    - name: Check for private repo secrets
+      id: check-secrets
+      run: |
+        if [ -n "$APP_CLIENT_ID" ] && [ -n "$APP_PRIVATE_KEY" ]; then
+          echo "has_secrets=true" >> $GITHUB_OUTPUT
+        else
+          echo "has_secrets=false" >> $GITHUB_OUTPUT
+        fi
+      env:
+        APP_CLIENT_ID: ${{ secrets.INFRACOST_APP_ID }}
+        APP_PRIVATE_KEY: ${{ secrets.INFRACOST_APP_PRIVATE_KEY }}
+
+    - name: Get Checkout Token
+      id: checkout-token
+      if: steps.check-secrets.outputs.has_secrets == 'true'
+      uses: actions/create-github-app-token@v2
+      with:
+        app-id: ${{ secrets.INFRACOST_APP_ID }}
+        private-key: ${{ secrets.INFRACOST_APP_PRIVATE_KEY }}
+        owner: ${{ github.repository_owner }}
+
+    - name: Configure Git for private modules
+      if: steps.check-secrets.outputs.has_secrets == 'true'
+      run: |
+        git config --global url."https://actions:${{ steps.checkout-token.outputs.token }}@github.com".insteadOf https://github.com
+        git config --global url."https://actions:${{ steps.checkout-token.outputs.token }}@github.com/".insteadOf ssh://git@github.com/
+
+    - name: Setup Infracost
+      uses: infracost/actions/setup@v3
+      with:
+        api-key: ${{ secrets.INFRACOST_API_KEY }}
+        currency: ${{ inputs.currency }}
+
+    - name: Generate Infracost baseline
+      env:
+        INFRACOST_ENABLE_CLOUD: false
+      run: |
+        echo "=== Infracost Baseline Breakdown (Table) ==="
+        infracost breakdown --path=. --format=table || true
+        echo ""
+        echo "=== Generating JSON output ==="
+        infracost breakdown --path=. \
+          --format=json \
+          --out-file=/tmp/infracost-base.json
+
+    - name: Checkout PR branch
+      uses: actions/checkout@v6
+      with:
+        ref: ${{ github.event.pull_request.head.ref }}
+
+    - name: Generate Infracost diff
+      env:
+        INFRACOST_ENABLE_CLOUD: false
+      run: |
+        echo "=== Infracost PR Branch Breakdown (Table) ==="
+        infracost breakdown --path=. --format=table || true
+        echo ""
+        echo "=== Generating Diff JSON ==="
+        infracost diff --path=. \
+          --format=json \
+          --compare-to=/tmp/infracost-base.json \
+          --out-file=/tmp/infracost-diff.json
+        echo ""
+        echo "=== Diff Summary ==="
+        cat /tmp/infracost-diff.json | jq '.diffTotalMonthlyCost, .totalMonthlyCost' || true
+
+    - name: Post Infracost comment
+      env:
+        INFRACOST_ENABLE_CLOUD: false
+      uses: infracost/actions/comment@v1
+      with:
+        path: /tmp/infracost-diff.json
+        behavior: update
