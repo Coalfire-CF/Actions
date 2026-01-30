@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.2.2](https://github.com/Coalfire-CF/Actions/compare/v0.2.1...v0.2.2) (2026-01-28)
+
+
+### Bug Fixes
+
+* add org creds ([1ac8f3d](https://github.com/Coalfire-CF/Actions/commit/1ac8f3d96ce0c30116a14701886038390ae8b481))
+* add org creds ([f2798af](https://github.com/Coalfire-CF/Actions/commit/f2798affbc1c9abf98feff6b9eb7d26167670472))
+* renaming local release, also was behind could be the issue. ([5412066](https://github.com/Coalfire-CF/Actions/commit/5412066dd2365708b0651f155231b435b695c900))
+* renaming local release, also was behind could be the issue. ([c3d9360](https://github.com/Coalfire-CF/Actions/commit/c3d93608364b616961c1192d5b5fbbe3bb7b325b))
+
+
+### Miscellaneous
+
+* **deps:** bump actions/setup-python from 6.1.0 to 6.2.0 ([cdabc23](https://github.com/Coalfire-CF/Actions/commit/cdabc233d9a8157846f12e5a622e2968db9fa746))
+* **deps:** bump actions/setup-python from 6.1.0 to 6.2.0 ([70f4486](https://github.com/Coalfire-CF/Actions/commit/70f44865fdea04d90da2407a73f3fdcae6bf0240))
+
 ## [0.2.1](https://github.com/Coalfire-CF/Actions/compare/v0.2.0...v0.2.1) (2026-01-16)
 
 
