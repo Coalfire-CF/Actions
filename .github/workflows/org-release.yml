@@ -11,6 +11,13 @@ name: Release Please
 
 on:
   workflow_call:
+    outputs:
+      release_created:
+        description: Whether a release was created
+        value: ${{ jobs.release.outputs.release_created }}
+      tag_name:
+        description: The tag name of the release
+        value: ${{ jobs.release.outputs.tag_name }}
 
 jobs:
   release:
