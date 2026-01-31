@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.4](https://github.com/Coalfire-CF/Actions/compare/v0.2.3...v0.2.4) (2026-01-31)
+
+
+### Bug Fixes
+
+* branch tagging ([e685a2b](https://github.com/Coalfire-CF/Actions/commit/e685a2b598a6758140bc27497c52ba583a03b294))
+* branch tagging ([f691317](https://github.com/Coalfire-CF/Actions/commit/f6913174f8e89b08db5ff1fa1267ad0e47c2d8e8))
+
 ## [0.2.3](https://github.com/Coalfire-CF/Actions/compare/v0.2.2...v0.2.3) (2026-01-31)
 
 
