@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.2.3](https://github.com/Coalfire-CF/Actions/compare/v0.2.2...v0.2.3) (2026-01-31)
+
+
+### Bug Fixes
+
+* add outputs to workflow ([f08ac31](https://github.com/Coalfire-CF/Actions/commit/f08ac31236aeb187ebe6c750c1cca2d91ec53307))
+* add outputs to workflow ([0c37104](https://github.com/Coalfire-CF/Actions/commit/0c371041858c2f7a9909992d88f3491e1370b7de))
+
+
+### Miscellaneous
+
+* **deps:** bump actions/github-script from 7 to 8 ([e79b893](https://github.com/Coalfire-CF/Actions/commit/e79b893f53c3aed6a15af8538822bd9c79ab576c))
+* **deps:** bump actions/github-script from 7 to 8 ([7d7e1b7](https://github.com/Coalfire-CF/Actions/commit/7d7e1b74d386c8da4323fa38a1511cb0676c370c))
+* **deps:** bump infracost/actions from 1 to 3 ([64e295e](https://github.com/Coalfire-CF/Actions/commit/64e295e74898683ec9d0773cdad143a86d74d80c))
+* **deps:** bump infracost/actions from 1 to 3 ([240b4eb](https://github.com/Coalfire-CF/Actions/commit/240b4eb5e672d4859839c26ae649e5656d77e68a))
+
 ## [0.2.2](https://github.com/Coalfire-CF/Actions/compare/v0.2.1...v0.2.2) (2026-01-28)
 
 
