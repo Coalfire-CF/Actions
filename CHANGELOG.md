@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.3.0](https://github.com/Coalfire-CF/Actions/compare/v0.2.4...v0.3.0) (2026-02-16)
+
+
+### Features
+
+* gitleaks init ([14a540a](https://github.com/Coalfire-CF/Actions/commit/14a540a5063b94fe8199be9e0064a95e4c948f3c))
+* init gitleaks ([41e32ed](https://github.com/Coalfire-CF/Actions/commit/41e32ed90e4107fb020e89cde1d76b0772c11211))
+* testing release cleaner ([ba47b44](https://github.com/Coalfire-CF/Actions/commit/ba47b44c9fd4f98c9317eb4d2fd4ba5393263224))
+
+
+### Bug Fixes
+
+* deleting git too soon ([d9ee35d](https://github.com/Coalfire-CF/Actions/commit/d9ee35d9cc9e1283a21de1d00eefebb4e8dc8cee))
+* need to correct branch for testing ([ca1ce23](https://github.com/Coalfire-CF/Actions/commit/ca1ce23085d543ac18d1297310c4b770ca8c5738))
+
+
+### Miscellaneous
+
+* cleanup after testing ([8ef606e](https://github.com/Coalfire-CF/Actions/commit/8ef606e32528f50300f087da3a22c04f65cd554c))
+* **deps:** bump aquasecurity/trivy-action from 0.33.1 to 0.34.0 ([026a03c](https://github.com/Coalfire-CF/Actions/commit/026a03ccf7dc601c86eedb399e380f523a7fefa9))
+* **deps:** bump aquasecurity/trivy-action from 0.33.1 to 0.34.0 ([7cbbb15](https://github.com/Coalfire-CF/Actions/commit/7cbbb15ce38c43a9245347df6572b4644a0a79e1))
+
 ## [0.2.4](https://github.com/Coalfire-CF/Actions/compare/v0.2.3...v0.2.4) (2026-01-31)
 
 
