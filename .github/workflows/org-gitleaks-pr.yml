@@ -1,0 +1,97 @@
+name: Gitleaks PR Scan
+
+# Scans PR commits for hardcoded secrets, API keys, tokens, and credentials.
+# Uses the Coalfire gitleaks composite action — does NOT scan base branch history.
+#
+# If secrets are detected, the job fails and a PR comment details the findings
+# (without exposing the actual secret values).
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  gitleaks_scan:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+        ref: ${{ github.head_ref }}
+
+    - name: Run gitleaks scan
+      id: gitleaks
+      uses: Coalfire-CF/Actions/actions/gitleaks@main
+      with:
+        scan-mode: pr
+        base-ref: ${{ github.base_ref }}
+        head-ref: ${{ github.head_ref }}
+        report-path: gitleaks_results.json
+
+    - name: Create PR comment
+      if: always()
+      uses: actions/github-script@v8
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        script: |
+          const fs = require('fs');
+          const passed = '${{ steps.gitleaks.outputs.passed }}' === 'true';
+
+          if (passed) {
+            const output = `#### Gitleaks Secret Scan Results\n\n` +
+              `PASSED - No secrets detected in this PR.`;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: output
+            });
+            return;
+          }
+
+          let findings;
+          try {
+            findings = JSON.parse(fs.readFileSync('gitleaks_results.json', 'utf8'));
+          } catch (e) {
+            const output = `#### Gitleaks Secret Scan Results\n\n` +
+              `WARNING - Failed to parse Gitleaks results. Check workflow logs for details.`;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: output
+            });
+            return;
+          }
+
+          let output = `#### Gitleaks Secret Scan Results\n\n` +
+            `FAILED - **${findings.length} potential secret(s) detected in this PR.**\n\n` +
+            `These must be removed before merging. Rotate any exposed credentials immediately.\n\n` +
+            `| File | Line | Rule | Description |\n` +
+            `| ---- | ---- | ---- | ----------- |\n`;
+
+          for (const finding of findings) {
+            output += `| \`${finding.File}\` | ${finding.StartLine} | ${finding.RuleID} | ${finding.Description} |\n`;
+          }
+
+          output += `\n> **Note:** Secret values are redacted from this report. ` +
+            `See the workflow logs for the full scan output.\n\n` +
+            `Please remove the detected secrets and rotate any compromised credentials.`;
+
+          await github.rest.issues.createComment({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.issue.number,
+            body: output
+          });
+
+    - name: Fail if secrets detected
+      if: steps.gitleaks.outputs.passed == 'false'
+      run: |
+        echo "::error::Gitleaks detected ${{ steps.gitleaks.outputs.finding-count }} potential secret(s) in PR commits. See the PR comment for details."
+        exit 1

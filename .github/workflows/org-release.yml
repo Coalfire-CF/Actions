@@ -13,9 +13,10 @@ name: Release Please
 #
 # After release-please creates a release, this workflow runs:
 #   1. release-clean  - Produces a cleaned tarball as a release asset (on by default)
-#   2. checkov-scan   - Checkov security scan against the full repo
+#   2. checkov-scan   - Checkov IaC security scan against the full repo
 #   3. infracost      - Infracost cost breakdown against the full repo
 #   4. trivy-scan     - Trivy security scan against the full repo
+#   5. gitleaks-scan  - Gitleaks secret detection against full repo history
 #
 # Clean Release:
 #   By default, a cleaned tarball (<repo>-<tag>-clean.tar.gz) is uploaded to each
@@ -107,7 +108,7 @@ jobs:
     name: Clean Release Archive
     needs: release
     if: needs.release.outputs.release_created == 'true' && inputs.clean_release
-    uses: Coalfire-CF/Actions/.github/workflows/org-release-clean.yml@@main # This is a temp fix, will be investigating manually changing this to match versions after a cut to avoid loops.
+    uses: Coalfire-CF/Actions/.github/workflows/org-release-clean.yml@main
     permissions:
       contents: write
       actions: read
@@ -145,3 +146,12 @@ jobs:
       contents: write
       actions: read
     secrets: inherit
+
+  gitleaks-scan:
+    name: Run Gitleaks Secret Scan
+    needs: release
+    if: needs.release.outputs.release_created == 'true'
+    uses: Coalfire-CF/Actions/.github/workflows/org-gitleaks-release.yml@main # This is a temp fix, will be investigating manually changing this to match versions after a cut to avoid loops.
+    permissions:
+      contents: write
+      actions: read

@@ -1,0 +1,74 @@
+name: Gitleaks Release Scan
+
+# Scans the full repository history for hardcoded secrets, API keys, tokens,
+# and credentials. Uses the Coalfire gitleaks composite action.
+#
+# Results are uploaded as release assets and workflow artifacts.
+# Unlike the PR scan (which only checks PR commits), this scans the entire
+# git history — including secrets that were committed and later removed.
+
+on:
+  workflow_call:
+
+permissions:
+  contents: write # Required to upload to releases
+  actions: read
+
+jobs:
+  gitleaks_release_scan:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+
+    - name: Run gitleaks scan
+      id: gitleaks
+      uses: Coalfire-CF/Actions/actions/gitleaks@main
+      with:
+        scan-mode: full
+        report-path: gitleaks_release_results.json
+
+    - name: Upload Gitleaks release scan results
+      uses: actions/upload-artifact@v6
+      if: always()
+      with:
+        name: gitleaks-release-scan-results
+        path: gitleaks_release_results.json
+        retention-days: 30
+
+    - name: Upload results to GitHub Release
+      if: always()
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        # Get the latest release tag
+        LATEST_TAG=$(gh release list --limit 1 --json tagName --jq '.[0].tagName')
+        if [ -n "$LATEST_TAG" ]; then
+          gh release upload "$LATEST_TAG" gitleaks_release_results.json --clobber
+        else
+          echo "No release found to upload results to"
+        fi
+
+    - name: Generate summary
+      if: always()
+      env:
+        PASSED: ${{ steps.gitleaks.outputs.passed }}
+        FINDING_COUNT: ${{ steps.gitleaks.outputs.finding-count }}
+      run: |
+        echo "## Gitleaks Release Scan Results" >> "$GITHUB_STEP_SUMMARY"
+        if [ "$PASSED" == "true" ]; then
+          echo "PASSED - No secrets detected in repository history" >> "$GITHUB_STEP_SUMMARY"
+        else
+          echo "FAILED - **${FINDING_COUNT} potential secret(s) detected in repository history.**" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Review \`gitleaks_release_results.json\` in the release assets for details." >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| File | Line | Rule | Description |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| ---- | ---- | ---- | ----------- |" >> "$GITHUB_STEP_SUMMARY"
+          jq -r '.[] | "| `\(.File)` | \(.StartLine) | \(.RuleID) | \(.Description) |"' gitleaks_release_results.json >> "$GITHUB_STEP_SUMMARY"
+        fi
+        echo "" >> "$GITHUB_STEP_SUMMARY"
+        echo "Scan results have been uploaded as an artifact: \`gitleaks-release-scan-results\`" >> "$GITHUB_STEP_SUMMARY"
