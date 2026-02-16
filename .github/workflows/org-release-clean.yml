@@ -1,0 +1,195 @@
+name: Release Artifact Cleaner
+
+# !! WARNING: This workflow DELETES files from a working copy and packages the result. !!
+# It does NOT modify the repository, branch, or tag — only the release tarball asset.
+# Called by org-release.yml. See docs/ORG_RELEASE_CLEAN.md for full documentation.
+#
+# Reusable workflow that creates a cleaned release tarball, stripping
+# non-essential files (CI configs, docs, release tooling) from the
+# GitHub-auto-generated source archives.
+#
+# Security controls:
+#   - All inputs validated against allowlist regex (SC-28, SI-10)
+#   - Path traversal (..) explicitly rejected
+#   - Inputs passed via env: blocks, never direct ${{ }} in shell
+#   - SHA256 checksum for artifact integrity (SI-7)
+#   - Step summary for audit trail (AU-3)
+
+on:
+  workflow_call:
+    inputs:
+      tag_name:
+        description: 'Release tag name (e.g. v1.0.0)'
+        required: true
+        type: string
+      exclude_dirs:
+        description: 'Comma-separated directories to exclude from the clean archive'
+        required: false
+        type: string
+        default: '.github,docs'
+      exclude_files:
+        description: 'Comma-separated files to exclude from the clean archive'
+        required: false
+        type: string
+        default: 'CHANGELOG.md,release-please-config.json,.release-please-manifest.json,.gitignore,.gitattributes'
+
+permissions:
+  contents: write # Required to upload release assets
+  actions: read
+
+jobs:
+  release_clean:
+    name: Clean Release Archive
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Validate inputs
+      env:
+        TAG_NAME: ${{ inputs.tag_name }}
+        EXCLUDE_DIRS: ${{ inputs.exclude_dirs }}
+        EXCLUDE_FILES: ${{ inputs.exclude_files }}
+      run: |
+        set -eo pipefail
+
+        validate_input() {
+          local name="$1"
+          local value="$2"
+          local pattern="$3"
+
+          if [[ -z "$value" ]]; then
+            return 0
+          fi
+
+          if [[ ! "$value" =~ $pattern ]]; then
+            echo "::error::Invalid ${name}: contains disallowed characters. Allowed pattern: ${pattern}"
+            exit 1
+          fi
+
+          if [[ "$value" == *".."* ]]; then
+            echo "::error::Invalid ${name}: path traversal (..) detected"
+            exit 1
+          fi
+        }
+
+        validate_input "tag_name" "$TAG_NAME" '^[a-zA-Z0-9._/-]+$'
+        validate_input "exclude_dirs" "$EXCLUDE_DIRS" '^[a-zA-Z0-9._/,-]+$'
+        validate_input "exclude_files" "$EXCLUDE_FILES" '^[a-zA-Z0-9._/,-]+$'
+
+        echo "Input validation passed"
+
+    - name: Checkout repository at tag
+      uses: actions/checkout@v6
+      with:
+        ref: ${{ inputs.tag_name }}
+
+    - name: Create clean archive
+      env:
+        TAG_NAME: ${{ inputs.tag_name }}
+        EXCLUDE_DIRS: ${{ inputs.exclude_dirs }}
+        EXCLUDE_FILES: ${{ inputs.exclude_files }}
+      run: |
+        set -eo pipefail
+
+        REPO_NAME="${GITHUB_REPOSITORY##*/}"
+        ARCHIVE_DIR="${REPO_NAME}-${TAG_NAME}"
+        ARCHIVE_NAME="${ARCHIVE_DIR}-clean.tar.gz"
+        CHECKSUM_NAME="${ARCHIVE_NAME}.sha256"
+
+        echo "Repository: ${REPO_NAME}"
+        echo "Tag: ${TAG_NAME}"
+        echo "Archive: ${ARCHIVE_NAME}"
+
+        # Always remove .git directory
+        rm -rf .git
+        echo "Removed: .git/"
+
+        # Remove excluded directories
+        if [[ -n "${EXCLUDE_DIRS}" ]]; then
+          IFS=',' read -ra DIRS <<< "${EXCLUDE_DIRS}"
+          for dir in "${DIRS[@]}"; do
+            dir="$(echo "${dir}" | xargs)"
+            if [[ -d "${dir}" ]]; then
+              rm -rf "${dir}"
+              echo "Removed directory: ${dir}"
+            else
+              echo "Directory not found (skipping): ${dir}"
+            fi
+          done
+        fi
+
+        # Remove excluded files
+        if [[ -n "${EXCLUDE_FILES}" ]]; then
+          IFS=',' read -ra FILES <<< "${EXCLUDE_FILES}"
+          for file in "${FILES[@]}"; do
+            file="$(echo "${file}" | xargs)"
+            if [[ -f "${file}" ]]; then
+              rm -f "${file}"
+              echo "Removed file: ${file}"
+            else
+              echo "File not found (skipping): ${file}"
+            fi
+          done
+        fi
+
+        # Create tarball with named directory prefix (extracts to <repo>-<tag>/)
+        tar -czf "/tmp/${ARCHIVE_NAME}" --transform "s|^\.|${ARCHIVE_DIR}|" .
+
+        # Generate SHA256 checksum (subshell so path is relative in output)
+        ( cd /tmp && sha256sum "${ARCHIVE_NAME}" > "${CHECKSUM_NAME}" )
+
+        # Move artifacts to workspace for upload
+        mv "/tmp/${ARCHIVE_NAME}" "/tmp/${CHECKSUM_NAME}" .
+
+        # Export computed values for subsequent steps
+        echo "ARCHIVE_NAME=${ARCHIVE_NAME}" >> "${GITHUB_ENV}"
+        echo "CHECKSUM_NAME=${CHECKSUM_NAME}" >> "${GITHUB_ENV}"
+        echo "ARCHIVE_DIR=${ARCHIVE_DIR}" >> "${GITHUB_ENV}"
+
+        ARCHIVE_SIZE=$(du -h "${ARCHIVE_NAME}" | cut -f1)
+        echo "Archive size: ${ARCHIVE_SIZE}"
+        echo "ARCHIVE_SIZE=${ARCHIVE_SIZE}" >> "${GITHUB_ENV}"
+
+        CHECKSUM=$(cut -d' ' -f1 "${CHECKSUM_NAME}")
+        echo "SHA256: ${CHECKSUM}"
+        echo "CHECKSUM=${CHECKSUM}" >> "${GITHUB_ENV}"
+
+    - name: Upload to GitHub Release
+      env:
+        GH_TOKEN: ${{ github.token }}
+        TAG_NAME: ${{ inputs.tag_name }}
+        GH_REPO: ${{ github.repository }}
+      run: |
+        set -eo pipefail
+        gh release upload "${TAG_NAME}" "${ARCHIVE_NAME}" "${CHECKSUM_NAME}" --repo "${GH_REPO}" --clobber
+
+    - name: Upload workflow artifact
+      uses: actions/upload-artifact@v6
+      with:
+        name: release-clean-archive
+        path: |
+          ${{ env.ARCHIVE_NAME }}
+          ${{ env.CHECKSUM_NAME }}
+        retention-days: 30
+
+    - name: Generate step summary
+      if: always()
+      env:
+        TAG_NAME: ${{ inputs.tag_name }}
+        EXCLUDE_DIRS: ${{ inputs.exclude_dirs }}
+        EXCLUDE_FILES: ${{ inputs.exclude_files }}
+      run: |
+        {
+          echo "## Release Artifact Cleaner"
+          echo ""
+          echo "| Property | Value |"
+          echo "| --- | --- |"
+          echo "| Tag | \`${TAG_NAME}\` |"
+          echo "| Archive | \`${ARCHIVE_NAME:-N/A}\` |"
+          echo "| Size | ${ARCHIVE_SIZE:-N/A} |"
+          echo "| SHA256 | \`${CHECKSUM:-N/A}\` |"
+          echo ""
+          echo "### Excluded"
+          echo "- Directories: \`${EXCLUDE_DIRS}\`"
+          echo "- Files: \`${EXCLUDE_FILES}\`"
+          echo "- Always removed: \`.git/\`"
+        } >> "$GITHUB_STEP_SUMMARY"
