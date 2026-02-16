@@ -107,7 +107,7 @@ jobs:
     name: Clean Release Archive
     needs: release
     if: needs.release.outputs.release_created == 'true' && inputs.clean_release
-    uses: Coalfire-CF/Actions/.github/workflows/org-release-clean.yml@feat/release-cleaner
+    uses: Coalfire-CF/Actions/.github/workflows/org-release-clean.yml@@main # This is a temp fix, will be investigating manually changing this to match versions after a cut to avoid loops.
     permissions:
       contents: write
       actions: read
