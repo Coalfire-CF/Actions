@@ -31,7 +31,7 @@ jobs:
 
     - name: Run Trivy scanner
       if: steps.get_changed_files.outputs.has_tf_files == 'true'
-      uses: aquasecurity/trivy-action@0.33.1
+      uses: aquasecurity/trivy-action@0.34.0
       with:
         scan-type: 'config'
         scan-ref: '.'
@@ -42,7 +42,7 @@ jobs:
 
     - name: Run Trivy for table output
       if: steps.get_changed_files.outputs.has_tf_files == 'true'
-      uses: aquasecurity/trivy-action@0.33.1
+      uses: aquasecurity/trivy-action@0.34.0
       with:
         scan-type: 'config'
         scan-ref: '.'
