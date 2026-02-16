@@ -1,0 +1,104 @@
+name: 'Gitleaks Secret Scanner'
+description: 'Installs and runs gitleaks to detect hardcoded secrets, API keys, tokens, and credentials.'
+
+inputs:
+  version:
+    description: 'Gitleaks version to install'
+    required: false
+    default: '8.30.0'
+  scan-mode:
+    description: 'Scan mode: "full" scans entire repo history, "pr" scans only PR commits'
+    required: false
+    default: 'full'
+  base-ref:
+    description: 'Base branch ref for PR mode (e.g. main). Ignored in full mode.'
+    required: false
+    default: ''
+  head-ref:
+    description: 'Head branch ref for PR mode (e.g. feature-branch). Ignored in full mode.'
+    required: false
+    default: ''
+  report-path:
+    description: 'Output path for the JSON report'
+    required: false
+    default: 'gitleaks_results.json'
+
+outputs:
+  passed:
+    description: '"true" if no secrets detected, "false" if secrets found'
+    value: ${{ steps.scan.outputs.passed }}
+  finding-count:
+    description: 'Number of findings detected'
+    value: ${{ steps.scan.outputs.finding-count }}
+  report-path:
+    description: 'Path to the JSON results file'
+    value: ${{ steps.scan.outputs.report-path }}
+  exit-code:
+    description: 'Gitleaks exit code (0=clean, 1=leaks found, other=error)'
+    value: ${{ steps.scan.outputs.exit-code }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install gitleaks
+      shell: bash
+      env:
+        GITLEAKS_VERSION: ${{ inputs.version }}
+      run: |
+        set -eo pipefail
+        curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+          | tar -xz -C /usr/local/bin gitleaks
+        echo "Installed gitleaks $(gitleaks version)"
+
+    - name: Run gitleaks scan
+      id: scan
+      shell: bash
+      env:
+        SCAN_MODE: ${{ inputs.scan-mode }}
+        BASE_REF: ${{ inputs.base-ref }}
+        HEAD_REF: ${{ inputs.head-ref }}
+        REPORT_PATH: ${{ inputs.report-path }}
+      run: |
+        set -eo pipefail
+
+        GITLEAKS_ARGS=(
+          detect
+          --report-format json
+          --report-path "${REPORT_PATH}"
+          --redact
+          --no-banner
+          --exit-code 1
+        )
+
+        if [ "${SCAN_MODE}" = "pr" ]; then
+          if [ -z "${BASE_REF}" ] || [ -z "${HEAD_REF}" ]; then
+            echo "::error::scan-mode 'pr' requires both base-ref and head-ref inputs"
+            exit 1
+          fi
+          GITLEAKS_ARGS+=(--log-opts="origin/${BASE_REF}..${HEAD_REF}")
+          echo "Scanning PR commits: origin/${BASE_REF}..${HEAD_REF}"
+        else
+          echo "Scanning full repository history"
+        fi
+
+        GITLEAKS_EXIT=0
+        gitleaks "${GITLEAKS_ARGS[@]}" || GITLEAKS_EXIT=$?
+
+        echo "exit-code=${GITLEAKS_EXIT}" >> "$GITHUB_OUTPUT"
+        echo "report-path=${REPORT_PATH}" >> "$GITHUB_OUTPUT"
+
+        if [ "$GITLEAKS_EXIT" -eq 0 ]; then
+          echo "passed=true" >> "$GITHUB_OUTPUT"
+          echo "finding-count=0" >> "$GITHUB_OUTPUT"
+          # Create empty results file for consistent downstream handling
+          echo "[]" > "${REPORT_PATH}"
+          echo "No secrets detected"
+        elif [ "$GITLEAKS_EXIT" -eq 1 ]; then
+          echo "passed=false" >> "$GITHUB_OUTPUT"
+          FINDING_COUNT=$(jq 'length' "${REPORT_PATH}")
+          echo "finding-count=${FINDING_COUNT}" >> "$GITHUB_OUTPUT"
+          echo "::warning::${FINDING_COUNT} potential secret(s) detected"
+        else
+          echo "::error::Gitleaks encountered an unexpected error (exit code: ${GITLEAKS_EXIT})"
+          exit "$GITLEAKS_EXIT"
+        fi
