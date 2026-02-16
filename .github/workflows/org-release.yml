@@ -3,14 +3,77 @@ name: Release Please
 # This is a reusable workflow for downstream repos to call.
 # NOTE: This workflow is NOT used for Actions repo releases - see release.yml instead.
 #
-# Usage in downstream repos:
+# !! IMPORTANT — READ BEFORE USING !!
+# This workflow REMOVES files from release artifacts by default. When a release is
+# created, a cleaned tarball is produced that EXCLUDES directories and files such as
+# .github/, docs/, CHANGELOG.md, and release-please configs. Your repository and
+# branches are NOT modified — only the release tarball asset is affected. If you do
+# not want files stripped from your release artifacts, set clean_release: false.
+# See docs/ORG_RELEASE_CLEAN.md for full details.
+#
+# After release-please creates a release, this workflow runs:
+#   1. release-clean  - Produces a cleaned tarball as a release asset (on by default)
+#   2. checkov-scan   - Checkov security scan against the full repo
+#   3. infracost      - Infracost cost breakdown against the full repo
+#   4. trivy-scan     - Trivy security scan against the full repo
+#
+# Clean Release:
+#   By default, a cleaned tarball (<repo>-<tag>-clean.tar.gz) is uploaded to each
+#   GitHub release. It strips non-essential files (.github/, docs/, release configs,
+#   etc.) while leaving the repo and branch completely untouched. Each job runs on
+#   its own isolated runner — scan jobs always see the full repo.
+#
+#   The tarball and a SHA256 checksum file are attached as release assets and also
+#   available as workflow artifacts (30-day retention).
+#
+#   .git/ is always removed. Default exclusions:
+#     dirs:  .github, docs
+#     files: CHANGELOG.md, release-please-config.json, .release-please-manifest.json,
+#            .gitignore, .gitattributes
+#
+#   Missing files/dirs in the exclusion lists are skipped gracefully (no failure).
+#
+# Usage in downstream repos (defaults — no config needed):
 #   jobs:
 #     create-release:
 #       uses: Coalfire-CF/Actions/.github/workflows/org-release.yml@v0.2.1
 #       secrets: inherit
+#
+# Custom exclusions:
+#   jobs:
+#     create-release:
+#       uses: Coalfire-CF/Actions/.github/workflows/org-release.yml@v0.2.1
+#       secrets: inherit
+#       with:
+#         clean_exclude_dirs: '.github,docs,.ci,tests'
+#         clean_exclude_files: 'CHANGELOG.md,Makefile,release-please-config.json'
+#
+# Disable clean release:
+#   jobs:
+#     create-release:
+#       uses: Coalfire-CF/Actions/.github/workflows/org-release.yml@v0.2.1
+#       secrets: inherit
+#       with:
+#         clean_release: false
 
 on:
   workflow_call:
+    inputs:
+      clean_release:
+        description: 'Create a cleaned release tarball (excludes non-essential files)'
+        required: false
+        type: boolean
+        default: true
+      clean_exclude_dirs:
+        description: 'Comma-separated directories to exclude from clean tarball'
+        required: false
+        type: string
+        default: '.github,docs'
+      clean_exclude_files:
+        description: 'Comma-separated files to exclude from clean tarball'
+        required: false
+        type: string
+        default: 'CHANGELOG.md,release-please-config.json,.release-please-manifest.json,.gitignore,.gitattributes'
     outputs:
       release_created:
         description: Whether a release was created
@@ -39,6 +102,19 @@ jobs:
         uses: googleapis/release-please-action@v4.4.0
         with:
           token: ${{ github.token }}
+
+  release-clean:
+    name: Clean Release Archive
+    needs: release
+    if: needs.release.outputs.release_created == 'true' && inputs.clean_release
+    uses: Coalfire-CF/Actions/.github/workflows/org-release-clean.yml@main
+    permissions:
+      contents: write
+      actions: read
+    with:
+      tag_name: ${{ needs.release.outputs.tag_name }}
+      exclude_dirs: ${{ inputs.clean_exclude_dirs }}
+      exclude_files: ${{ inputs.clean_exclude_files }}
 
   checkov-scan:
     name: Run Checkov Security Scan
