@@ -157,9 +157,10 @@ jobs:
       env:
         GH_TOKEN: ${{ github.token }}
         TAG_NAME: ${{ inputs.tag_name }}
+        GH_REPO: ${{ github.repository }}
       run: |
         set -eo pipefail
-        gh release upload "${TAG_NAME}" "${ARCHIVE_NAME}" "${CHECKSUM_NAME}" --clobber
+        gh release upload "${TAG_NAME}" "${ARCHIVE_NAME}" "${CHECKSUM_NAME}" --repo "${GH_REPO}" --clobber
 
     - name: Upload workflow artifact
       uses: actions/upload-artifact@v6
