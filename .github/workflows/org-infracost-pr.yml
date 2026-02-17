@@ -102,7 +102,10 @@ jobs:
     - name: Post Infracost comment
       env:
         INFRACOST_ENABLE_CLOUD: false
-      uses: infracost/actions/comment@v3
-      with:
-        path: /tmp/infracost-diff.json
-        behavior: update
+      run: |
+        infracost comment github \
+          --path=/tmp/infracost-diff.json \
+          --repo=$GITHUB_REPOSITORY \
+          --github-token=${{ github.token }} \
+          --pull-request=${{ github.event.pull_request.number }} \
+          --behavior=update
