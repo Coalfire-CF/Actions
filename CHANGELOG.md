@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.1](https://github.com/Coalfire-CF/Actions/compare/v0.3.0...v0.3.1) (2026-02-17)
+
+
+### Bug Fixes
+
+* infracost comment feature ([b9ea2ed](https://github.com/Coalfire-CF/Actions/commit/b9ea2ed15e942d50b719a087c5ce74a0c412ffd5))
+* infracost comment feature ([e462f8c](https://github.com/Coalfire-CF/Actions/commit/e462f8c808af6cd6f6a541b1e7aa03195a673446))
+
 ## [0.3.0](https://github.com/Coalfire-CF/Actions/compare/v0.2.4...v0.3.0) (2026-02-16)
 
 
