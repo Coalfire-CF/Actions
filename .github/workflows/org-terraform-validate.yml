@@ -6,7 +6,7 @@ on:
       terraform_version:
         description: 'The version of Terraform to use'
         required: true
-        default: '1.11.4'
+        default: '1.14.6'
         type: string
     secrets:
       TF_VALIDATE_APP_CLIENT_ID:
@@ -21,7 +21,7 @@ on:
       terraform_version:
         description: 'The version of Terraform to use'
         required: true
-        default: '1.11.4'
+        default: '1.14.6'
         type: string
 
 jobs:
