@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.3.2](https://github.com/Coalfire-CF/Actions/compare/v0.3.1...v0.3.2) (2026-03-10)
+
+
+### Bug Fixes
+
+* allow individual repos to ignore as needed ([5880e68](https://github.com/Coalfire-CF/Actions/commit/5880e68f364ee2346daf27a877fa0c8230db1fb7))
+* allow individual repos to ignore as needed ([dfc9224](https://github.com/Coalfire-CF/Actions/commit/dfc922485a655081fe467c0e9355660146b7792c))
+* remove infracost ([2929b93](https://github.com/Coalfire-CF/Actions/commit/2929b93ddf90fb348192b46361487b66caad06d6))
+* remove infracost ([29f6de5](https://github.com/Coalfire-CF/Actions/commit/29f6de5bfd2527dfd17ea6ee8a9e36a57c62c203))
+
+
+### Miscellaneous
+
+* bumping to latest ([8390d63](https://github.com/Coalfire-CF/Actions/commit/8390d63cde26e477544ee24af5c047b98ded5710))
+* bumping to latest ([5408cf2](https://github.com/Coalfire-CF/Actions/commit/5408cf244508bc0612034e4fd9f38b1aab954b6e))
+* **deps:** bump actions/upload-artifact from 6 to 7 ([f35b43d](https://github.com/Coalfire-CF/Actions/commit/f35b43d315cf85ebef3b74b2506939e2377d905f))
+* **deps:** bump actions/upload-artifact from 6 to 7 ([262a12c](https://github.com/Coalfire-CF/Actions/commit/262a12c05f66952f8ac853298ce25dedd7259bc7))
+* **deps:** bump aquasecurity/trivy-action from 0.34.0 to 0.35.0 ([d3503d3](https://github.com/Coalfire-CF/Actions/commit/d3503d38db25da95b4bcf357d75d3c67c86f0c41))
+* **deps:** bump aquasecurity/trivy-action from 0.34.0 to 0.35.0 ([5bc7054](https://github.com/Coalfire-CF/Actions/commit/5bc70544696954c0d33962a4dfcf2243c570d58d))
+* **deps:** bump hashicorp/setup-terraform from 3 to 4 ([c27068e](https://github.com/Coalfire-CF/Actions/commit/c27068e411cd4168ad8ee689eda234c7b0dbad10))
+* **deps:** bump hashicorp/setup-terraform from 3 to 4 ([97257d0](https://github.com/Coalfire-CF/Actions/commit/97257d0b3e18a1fbcf6695e400b1edc428e47fe7))
+
 ## [0.3.1](https://github.com/Coalfire-CF/Actions/compare/v0.3.0...v0.3.1) (2026-02-17)
 
 
