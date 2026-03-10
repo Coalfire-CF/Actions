@@ -17,7 +17,6 @@ release (release-please creates the tag and release)
   |
   ├── release-clean   -- Builds a cleaned tarball (THIS FEATURE)
   ├── checkov-scan    -- Checkov IaC security scan (full repo)
-  ├── infracost       -- Infracost cost breakdown (full repo)
   └── trivy-scan      -- Trivy security scan (full repo)
 ```
 
@@ -175,7 +174,7 @@ This is **complementary** — the workflow handles the explicit `-clean.tar.gz` 
 
 ## FAQ
 
-**Q: Will this break my CI scans (Checkov, Trivy, Infracost)?**
+**Q: Will this break my CI scans (Checkov, Trivy)?**
 No. Each scan job runs on its own isolated runner with a fresh, full checkout. They never see the cleaned copy.
 
 **Q: Does this modify my repository, branches, or tags?**
@@ -185,7 +184,7 @@ No. The job checks out code into an ephemeral runner workspace, deletes files fr
 It is skipped with a log message. The workflow continues without error.
 
 **Q: Does this need any additional secrets?**
-No. It only uses the automatic `github.token` — no `secrets: inherit` required for the clean job itself. (The parent `org-release.yml` call still needs `secrets: inherit` for the scan jobs.)
+No. It only uses the automatic `github.token` — no `secrets: inherit` required for the clean job itself. (The parent `org-release.yml` call still needs `secrets: inherit` for scan jobs.)
 
 **Q: Can someone inject malicious input through the exclusion lists?**
 Inputs are validated against a strict allowlist regex (`^[a-zA-Z0-9._/,-]+$`) and checked for path traversal (`..`). Invalid inputs fail the workflow immediately.
