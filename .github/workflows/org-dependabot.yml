@@ -22,6 +22,11 @@ on:
         required: false
         type: string
         default: ".github/dependabot.yml"
+      exclude_paths:
+        description: 'Comma-separated list of glob patterns to exclude from Terraform Dependabot entries (e.g., "modules/*,test/*")'
+        required: false
+        type: string
+        default: ""
       commit_message:
         description: "Commit message"
         required: false
@@ -55,6 +60,7 @@ jobs:
           DEFAULT_INTERVAL: ${{ inputs.default_interval }}
           REPO_ROOT: ${{ github.workspace }}
           DEPB_PATH: ${{ inputs.depb_path }}
+          EXCLUDE_PATHS: ${{ inputs.exclude_paths }}
         run: |
           set -euo pipefail
           cat > /tmp/dependabot_refresh.sh <<'BASH'
@@ -65,6 +71,7 @@ jobs:
           INCLUDE_GITHUB_ACTIONS="${INCLUDE_GITHUB_ACTIONS:-true}"
           DEFAULT_INTERVAL="${DEFAULT_INTERVAL:-daily}"
           REPO_ROOT="${REPO_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+          EXCLUDE_PATHS="${EXCLUDE_PATHS:-}"
 
           log() { printf '%s\n' "$*" >&2; }
           die() { log "❌ $*"; exit 1; }
@@ -185,6 +192,32 @@ jobs:
             [[ -n "$d" ]] && filtered+=("$d")
           done
           tf_dirs=("${filtered[@]}")
+
+          # Filter out directories matching exclude_paths patterns
+          if [[ -n "$EXCLUDE_PATHS" ]]; then
+            IFS=',' read -ra patterns <<< "$EXCLUDE_PATHS"
+            kept=()
+            for d in "${tf_dirs[@]}"; do
+              excluded=false
+              for pat in "${patterns[@]}"; do
+                pat="$(printf '%s' "$pat" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+                [[ -z "$pat" ]] && continue
+                # Match pattern against dir (strip leading /)
+                dir_stripped="${d#/}"
+                # shellcheck disable=SC2254
+                if [[ "$dir_stripped" == $pat ]]; then
+                  excluded=true
+                  break
+                fi
+              done
+              if [[ "$excluded" == false ]]; then
+                kept+=("$d")
+              else
+                log "⏭️  Excluding $d (matched pattern)"
+              fi
+            done
+            tf_dirs=("${kept[@]+"${kept[@]}"}")
+          fi
 
           if ((${#tf_dirs[@]} == 0)); then
             log "ℹ️  No .tf files found; will NOT include any Terraform blocks."
