@@ -163,7 +163,7 @@ jobs:
         gh release upload "${TAG_NAME}" "${ARCHIVE_NAME}" "${CHECKSUM_NAME}" --repo "${GH_REPO}" --clobber
 
     - name: Upload workflow artifact
-      uses: actions/upload-artifact@v6
+      uses: actions/upload-artifact@v7
       with:
         name: release-clean-archive
         path: |
