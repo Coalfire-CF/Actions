@@ -156,11 +156,15 @@ jobs:
               if [[ -n "$RELEASE_HIGHLIGHTS" ]]; then
                 # Clean up release-please body for Slack:
                 #   - Strip the version header line (## [x.y.z](...))
+                #   - Convert ### headers to Slack bold (*text*)
                 #   - Convert markdown links [text](url) to Slack links <url|text>
-                #   - Remove empty lines around section headers
+                #   - Strip commit hash references (abc1234) from line ends
+                #   - Collapse multiple blank lines
                 CLEANED_HIGHLIGHTS=$(echo "$RELEASE_HIGHLIGHTS" \
                   | sed '/^## \[/d' \
+                  | sed 's/^### \(.*\)/*\1*/' \
                   | sed 's/\[\([^]]*\)\](\([^)]*\))/<\2|\1>/g' \
+                  | sed 's/ ([a-f0-9]\{7\})$//' \
                   | sed '/^$/N;/^\n$/d')
 
                 BLOCKS=$(echo "$BLOCKS" | jq \
