@@ -154,9 +154,18 @@ jobs:
 
               # Add highlights block if provided
               if [[ -n "$RELEASE_HIGHLIGHTS" ]]; then
+                # Clean up release-please body for Slack:
+                #   - Strip the version header line (## [x.y.z](...))
+                #   - Convert markdown links [text](url) to Slack links <url|text>
+                #   - Remove empty lines around section headers
+                CLEANED_HIGHLIGHTS=$(echo "$RELEASE_HIGHLIGHTS" \
+                  | sed '/^## \[/d' \
+                  | sed 's/\[\([^]]*\)\](\([^)]*\))/<\2|\1>/g' \
+                  | sed '/^$/N;/^\n$/d')
+
                 BLOCKS=$(echo "$BLOCKS" | jq \
-                  --arg highlights "$RELEASE_HIGHLIGHTS" \
-                  '. + [{"type":"section","text":{"type":"mrkdwn","text":("*Highlights:*\n" + $highlights)}}]')
+                  --arg highlights "$CLEANED_HIGHLIGHTS" \
+                  '. + [{"type":"section","text":{"type":"mrkdwn","text":$highlights}}]')
               fi
 
               # Add changelog block if provided
