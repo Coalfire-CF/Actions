@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.4.0](https://github.com/Coalfire-CF/Actions/compare/v0.3.2...v0.4.0) (2026-03-16)
+
+
+### Features
+
+* add optional slack failure notifications to all reusable workflows ([782da28](https://github.com/Coalfire-CF/Actions/commit/782da28ef7f6e22049dd7dc334d1191038e2bddf))
+* add Slack channel notifications to reusable workflows ([be68807](https://github.com/Coalfire-CF/Actions/commit/be688079505fe9ca7a13f5bc28a5373354be8db7))
+* adding org slack notify ([0a9f18e](https://github.com/Coalfire-CF/Actions/commit/0a9f18e4bb3f7b887d919870694ade0fdaf8cf78))
+
+
+### Bug Fixes
+
+* clean up release highlights for Slack formatting ([d373649](https://github.com/Coalfire-CF/Actions/commit/d3736497b93b282241a960e745a29ba4a1eda08d))
+* convert markdown headers to Slack bold and strip commit hashes ([8ed0dde](https://github.com/Coalfire-CF/Actions/commit/8ed0ddea54ec34459e806b31a7b7444c6b6c08aa))
+* use jq for JSON payload construction to handle multiline release bodies ([49172f4](https://github.com/Coalfire-CF/Actions/commit/49172f43dc828c9eb98580f85f1575c24b3d3888))
+
 ## [0.3.2](https://github.com/Coalfire-CF/Actions/compare/v0.3.1...v0.3.2) (2026-03-10)
 
 
