@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.1](https://github.com/Coalfire-CF/Actions/compare/v0.4.0...v0.4.1) (2026-03-16)
+
+
+### Documentation
+
+* add Slack notification setup and usage guide ([7e22dbe](https://github.com/Coalfire-CF/Actions/commit/7e22dbecbca706205ca3cd80ff37b51d8c8d0ac9))
+* add Slack notification setup and usage guide ([584dd84](https://github.com/Coalfire-CF/Actions/commit/584dd8495e4d7d078323cc270b233328a510c9c2))
+
 ## [0.4.0](https://github.com/Coalfire-CF/Actions/compare/v0.3.2...v0.4.0) (2026-03-16)
 
 
