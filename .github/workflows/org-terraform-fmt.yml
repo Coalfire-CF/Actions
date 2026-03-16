@@ -8,6 +8,11 @@ on:
         required: false
         default: '1.14.6'
         type: string
+      slack_channel_id:
+        description: 'Slack channel ID for failure notifications (optional)'
+        required: false
+        type: string
+        default: ''
 
   workflow_dispatch:
     inputs:
@@ -53,3 +58,12 @@ jobs:
             issue_number: context.issue.number,
             body: "Terraform fmt failed. We recommend setting up your IDE to automatically run terraform fmt on save or before pushing."
           });
+
+  notify-failure:
+    needs: verify
+    if: failure() && inputs.slack_channel_id != ''
+    uses: Coalfire-CF/Actions/.github/workflows/org-slack-notify.yml@main
+    secrets: inherit
+    with:
+      notification-type: failure
+      channel-id: ${{ inputs.slack_channel_id }}

@@ -1,0 +1,260 @@
+name: Slack Notification
+
+# Reusable workflow for sending Slack notifications to channels.
+# Supports three notification types:
+#   - release:      New version released with highlights and changelog link
+#   - failure:      Workflow/job failure alert
+#   - health-check: Application up/down status
+#
+# Prerequisites:
+#   1. A Slack app with `chat:write` bot scope installed to your workspace
+#   2. The bot invited to the target channel (`/invite @BotName`)
+#   3. Org-level GitHub secret `SLACK_BOT_TOKEN` with the bot's xoxb- token
+#
+# Usage — Release notification:
+#   jobs:
+#     notify:
+#       uses: Coalfire-CF/Actions/.github/workflows/org-slack-notify.yml@main
+#       secrets: inherit
+#       with:
+#         notification-type: release
+#         channel-id: 'C0123456789'
+#         app-name: 'my-repo'
+#         release-version: ${{ needs.release.outputs.tag_name }}
+#         release-highlights: ${{ needs.release.outputs.release_body }}
+#         changelog-url: 'https://github.com/Coalfire-CF/my-repo/blob/main/CHANGELOG.md'
+#
+# Usage — Failure notification (add as final job in any workflow):
+#   jobs:
+#     build:
+#       runs-on: ubuntu-latest
+#       steps: [...]
+#
+#     notify-failure:
+#       needs: build
+#       if: failure()
+#       uses: Coalfire-CF/Actions/.github/workflows/org-slack-notify.yml@main
+#       secrets: inherit
+#       with:
+#         notification-type: failure
+#         channel-id: 'C0123456789'
+#         app-name: 'my-repo'
+#
+# Usage — Health check:
+#   jobs:
+#     health-check:
+#       uses: Coalfire-CF/Actions/.github/workflows/org-slack-notify.yml@main
+#       secrets: inherit
+#       with:
+#         notification-type: health-check
+#         channel-id: 'C0123456789'
+#         app-name: 'my-app'
+#         app-url: 'https://my-app.example.com/health'
+
+on:
+  workflow_call:
+    inputs:
+      notification-type:
+        description: 'Type of notification: release, failure, or health-check'
+        required: true
+        type: string
+      channel-id:
+        description: 'Slack channel ID to post to (e.g. C0123456789)'
+        required: true
+        type: string
+      app-name:
+        description: 'Application or repository display name'
+        required: false
+        type: string
+        default: ${{ github.repository }}
+      # Release inputs
+      release-version:
+        description: 'Release version tag (for release type)'
+        required: false
+        type: string
+      release-highlights:
+        description: 'Brief highlights from the release (for release type)'
+        required: false
+        type: string
+      changelog-url:
+        description: 'URL to the changelog (for release type)'
+        required: false
+        type: string
+      # Health check inputs
+      app-url:
+        description: 'URL to health check (for health-check type)'
+        required: false
+        type: string
+    secrets:
+      SLACK_BOT_TOKEN:
+        required: true
+
+jobs:
+  notify:
+    name: Send Slack Notification
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Validate inputs
+        run: |
+          if [[ "${{ inputs.notification-type }}" != "release" && \
+                "${{ inputs.notification-type }}" != "failure" && \
+                "${{ inputs.notification-type }}" != "health-check" ]]; then
+            echo "::error::Invalid notification-type: '${{ inputs.notification-type }}'. Must be release, failure, or health-check."
+            exit 1
+          fi
+
+          if [[ "${{ inputs.notification-type }}" == "release" && -z "${{ inputs.release-version }}" ]]; then
+            echo "::error::release-version is required for release notifications."
+            exit 1
+          fi
+
+          if [[ "${{ inputs.notification-type }}" == "health-check" && -z "${{ inputs.app-url }}" ]]; then
+            echo "::error::app-url is required for health-check notifications."
+            exit 1
+          fi
+
+      - name: Health check
+        id: health
+        if: inputs.notification-type == 'health-check'
+        run: |
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "${{ inputs.app-url }}" || echo "000")
+          echo "status=$HTTP_STATUS" >> "$GITHUB_OUTPUT"
+          if [[ "$HTTP_STATUS" -ge 200 && "$HTTP_STATUS" -lt 400 ]]; then
+            echo "healthy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "healthy=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build Slack payload
+        id: payload
+        env:
+          NOTIFICATION_TYPE: ${{ inputs.notification-type }}
+          APP_NAME: ${{ inputs.app-name }}
+          CHANNEL_ID: ${{ inputs.channel-id }}
+          RELEASE_VERSION: ${{ inputs.release-version }}
+          RELEASE_HIGHLIGHTS: ${{ inputs.release-highlights }}
+          CHANGELOG_URL: ${{ inputs.changelog-url }}
+          APP_URL: ${{ inputs.app-url }}
+          HEALTH_STATUS: ${{ steps.health.outputs.status }}
+          HEALTH_HEALTHY: ${{ steps.health.outputs.healthy }}
+          GITHUB_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          GITHUB_WORKFLOW_NAME: ${{ github.workflow }}
+        run: |
+          case "$NOTIFICATION_TYPE" in
+            release)
+              # Start with header and version blocks
+              BLOCKS=$(jq -n \
+                --arg app "$APP_NAME" \
+                --arg version "$RELEASE_VERSION" \
+                '[
+                  {"type":"header","text":{"type":"plain_text","text":("New Release: " + $app)}},
+                  {"type":"section","text":{"type":"mrkdwn","text":("*Version:* `" + $version + "`")}}
+                ]')
+
+              # Add highlights block if provided
+              if [[ -n "$RELEASE_HIGHLIGHTS" ]]; then
+                # Clean up release-please body for Slack:
+                #   - Strip the version header line (## [x.y.z](...))
+                #   - Convert ### headers to Slack bold (*text*)
+                #   - Convert markdown links [text](url) to Slack links <url|text>
+                #   - Strip commit hash references (abc1234) from line ends
+                #   - Collapse multiple blank lines
+                CLEANED_HIGHLIGHTS=$(echo "$RELEASE_HIGHLIGHTS" \
+                  | sed '/^## \[/d' \
+                  | sed 's/^### \(.*\)/*\1*/' \
+                  | sed 's/\[\([^]]*\)\](\([^)]*\))/<\2|\1>/g' \
+                  | sed 's/ ([a-f0-9]\{7\})$//' \
+                  | sed '/^$/N;/^\n$/d')
+
+                BLOCKS=$(echo "$BLOCKS" | jq \
+                  --arg highlights "$CLEANED_HIGHLIGHTS" \
+                  '. + [{"type":"section","text":{"type":"mrkdwn","text":$highlights}}]')
+              fi
+
+              # Add changelog block if provided
+              if [[ -n "$CHANGELOG_URL" ]]; then
+                BLOCKS=$(echo "$BLOCKS" | jq \
+                  --arg url "$CHANGELOG_URL" \
+                  '. + [{"type":"section","text":{"type":"mrkdwn","text":("<" + $url + "|View Full Changelog>")}}]')
+              fi
+
+              jq -n --arg channel "$CHANNEL_ID" --argjson blocks "$BLOCKS" \
+                '{"channel":$channel,"blocks":$blocks}' > /tmp/slack_payload.json
+              ;;
+
+            failure)
+              jq -n \
+                --arg channel "$CHANNEL_ID" \
+                --arg app "$APP_NAME" \
+                --arg workflow "$GITHUB_WORKFLOW_NAME" \
+                --arg repo "$GITHUB_REPOSITORY" \
+                --arg run_url "$GITHUB_RUN_URL" \
+                '{
+                  "channel":$channel,
+                  "blocks":[
+                    {"type":"header","text":{"type":"plain_text","text":("Workflow Failed: " + $app)}},
+                    {"type":"section","fields":[
+                      {"type":"mrkdwn","text":("*Workflow:*\n" + $workflow)},
+                      {"type":"mrkdwn","text":("*Repository:*\n" + $repo)}
+                    ]},
+                    {"type":"section","text":{"type":"mrkdwn","text":("<" + $run_url + "|View Failed Run>")}}
+                  ]
+                }' > /tmp/slack_payload.json
+              ;;
+
+            health-check)
+              if [[ "$HEALTH_HEALTHY" == "true" ]]; then
+                STATUS_EMOJI=":large_green_circle:"
+                STATUS_TEXT="UP"
+              else
+                STATUS_EMOJI=":red_circle:"
+                STATUS_TEXT="DOWN"
+              fi
+
+              jq -n \
+                --arg channel "$CHANNEL_ID" \
+                --arg app "$APP_NAME" \
+                --arg status_emoji "$STATUS_EMOJI" \
+                --arg status_text "$STATUS_TEXT" \
+                --arg http_code "$HEALTH_STATUS" \
+                --arg url "$APP_URL" \
+                '{
+                  "channel":$channel,
+                  "blocks":[
+                    {"type":"header","text":{"type":"plain_text","text":($app + " is " + $status_text)}},
+                    {"type":"section","fields":[
+                      {"type":"mrkdwn","text":("*Status:*\n" + $status_emoji + " " + $status_text)},
+                      {"type":"mrkdwn","text":("*HTTP Code:*\n`" + $http_code + "`")}
+                    ]},
+                    {"type":"section","text":{"type":"mrkdwn","text":("*URL:* " + $url)}}
+                  ]
+                }' > /tmp/slack_payload.json
+              ;;
+          esac
+
+          # Validate JSON
+          if ! jq empty /tmp/slack_payload.json 2>/dev/null; then
+            echo "::error::Generated invalid JSON payload"
+            cat /tmp/slack_payload.json
+            exit 1
+          fi
+
+      - name: Send Slack notification
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+        run: |
+          RESPONSE=$(curl -s -X POST https://slack.com/api/chat.postMessage \
+            -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d @/tmp/slack_payload.json)
+
+          # Check for Slack API errors
+          OK=$(echo "$RESPONSE" | jq -r '.ok')
+          if [[ "$OK" != "true" ]]; then
+            ERROR=$(echo "$RESPONSE" | jq -r '.error')
+            echo "::error::Slack API error: ${ERROR}"
+            exit 1
+          fi
+
+          echo "Slack notification sent successfully."

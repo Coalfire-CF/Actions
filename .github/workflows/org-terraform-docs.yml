@@ -3,6 +3,11 @@ name: 'Terraform-Docs'
 on:
   workflow_call:
     inputs:
+      slack_channel_id:
+        description: 'Slack channel ID for failure notifications (optional)'
+        required: false
+        type: string
+        default: ''
       find-dir:
         required: false
         type: string
@@ -38,3 +43,12 @@ jobs:
             recursive: ${{ inputs.recursive }}
             recursive-path: ${{ inputs.recursive-path }}
             working-dir: ${{ inputs.working-dir }}
+
+    notify-failure:
+      needs: docs
+      if: failure() && inputs.slack_channel_id != ''
+      uses: Coalfire-CF/Actions/.github/workflows/org-slack-notify.yml@main
+      secrets: inherit
+      with:
+        notification-type: failure
+        channel-id: ${{ inputs.slack_channel_id }}

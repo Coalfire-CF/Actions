@@ -6,6 +6,12 @@ on:
     branches:
       - main
   workflow_call:
+    inputs:
+      slack_channel_id:
+        description: 'Slack channel ID for failure notifications (optional)'
+        required: false
+        type: string
+        default: ''
 
 jobs:
   lint-README:
@@ -63,3 +69,12 @@ jobs:
     #         repo: context.repo.repo,
     #         body: 'Markdown Valid'
     #       })
+
+  notify-failure:
+    needs: lint-README
+    if: failure() && inputs.slack_channel_id != ''
+    uses: Coalfire-CF/Actions/.github/workflows/org-slack-notify.yml@main
+    secrets: inherit
+    with:
+      notification-type: failure
+      channel-id: ${{ inputs.slack_channel_id }}
