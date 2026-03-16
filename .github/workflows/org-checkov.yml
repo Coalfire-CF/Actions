@@ -2,6 +2,12 @@ name: Checkov PR Scan
 
 on:
   workflow_call:
+    inputs:
+      slack_channel_id:
+        description: 'Slack channel ID for failure notifications (optional)'
+        required: false
+        type: string
+        default: ''
 
 jobs:
   checkov_scan:
@@ -93,3 +99,12 @@ jobs:
              });
           }
         
+
+  notify-failure:
+    needs: checkov_scan
+    if: failure() && inputs.slack_channel_id != ''
+    uses: Coalfire-CF/Actions/.github/workflows/org-slack-notify.yml@main
+    secrets: inherit
+    with:
+      notification-type: failure
+      channel-id: ${{ inputs.slack_channel_id }}

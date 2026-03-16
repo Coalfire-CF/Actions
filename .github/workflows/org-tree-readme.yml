@@ -3,6 +3,11 @@ name: Readme Tree (Reusable on PR)
 on:
   workflow_call:
     inputs:
+      slack_channel_id:
+        description: 'Slack channel ID for failure notifications (optional)'
+        required: false
+        type: string
+        default: ''
       commit_message:
         type: string
         default: "chore: update README tree structure"
@@ -157,3 +162,12 @@ jobs:
           fi
           git commit -m "${{ inputs.commit_message }}"
           git push origin HEAD
+
+  notify-failure:
+    needs: update-readme-on-pr
+    if: failure() && inputs.slack_channel_id != ''
+    uses: Coalfire-CF/Actions/.github/workflows/org-slack-notify.yml@main
+    secrets: inherit
+    with:
+      notification-type: failure
+      channel-id: ${{ inputs.slack_channel_id }}

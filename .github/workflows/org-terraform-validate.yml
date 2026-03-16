@@ -8,6 +8,11 @@ on:
         required: true
         default: '1.14.6'
         type: string
+      slack_channel_id:
+        description: 'Slack channel ID for failure notifications (optional)'
+        required: false
+        type: string
+        default: ''
     secrets:
       TF_VALIDATE_APP_CLIENT_ID:
         description: 'The GitHub App client ID for Terraform authentication (only needed for private repositories)'
@@ -92,3 +97,11 @@ jobs:
             issue_number: issue_number,
             body: `Terraform validation output:\n\`\`\`\n${result}\n\`\`\``
           });
+  notify-failure:
+    needs: verify
+    if: failure() && inputs.slack_channel_id != ''
+    uses: Coalfire-CF/Actions/.github/workflows/org-slack-notify.yml@main
+    secrets: inherit
+    with:
+      notification-type: failure
+      channel-id: ${{ inputs.slack_channel_id }}

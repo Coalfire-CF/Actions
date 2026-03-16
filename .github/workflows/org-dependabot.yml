@@ -3,6 +3,11 @@ name: Refresh dependabot.yml & Terraform sources
 on:
   workflow_call:
     inputs:
+      slack_channel_id:
+        description: 'Slack channel ID for failure notifications (optional)'
+        required: false
+        type: string
+        default: ''
       head_branch:
         description: "Branch to update (pass github.head_ref for PRs)"
         required: true
@@ -271,3 +276,12 @@ jobs:
           git add -A
           git commit -m "${COMMIT_MESSAGE}"
           git push origin "HEAD:${HEAD_BRANCH}"
+
+  notify-failure:
+    needs: sync
+    if: failure() && inputs.slack_channel_id != ''
+    uses: Coalfire-CF/Actions/.github/workflows/org-slack-notify.yml@main
+    secrets: inherit
+    with:
+      notification-type: failure
+      channel-id: ${{ inputs.slack_channel_id }}

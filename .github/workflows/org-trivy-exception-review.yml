@@ -2,6 +2,12 @@ name: Trivy Exception Review
 
 on:
   workflow_call:
+    inputs:
+      slack_channel_id:
+        description: 'Slack channel ID for failure notifications (optional)'
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -187,3 +193,12 @@ jobs:
           echo "| ------------ | ---------- | --------- |" >> $GITHUB_STEP_SUMMARY
           echo -e "${{ steps.check_expired.outputs.expiring_soon_list }}" >> $GITHUB_STEP_SUMMARY
         fi
+
+  notify-failure:
+    needs: check_exceptions
+    if: failure() && inputs.slack_channel_id != ''
+    uses: Coalfire-CF/Actions/.github/workflows/org-slack-notify.yml@main
+    secrets: inherit
+    with:
+      notification-type: failure
+      channel-id: ${{ inputs.slack_channel_id }}
