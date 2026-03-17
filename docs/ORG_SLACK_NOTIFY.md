@@ -34,7 +34,7 @@ jobs:
     uses: Coalfire-CF/Actions/.github/workflows/org-release.yml@v0.4.0
     secrets: inherit
     with:
-      slack_channel_id: 'C08M58XQKME'
+      slack_channel_id: 'CXXXXXXXXX'
 ```
 
 ```yaml
@@ -44,7 +44,7 @@ jobs:
     uses: Coalfire-CF/Actions/.github/workflows/org-checkov.yml@v0.4.0
     secrets: inherit
     with:
-      slack_channel_id: 'C08M58XQKME'
+      slack_channel_id: 'CXXXXXXXXX'
 ```
 
 If `slack_channel_id` is omitted, no notifications are sent. Existing repos are unaffected.
