@@ -57,7 +57,7 @@ jobs:
     - name: Get Checkout Token
       id: checkout-token
       if: steps.check-secrets.outputs.has_secrets == 'true'
-      uses: actions/create-github-app-token@v2
+      uses: actions/create-github-app-token@v3
       with:
         app-id: ${{ secrets.TF_VALIDATE_APP_CLIENT_ID }}
         private-key: ${{ secrets.TF_VALIDATE_APP_PRIVATE_KEY }}
