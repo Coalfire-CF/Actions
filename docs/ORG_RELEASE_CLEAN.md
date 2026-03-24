@@ -43,6 +43,7 @@ The `release-clean` job:
 |-----------|-----|
 | `.github/` | CI/CD workflows, issue templates, PR templates — not needed by consumers |
 | `docs/` | Repository documentation — not needed at runtime |
+| `.claude/` | Claude Code project configuration — development tooling only |
 
 ### Files
 
@@ -53,6 +54,8 @@ The `release-clean` job:
 | `.release-please-manifest.json` | Release-please state — release tooling only |
 | `.gitignore` | Git configuration — not relevant to published artifacts |
 | `.gitattributes` | Git configuration — not relevant to published artifacts |
+| `CLAUDE.md` | Claude Code instructions — development tooling only |
+| `.claudeignore` | Claude Code ignore rules — development tooling only |
 
 ### Always Removed
 
@@ -106,8 +109,8 @@ jobs:
     uses: Coalfire-CF/Actions/.github/workflows/org-release.yml@main
     secrets: inherit
     with:
-      clean_exclude_dirs: '.github,docs,.ci,tests'
-      clean_exclude_files: 'CHANGELOG.md,Makefile,release-please-config.json,.release-please-manifest.json,.gitignore,.gitattributes'
+      clean_exclude_dirs: '.github,docs,.claude,.ci,tests'
+      clean_exclude_files: 'CHANGELOG.md,Makefile,release-please-config.json,.release-please-manifest.json,.gitignore,.gitattributes,CLAUDE.md,.claudeignore'
 ```
 
 Values are **comma-separated, no spaces around commas**. Each entry must match `[a-zA-Z0-9._/-]` — special characters and `..` (path traversal) are rejected.
@@ -130,8 +133,8 @@ jobs:
 | Input | Type | Default | Description |
 |-------|------|---------|-------------|
 | `clean_release` | boolean | `true` | Set to `false` to skip clean tarball creation entirely |
-| `clean_exclude_dirs` | string | `.github,docs` | Comma-separated directories to remove |
-| `clean_exclude_files` | string | `CHANGELOG.md,release-please-config.json,.release-please-manifest.json,.gitignore,.gitattributes` | Comma-separated files to remove |
+| `clean_exclude_dirs` | string | `.github,docs,.claude` | Comma-separated directories to remove |
+| `clean_exclude_files` | string | `CHANGELOG.md,release-please-config.json,.release-please-manifest.json,.gitignore,.gitattributes,CLAUDE.md,.claudeignore` | Comma-separated files to remove |
 
 ## Security Controls
 
