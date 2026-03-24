@@ -138,15 +138,25 @@ jobs:
 | `clean_exclude_dirs` | string | `.github,docs,.claude` | Comma-separated directories to remove |
 | `clean_exclude_files` | string | `CHANGELOG.md,release-please-config.json,.release-please-manifest.json,.gitignore,.gitattributes,CLAUDE.md,.claudeignore` | Comma-separated files to remove |
 
+## Secrets Reference (Optional)
+
+| Secret | Required | Description |
+|--------|----------|-------------|
+| `RELEASE_APP_ID` | No | GitHub App ID for the release automation app |
+| `RELEASE_APP_PRIVATE_KEY` | No | GitHub App private key (PEM format) |
+
+When configured as **org-level secrets**, the workflow generates short-lived app tokens (1 hour expiry) for consistent permissions across public and private repos. If the secrets are not set, the workflow falls back to `github.token` automatically. Downstream repos pass these via `secrets: inherit`.
+
 ## Security Controls
 
-| Control | Description |
-|---------|-------------|
-| Input validation | All inputs validated against allowlist regex; path traversal (`..`) rejected |
-| No shell interpolation | Inputs passed via `env:` blocks, never direct `${{ }}` in shell scripts |
-| SHA256 checksum | Integrity verification for the released artifact |
-| Step summary | Audit trail of what was built, excluded, and uploaded |
-| Least privilege | Only requires `contents: write` and `actions: read`; no `secrets: inherit` |
+| Control | NIST 800-53 | Description |
+|---------|-------------|-------------|
+| Input validation | SI-10 | All inputs validated against allowlist regex; path traversal (`..`) rejected |
+| No shell interpolation | SC-28 | Inputs passed via `env:` blocks, never direct `${{ }}` in shell scripts |
+| GitHub App authentication | IA-2 | Optional app token for consistent permissions across public/private repos; falls back to `github.token` |
+| SHA256 checksum | SI-7 | Integrity verification for the released artifact |
+| Step summary | AU-3 | Audit trail of what was built, excluded, and uploaded |
+| Least privilege | AC-6 | Only requires `contents: write` and `actions: read` |
 
 ## Verifying a Download
 
@@ -170,7 +180,10 @@ GitHub's auto-generated source archives (the default `.tar.gz` and `.zip` on eve
 ```gitattributes
 .github/ export-ignore
 docs/ export-ignore
+.claude/ export-ignore
 CHANGELOG.md export-ignore
+CLAUDE.md export-ignore
+.claudeignore export-ignore
 release-please-config.json export-ignore
 .release-please-manifest.json export-ignore
 ```
@@ -189,7 +202,7 @@ No. The job checks out code into an ephemeral runner workspace, deletes files fr
 It is skipped with a log message. The workflow continues without error.
 
 **Q: Does this need any additional secrets?**
-No. It only uses the automatic `github.token` — no `secrets: inherit` required for the clean job itself. (The parent `org-release.yml` call still needs `secrets: inherit` for the GitHub App token used by release-please.)
+Optionally. If the org-level secrets `RELEASE_APP_ID` and `RELEASE_APP_PRIVATE_KEY` are configured, the workflow uses a GitHub App for authentication with short-lived tokens (1 hour). If not configured, it falls back to `github.token` automatically. Downstream repos should use `secrets: inherit` to pass these through.
 
 **Q: Can someone inject malicious input through the exclusion lists?**
 Inputs are validated against a strict allowlist regex (`^[a-zA-Z0-9._/,-]+$`) and checked for path traversal (`..`). Invalid inputs fail the workflow immediately.
