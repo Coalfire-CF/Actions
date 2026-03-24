@@ -26,12 +26,12 @@ on:
         description: 'Comma-separated directories to exclude from the clean archive'
         required: false
         type: string
-        default: '.github,docs'
+        default: '.github,docs,.claude'
       exclude_files:
         description: 'Comma-separated files to exclude from the clean archive'
         required: false
         type: string
-        default: 'CHANGELOG.md,release-please-config.json,.release-please-manifest.json,.gitignore,.gitattributes'
+        default: 'CHANGELOG.md,release-please-config.json,.release-please-manifest.json,.gitignore,.gitattributes,CLAUDE.md,.claudeignore'
 
 permissions:
   contents: write # Required to upload release assets

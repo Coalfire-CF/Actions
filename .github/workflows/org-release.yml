@@ -27,9 +27,9 @@ name: Release Please
 #   available as workflow artifacts (30-day retention).
 #
 #   .git/ is always removed. Default exclusions:
-#     dirs:  .github, docs
+#     dirs:  .github, docs, .claude
 #     files: CHANGELOG.md, release-please-config.json, .release-please-manifest.json,
-#            .gitignore, .gitattributes
+#            .gitignore, .gitattributes, CLAUDE.md, .claudeignore
 #
 #   Missing files/dirs in the exclusion lists are skipped gracefully (no failure).
 #
@@ -68,12 +68,12 @@ on:
         description: 'Comma-separated directories to exclude from clean tarball'
         required: false
         type: string
-        default: '.github,docs'
+        default: '.github,docs,.claude'
       clean_exclude_files:
         description: 'Comma-separated files to exclude from clean tarball'
         required: false
         type: string
-        default: 'CHANGELOG.md,release-please-config.json,.release-please-manifest.json,.gitignore,.gitattributes'
+        default: 'CHANGELOG.md,release-please-config.json,.release-please-manifest.json,.gitignore,.gitattributes,CLAUDE.md,.claudeignore'
       slack_channel_id:
         description: 'Slack channel ID for release and failure notifications (optional)'
         required: false
