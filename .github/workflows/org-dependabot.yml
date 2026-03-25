@@ -13,12 +13,12 @@ on:
         required: true
         type: string
       include_github_actions:
-        description: 'Add a "github-actions" update stanza'
+        description: 'Deprecated — github-actions is now auto-detected. Kept for backwards compatibility.'
         required: false
         type: string
         default: "true"
       default_interval:
-        description: 'Schedule interval for Terraform directories'
+        description: 'Schedule interval for all detected ecosystems'
         required: false
         type: string
         default: "daily"
@@ -28,7 +28,7 @@ on:
         type: string
         default: ".github/dependabot.yml"
       exclude_paths:
-        description: 'Comma-separated list of glob patterns to exclude from Terraform Dependabot entries (e.g., "modules/*,test/*")'
+        description: 'Comma-separated list of glob patterns to exclude from all ecosystem detection (e.g., "modules/*,test/*")'
         required: false
         type: string
         default: ""
@@ -36,7 +36,7 @@ on:
         description: "Commit message"
         required: false
         type: string
-        default: "chore: refresh dependabot.yml & Terraform sources"
+        default: "chore: refresh dependabot.yml"
 
 permissions:
   contents: write
@@ -61,7 +61,6 @@ jobs:
       - name: Run refresh (embedded script)
         id: run
         env:
-          INCLUDE_GITHUB_ACTIONS: ${{ inputs.include_github_actions }}
           DEFAULT_INTERVAL: ${{ inputs.default_interval }}
           REPO_ROOT: ${{ github.workspace }}
           DEPB_PATH: ${{ inputs.depb_path }}
@@ -73,13 +72,12 @@ jobs:
           set -euo pipefail
 
           DEPB_PATH="${DEPB_PATH:-.github/dependabot.yml}"
-          INCLUDE_GITHUB_ACTIONS="${INCLUDE_GITHUB_ACTIONS:-true}"
           DEFAULT_INTERVAL="${DEFAULT_INTERVAL:-daily}"
           REPO_ROOT="${REPO_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
           EXCLUDE_PATHS="${EXCLUDE_PATHS:-}"
 
           log() { printf '%s\n' "$*" >&2; }
-          die() { log "❌ $*"; exit 1; }
+          die() { log "ERROR: $*"; exit 1; }
 
           require_tools() {
             for t in awk sort perl find; do
@@ -87,35 +85,119 @@ jobs:
             done
           }
 
-          # Return unique repo-relative dirs ("/" for repo root) that contain at least one .tf file
-          find_tf_dirs() {
-            mapfile -d '' -t files < <(find "$REPO_ROOT" -type f -name '*.tf' -not -path '*/.git/*' -print0)
+          # ---- Ecosystem manifest definitions ----
+          # Each ecosystem maps to a pipe-separated list of -name patterns for find.
+          # The directory containing a matching file becomes a dependabot entry.
+          declare -A ECOSYSTEM_MANIFESTS=(
+            [bundler]="Gemfile"
+            [cargo]="Cargo.toml"
+            [composer]="composer.json"
+            [docker]="Dockerfile|docker-compose.yml|docker-compose.yaml"
+            [elm]="elm.json"
+            [github-actions]=".github/workflows/*.yml|.github/workflows/*.yaml"
+            [gitsubmodule]=".gitmodules"
+            [gomod]="go.mod"
+            [gradle]="build.gradle|build.gradle.kts"
+            [maven]="pom.xml"
+            [mix]="mix.exs"
+            [npm]="package.json"
+            [nuget]="*.csproj|*.fsproj|packages.config"
+            [pip]="requirements.txt|Pipfile|setup.py|pyproject.toml"
+            [pub]="pubspec.yaml"
+            [swift]="Package.swift"
+            [terraform]="*.tf"
+            [devcontainers]=".devcontainer/devcontainer.json|.devcontainer/*/devcontainer.json"
+          )
+
+          # Convert an absolute path to a repo-relative dependabot directory ("/" for root)
+          to_relative_dir() {
+            local abs_dir="$1"
+            if [[ "$abs_dir" == "$REPO_ROOT" ]]; then
+              echo "/"
+            else
+              local rel="${abs_dir#"$REPO_ROOT"}"
+              [[ -z "$rel" ]] && rel="/"
+              [[ "${rel:0:1}" != "/" ]] && rel="/$rel"
+              rel="$(printf '%s' "$rel" | sed -E 's#/+#/#g; s#/\./#/#g; s#/$##')"
+              [[ -z "$rel" ]] && rel="/"
+              echo "$rel"
+            fi
+          }
+
+          # Find unique repo-relative dirs containing files matching the given patterns.
+          # For github-actions, the directory is always "/".
+          # For devcontainers, the directory is always "/".
+          # Args: ecosystem_name  manifest_patterns (pipe-separated)
+          find_ecosystem_dirs() {
+            local ecosystem="$1"
+            local patterns="$2"
             declare -A seen=()
             declare -a out=()
 
-            for f in "${files[@]}"; do
-              dir="$(dirname "$f")"
-              if [[ "$dir" == "$REPO_ROOT" ]]; then
-                dir="/"
+            IFS='|' read -ra pats <<< "$patterns"
+
+            for pat in "${pats[@]}"; do
+              # If pattern contains a path separator, treat it as a path-glob from REPO_ROOT
+              if [[ "$pat" == */* ]]; then
+                # Use bash globbing for path-based patterns
+                local full_pattern="${REPO_ROOT}/${pat}"
+                # Enable globbing
+                shopt -s nullglob globstar
+                local matches=( $full_pattern )
+                shopt -u nullglob globstar
+                for f in "${matches[@]}"; do
+                  [[ -f "$f" ]] || continue
+                  # For github-actions and devcontainers, directory is always "/"
+                  local dir
+                  if [[ "$ecosystem" == "github-actions" || "$ecosystem" == "devcontainers" ]]; then
+                    dir="/"
+                  else
+                    dir="$(to_relative_dir "$(dirname "$f")")"
+                  fi
+                  if [[ -z "${seen[$dir]+x}" ]]; then
+                    seen[$dir]=1
+                    out+=("$dir")
+                  fi
+                done
               else
-                dir="${dir#"$REPO_ROOT"}"
-                [[ -z "$dir" ]] && dir="/"
-                [[ "${dir:0:1}" != "/" ]] && dir="/$dir"
-              fi
-              dir="$(printf '%s' "$dir" | sed -E 's#/+#/#g; s#/\./#/#g; s#/$##')"
-              [[ -z "$dir" ]] && dir="/"
-              if [[ -z "${seen[$dir]+x}" ]]; then
-                seen[$dir]=1
-                out+=("$dir")
+                # Simple filename pattern — use find
+                mapfile -d '' -t files < <(find "$REPO_ROOT" -type f -name "$pat" -not -path '*/.git/*' -print0 2>/dev/null)
+                for f in "${files[@]}"; do
+                  local dir
+                  dir="$(to_relative_dir "$(dirname "$f")")"
+                  if [[ -z "${seen[$dir]+x}" ]]; then
+                    seen[$dir]=1
+                    out+=("$dir")
+                  fi
+                done
               fi
             done
 
-            printf "%s\n" "${out[@]}" | sort -u
+            if (( ${#out[@]} > 0 )); then
+              printf "%s\n" "${out[@]}" | sort -u
+            fi
+          }
+
+          # Check if a directory should be excluded based on EXCLUDE_PATHS patterns
+          is_excluded() {
+            local dir="$1"
+            if [[ -z "$EXCLUDE_PATHS" ]]; then
+              return 1
+            fi
+            IFS=',' read -ra patterns <<< "$EXCLUDE_PATHS"
+            local dir_stripped="${dir#/}"
+            for pat in "${patterns[@]}"; do
+              pat="$(printf '%s' "$pat" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+              [[ -z "$pat" ]] && continue
+              # shellcheck disable=SC2254
+              if [[ "$dir_stripped" == $pat ]]; then
+                return 0
+              fi
+            done
+            return 1
           }
 
           generate_dependabot_yaml() {
-            local -a dirs=("$@")
-
             cat <<'YAML'
           # Auto-generated by dependabot_refresh.sh
           # See: https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
@@ -124,29 +206,34 @@ jobs:
           updates:
           YAML
 
-            # If there will be NO items at all, emit an empty list so YAML remains valid
-            if [[ "${INCLUDE_GITHUB_ACTIONS}" != "true" && ${#dirs[@]} -eq 0 ]]; then
-              echo "  []"
-              return
-            fi
+            local has_entries=false
 
-            if [[ "${INCLUDE_GITHUB_ACTIONS}" == "true" ]]; then
-              cat <<'YAML'
-            - package-ecosystem: "github-actions"
-              directory: "/"
-              schedule:
-                interval: "daily"
-              commit-message:
-                prefix: "chore"
-                include: "scope"
-          YAML
-            fi
+            # Sort ecosystem names for deterministic output
+            mapfile -t sorted_ecosystems < <(printf '%s\n' "${!ECOSYSTEM_MANIFESTS[@]}" | sort)
 
-            # Only print Terraform blocks for non-empty dir strings
-            for d in "${dirs[@]}"; do
-              [[ -z "$d" ]] && continue
-              cat <<YAML
-            - package-ecosystem: "terraform"
+            for ecosystem in "${sorted_ecosystems[@]}"; do
+              local patterns="${ECOSYSTEM_MANIFESTS[$ecosystem]}"
+              mapfile -t dirs < <(find_ecosystem_dirs "$ecosystem" "$patterns")
+
+              # Filter empty entries
+              local filtered=()
+              for d in "${dirs[@]:-}"; do
+                [[ -n "$d" ]] && filtered+=("$d")
+              done
+              dirs=("${filtered[@]+"${filtered[@]}"}")
+
+              if (( ${#dirs[@]} == 0 )); then
+                continue
+              fi
+
+              for d in "${dirs[@]}"; do
+                if is_excluded "$d"; then
+                  log "  Excluding $ecosystem: $d (matched exclude pattern)"
+                  continue
+                fi
+                has_entries=true
+                cat <<YAML
+            - package-ecosystem: "${ecosystem}"
               directory: "${d}"
               schedule:
                 interval: "${DEFAULT_INTERVAL}"
@@ -154,7 +241,14 @@ jobs:
                 prefix: "chore"
                 include: "scope"
           YAML
+                log "  Found ${ecosystem} in ${d}"
+              done
             done
+
+            # If no entries were found, emit an empty list so YAML stays valid
+            if [[ "$has_entries" == false ]]; then
+              echo "  []"
+            fi
           }
 
           # Write file only if changed; return 0 if wrote, 1 if unchanged
@@ -170,7 +264,7 @@ jobs:
             return 0
           }
 
-          # Rewrite Terraform module sources: github.com/... → git::https://github.com/...
+          # Rewrite Terraform module sources: github.com/... -> git::https://github.com/...
           rewrite_tf_sources() {
             local changed_files=0 matched_lines=0
             mapfile -d '' -t tfs < <(find "$REPO_ROOT" -type f -name '*.tf' -not -path '*/.git/*' -print0)
@@ -182,65 +276,29 @@ jobs:
                 changed_files=$((changed_files + 1))
               fi
             done
-            log "🔧 Rewrote module sources in $changed_files file(s); matched $matched_lines source line(s)."
+            log "Rewrote module sources in $changed_files file(s); matched $matched_lines source line(s)."
             (( changed_files > 0 ))
           }
 
           # ---- main ----
           require_tools
-          log "📂 Repo root: $REPO_ROOT"
-
-          # No phantom empty element + explicit empty filtering
-          mapfile -t tf_dirs < <(find_tf_dirs || true)
-          filtered=()
-          for d in "${tf_dirs[@]:-}"; do
-            [[ -n "$d" ]] && filtered+=("$d")
-          done
-          tf_dirs=("${filtered[@]}")
-
-          # Filter out directories matching exclude_paths patterns
-          if [[ -n "$EXCLUDE_PATHS" ]]; then
-            IFS=',' read -ra patterns <<< "$EXCLUDE_PATHS"
-            kept=()
-            for d in "${tf_dirs[@]}"; do
-              excluded=false
-              for pat in "${patterns[@]}"; do
-                pat="$(printf '%s' "$pat" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
-                [[ -z "$pat" ]] && continue
-                # Match pattern against dir (strip leading /)
-                dir_stripped="${d#/}"
-                # shellcheck disable=SC2254
-                if [[ "$dir_stripped" == $pat ]]; then
-                  excluded=true
-                  break
-                fi
-              done
-              if [[ "$excluded" == false ]]; then
-                kept+=("$d")
-              else
-                log "⏭️  Excluding $d (matched pattern)"
-              fi
-            done
-            tf_dirs=("${kept[@]+"${kept[@]}"}")
-          fi
-
-          if ((${#tf_dirs[@]} == 0)); then
-            log "ℹ️  No .tf files found; will NOT include any Terraform blocks."
-          fi
+          log "Repo root: $REPO_ROOT"
+          log "Scanning for all supported Dependabot ecosystems..."
 
           tmpfile="$(mktemp)"
-          generate_dependabot_yaml "${tf_dirs[@]}" > "$tmpfile"
+          generate_dependabot_yaml > "$tmpfile"
 
           changed_yml=0
           if safe_write_file "$DEPB_PATH" "$tmpfile"; then
             changed_yml=1
-            log "✅ Wrote ${DEPB_PATH}"
+            log "Wrote ${DEPB_PATH}"
           else
-            log "✅ ${DEPB_PATH} already up to date."
+            log "${DEPB_PATH} already up to date."
           fi
 
+          # Terraform source rewriting (only if .tf files exist)
           changed_tf=0
-          if ((${#tf_dirs[@]} > 0)); then
+          if find "$REPO_ROOT" -type f -name '*.tf' -not -path '*/.git/*' -print -quit | grep -q .; then
             rewrite_tf_sources && changed_tf=1 || true
           fi
 
