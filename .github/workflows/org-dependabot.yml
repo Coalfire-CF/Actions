@@ -12,6 +12,11 @@ on:
         description: "Branch to update (pass github.head_ref for PRs)"
         required: true
         type: string
+      include_github_actions:
+        description: 'Deprecated — github-actions is now auto-detected. Kept for backwards compatibility.'
+        required: false
+        type: string
+        default: "true"
       default_interval:
         description: 'Schedule interval for all detected ecosystems'
         required: false
