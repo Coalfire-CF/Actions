@@ -160,7 +160,7 @@ jobs:
           terraform plan $PLAN_ARGS
 
       - name: Upload plan artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: tfplan-apply-${{ github.run_id }}
           path: ${{ inputs.working_directory }}/tfplan
