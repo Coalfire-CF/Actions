@@ -1,0 +1,202 @@
+name: Terraform Plan
+
+on:
+  workflow_call:
+    inputs:
+      terraform_version:
+        description: 'The version of Terraform to use (leave empty to use .terraform-version)'
+        required: false
+        default: ''
+        type: string
+      working_directory:
+        description: 'Working directory for Terraform commands'
+        required: false
+        default: '.'
+        type: string
+      backend_config:
+        description: 'Backend configuration arguments (e.g., -backend-config=bucket=my-bucket)'
+        required: false
+        default: ''
+        type: string
+      var_file:
+        description: 'Path to a Terraform variables file'
+        required: false
+        default: ''
+        type: string
+      aws_region:
+        description: 'AWS region for OIDC authentication'
+        required: false
+        default: 'us-east-1'
+        type: string
+      aws_role_arn:
+        description: 'AWS IAM role ARN for OIDC authentication (leave empty to skip AWS auth)'
+        required: false
+        default: ''
+        type: string
+      slack_channel_id:
+        description: 'Slack channel ID for failure notifications (optional)'
+        required: false
+        default: ''
+        type: string
+    secrets:
+      TF_PLAN_APP_CLIENT_ID:
+        description: 'GitHub App client ID for private module access'
+        required: false
+      TF_PLAN_APP_PRIVATE_KEY:
+        description: 'GitHub App private key for private module access'
+        required: false
+
+  workflow_dispatch:
+    inputs:
+      terraform_version:
+        description: 'The version of Terraform to use (leave empty to use .terraform-version)'
+        required: false
+        default: ''
+        type: string
+      working_directory:
+        description: 'Working directory for Terraform commands'
+        required: false
+        default: '.'
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write
+
+jobs:
+  plan:
+    name: Terraform Plan
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.working_directory }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Resolve Terraform version
+        id: tf-version
+        working-directory: .
+        run: |
+          if [ -n "${{ inputs.terraform_version }}" ]; then
+            echo "version=${{ inputs.terraform_version }}" >> $GITHUB_OUTPUT
+          elif [ -f .terraform-version ]; then
+            echo "version=$(cat .terraform-version | tr -d '[:space:]')" >> $GITHUB_OUTPUT
+          else
+            VERSION=$(curl -s https://raw.githubusercontent.com/Coalfire-CF/Actions/main/.terraform-version | tr -d '[:space:]')
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ steps.tf-version.outputs.version }}
+
+      - name: Check for GitHub App secrets
+        id: check-app-secrets
+        run: |
+          if [ -n "$TF_PLAN_APP_CLIENT_ID" ] && [ -n "$TF_PLAN_APP_PRIVATE_KEY" ]; then
+            echo "has_secrets=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_secrets=false" >> $GITHUB_OUTPUT
+          fi
+        env:
+          TF_PLAN_APP_CLIENT_ID: ${{ secrets.TF_PLAN_APP_CLIENT_ID }}
+          TF_PLAN_APP_PRIVATE_KEY: ${{ secrets.TF_PLAN_APP_PRIVATE_KEY }}
+
+      - name: Get GitHub App Token
+        id: app-token
+        if: steps.check-app-secrets.outputs.has_secrets == 'true'
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.TF_PLAN_APP_CLIENT_ID }}
+          private-key: ${{ secrets.TF_PLAN_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
+      - name: Configure Git for private modules
+        if: steps.check-app-secrets.outputs.has_secrets == 'true'
+        run: |
+          git config --global url."https://actions:${{ steps.app-token.outputs.token }}@github.com".insteadOf https://github.com
+          git config --global url."https://actions:${{ steps.app-token.outputs.token }}@github.com/".insteadOf ssh://git@github.com/
+
+      - name: Configure AWS credentials (OIDC)
+        if: inputs.aws_role_arn != ''
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ inputs.aws_role_arn }}
+          aws-region: ${{ inputs.aws_region }}
+
+      - name: Terraform Init
+        run: |
+          INIT_ARGS=""
+          if [ -n "${{ inputs.backend_config }}" ]; then
+            INIT_ARGS="-backend-config=${{ inputs.backend_config }}"
+          fi
+          terraform init $INIT_ARGS
+
+      - name: Terraform Plan
+        id: plan
+        run: |
+          PLAN_ARGS="-no-color -input=false -out=tfplan"
+          if [ -n "${{ inputs.var_file }}" ]; then
+            PLAN_ARGS="$PLAN_ARGS -var-file=${{ inputs.var_file }}"
+          fi
+          set +e
+          terraform plan $PLAN_ARGS -detailed-exitcode 2>&1 | tee "$GITHUB_WORKSPACE/plan_output.txt"
+          EXIT_CODE=${PIPESTATUS[0]}
+          set -e
+
+          echo "exitcode=$EXIT_CODE" >> $GITHUB_OUTPUT
+
+          # Exit code 0 = no changes, 1 = error, 2 = changes detected
+          if [ "$EXIT_CODE" -eq 1 ]; then
+            exit 1
+          fi
+
+      - name: Upload plan artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-${{ github.run_id }}
+          path: |
+            ${{ inputs.working_directory }}/tfplan
+            plan_output.txt
+          retention-days: 5
+
+      - name: Post plan to PR
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v8
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            let plan = fs.readFileSync(process.env.GITHUB_WORKSPACE + '/plan_output.txt', 'utf8');
+            const exitCode = '${{ steps.plan.outputs.exitcode }}';
+
+            let status = '✅ No changes';
+            if (exitCode === '2') status = '⚠️ Changes detected';
+            if (exitCode === '1') status = '❌ Error';
+
+            // Truncate if needed (GitHub comment limit is 65536 chars)
+            if (plan.length > 60000) {
+              plan = plan.substring(0, 60000) + '\n... (truncated)';
+            }
+
+            const body = `### Terraform Plan — ${status}\n<details><summary>Show Plan</summary>\n\n\`\`\`\n${plan}\n\`\`\`\n</details>`;
+
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: body
+            });
+
+  notify-failure:
+    needs: plan
+    if: failure() && inputs.slack_channel_id != ''
+    uses: Coalfire-CF/Actions/.github/workflows/org-slack-notify.yml@main
+    secrets: inherit
+    with:
+      notification-type: failure
+      channel-id: ${{ inputs.slack_channel_id }}
