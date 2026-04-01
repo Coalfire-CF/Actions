@@ -11,9 +11,9 @@ Sends Slack notifications from GitHub Actions workflows. Supports three notifica
 ## Prerequisites
 
 1. **Slack App** — A Slack app with `chat:write` bot scope installed to your workspace
-2. **Org Secret** — `SLACK_BOT_TOKEN` stored as a GitHub org-level secret containing the bot's `xoxb-` token
-3. **Bot Invite** — The bot must be invited to each channel: `/invite @Slack App Name`
-4. **Channel ID** — Right-click the channel in Slack → View channel details → scroll to the bottom to find the Channel ID (starts with `C`)
+1. **Org Secret** — `SLACK_BOT_TOKEN` stored as a GitHub org-level secret containing the bot's `xoxb-` token
+1. **Bot Invite** — The bot must be invited to each channel: `/invite @Slack App Name`
+1. **Channel ID** — Right-click the channel in Slack → View channel details → scroll to the bottom to find the Channel ID (starts with `C`)
 
 ## How It Works
 
