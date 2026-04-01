@@ -12,11 +12,10 @@
 
 When release-please creates a new release, `org-release.yml` triggers several parallel jobs:
 
-```
+```text
 release (release-please creates the tag and release)
   |
   ├── release-clean   -- Builds a cleaned tarball (THIS FEATURE)
-  ├── checkov-scan    -- Checkov IaC security scan (full repo)
   ├── trivy-scan      -- Trivy security scan (full repo)
   ├── gitleaks-scan   -- Secret detection across full repo history
   ├── notify-release  -- Slack release notification (if configured)
@@ -26,13 +25,13 @@ release (release-please creates the tag and release)
 The `release-clean` job:
 
 1. Checks out the code at the release tag on an **isolated, ephemeral runner**
-2. Validates all inputs against an allowlist (rejects special characters and path traversal)
-3. Removes `.git/` (always), plus any configured directories and files
-4. Packages the remaining files into `<repo>-<tag>-clean.tar.gz`
-5. Generates a SHA256 checksum file (`<repo>-<tag>-clean.tar.gz.sha256`)
-6. Uploads both to the GitHub release as downloadable assets
-7. Also uploads both as workflow artifacts (retained for 30 days)
-8. Writes a step summary with archive details for the Actions run log
+1. Validates all inputs against an allowlist (rejects special characters and path traversal)
+1. Removes `.git/` (always), plus any configured directories and files
+1. Packages the remaining files into `<repo>-<tag>-clean.tar.gz`
+1. Generates a SHA256 checksum file (`<repo>-<tag>-clean.tar.gz.sha256`)
+1. Uploads both to the GitHub release as downloadable assets
+1. Also uploads both as workflow artifacts (retained for 30 days)
+1. Writes a step summary with archive details for the Actions run log
 
 **Scan jobs are not affected.** They run on their own runners with a full, unmodified checkout — `.github/`, `docs/`, and everything else are still scanned.
 
@@ -180,7 +179,7 @@ This is **complementary** — the workflow handles the explicit `-clean.tar.gz` 
 
 ## FAQ
 
-**Q: Will this break my CI scans (Checkov, Trivy)?**
+**Q: Will this break my CI scans (Trivy)?**
 No. Each scan job runs on its own isolated runner with a fresh, full checkout. They never see the cleaned copy.
 
 **Q: Does this modify my repository, branches, or tags?**
