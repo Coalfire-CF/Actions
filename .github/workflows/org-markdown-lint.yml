@@ -17,6 +17,10 @@ permissions:
   contents: read
   pull-requests: write
 
+# markdownlint-cli2 pinned to 0.21.0 (not 0.22.0) due to moderate DoS
+# vulnerability in smol-toml dependency (GHSA-v3rj-xjv7-4jmq).
+# Upgrade when smol-toml >= 1.6.1 is included upstream.
+
 jobs:
   lint-README:
     name: Lint Markdown files
@@ -29,10 +33,6 @@ jobs:
       uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
       with:
         node-version: 22
-        cache: 'npm'
-
-    - name: Install dependencies
-      run: npm ci
 
     - name: Get list of changed Markdown files
       id: get-md-files
@@ -48,7 +48,7 @@ jobs:
     - name: Lint Markdown files
       if: steps.get-md-files.outputs.has_files == 'true'
       run: |
-        npx markdownlint-cli2 $(cat /tmp/md_files.txt | tr '\n' ' ') 2>&1 | tee .github/md_lint_output.txt
+        npx --yes markdownlint-cli2@0.21.0 $(cat /tmp/md_files.txt | tr '\n' ' ') 2>&1 | tee .github/md_lint_output.txt
 
     - name: Create Fail Comment
       uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
