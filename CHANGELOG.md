@@ -1,5 +1,43 @@
 # Changelog
 
+## [0.5.0](https://github.com/Coalfire-CF/Actions/compare/v0.4.1...v0.5.0) (2026-04-01)
+
+
+### Features
+
+* all dependabot refresh ([5aaa40e](https://github.com/Coalfire-CF/Actions/commit/5aaa40e141e93e8ad6f60b075b592b3df9a9d963))
+* init terraform plan and apply actions ([2179f01](https://github.com/Coalfire-CF/Actions/commit/2179f016f3a77b1b6173e9962cff2c36c143fac7))
+* init terraform plan and apply actions ([d83c586](https://github.com/Coalfire-CF/Actions/commit/d83c586159f1452d6583b38def891e9d7aa2d088))
+
+
+### Bug Fixes
+
+* add claude files to be purged ([a430b2c](https://github.com/Coalfire-CF/Actions/commit/a430b2cbd2eb670f915ff2adb59e56406a7e79da))
+* add claude files to be purged ([11906d5](https://github.com/Coalfire-CF/Actions/commit/11906d5b295c61d965fd9caa48d58a681f38247b))
+* create inline markdownlint config and enable pipefail ([66db752](https://github.com/Coalfire-CF/Actions/commit/66db7522d319248709ee9a41360e947be964b9de))
+* disable MD024 and MD060 for terraform-docs compatibility ([3006491](https://github.com/Coalfire-CF/Actions/commit/30064910f0a10f90a489245316d238b6064e060e))
+* fixing some markdown read errors ([5097e8e](https://github.com/Coalfire-CF/Actions/commit/5097e8e72c2f66f0a947e93f88b1dbfcc644e973))
+* harden workflow security and pin third-party actions to SHAs ([b9e22b8](https://github.com/Coalfire-CF/Actions/commit/b9e22b828a5a3820846421e5f27bd7a156c48024))
+* keeping input but is deprecated, will be removed in future versions ([0bb85cf](https://github.com/Coalfire-CF/Actions/commit/0bb85cf0e6d4fad938000d25c4a1bb02a274b995))
+* remove checkov ([f4ac0b9](https://github.com/Coalfire-CF/Actions/commit/f4ac0b9c5aaf9d0019a157c4618e23d19efe5dc9))
+* remove checkov ([76fd82e](https://github.com/Coalfire-CF/Actions/commit/76fd82efc3b65dd64cfb6977a4b93dc1982ecf88))
+* truncate release highlights to stay within Slack block text limit ([a1f54bf](https://github.com/Coalfire-CF/Actions/commit/a1f54bfee5e2415710c7d6b3b6e3fcbb47f9f48c))
+* use fetch-depth 0 in markdown lint to enable diff against origin/main ([471f332](https://github.com/Coalfire-CF/Actions/commit/471f33290126a4db3e2e661167ed71c7c73960c7))
+* use npx with pinned version for markdown lint in reusable workflow ([0fccd87](https://github.com/Coalfire-CF/Actions/commit/0fccd873bb8be31f59f6ee31c4f6cc4c42597e54))
+
+
+### Miscellaneous
+
+* bump terraform version to 1.14.8 ([1f2431f](https://github.com/Coalfire-CF/Actions/commit/1f2431f630d9135914e5541926355128c99b28fc))
+* bump terraform version to 1.14.8 ([8d154d4](https://github.com/Coalfire-CF/Actions/commit/8d154d41a3279b46b634708702bb18ec6e85328d))
+* **deps:** bump actions/create-github-app-token from 2 to 3 ([c7ce8ba](https://github.com/Coalfire-CF/Actions/commit/c7ce8bae7f09c4f643647873696fbafab5b309f4))
+* **deps:** bump actions/create-github-app-token from 2 to 3 ([0c8fe7b](https://github.com/Coalfire-CF/Actions/commit/0c8fe7b12ca9eb3e89564705269fba990740b903))
+
+
+### Documentation
+
+* update README and docs for security hardening changes ([e9f63d1](https://github.com/Coalfire-CF/Actions/commit/e9f63d19c99da9905881017d66ddfe1c973aebf9))
+
 ## [0.4.1](https://github.com/Coalfire-CF/Actions/compare/v0.4.0...v0.4.1) (2026-03-16)
 
 
