@@ -47,9 +47,33 @@ jobs:
           echo "$FILES" > /tmp/md_files.txt
         fi
 
-    - name: Lint Markdown files
+    - name: Create markdownlint config
       if: steps.get-md-files.outputs.has_files == 'true'
       run: |
+        if [ ! -f .markdownlint-cli2.jsonc ] && [ ! -f .markdownlint-cli2.yaml ] && [ ! -f .markdownlint.jsonc ] && [ ! -f .markdownlint.json ]; then
+          cat > .markdownlint-cli2.jsonc <<'JSONC'
+        {
+          "config": {
+            "default": true,
+            "MD013": false,
+            "MD024": { "siblings_only": true },
+            "MD033": false,
+            "MD041": false,
+            "MD034": false,
+            "MD029": { "style": "one" },
+            "MD035": { "style": "---" },
+            "MD046": { "style": "fenced" },
+            "MD048": { "style": "backtick" }
+          }
+        }
+        JSONC
+        fi
+
+    - name: Lint Markdown files
+      if: steps.get-md-files.outputs.has_files == 'true'
+      shell: bash
+      run: |
+        set -o pipefail
         npx --yes markdownlint-cli2@0.21.0 $(cat /tmp/md_files.txt | tr '\n' ' ') 2>&1 | tee .github/md_lint_output.txt
 
     - name: Create Fail Comment
