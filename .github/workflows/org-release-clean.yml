@@ -12,6 +12,7 @@ name: Release Artifact Cleaner
 #   - All inputs validated against allowlist regex (SC-28, SI-10)
 #   - Path traversal (..) explicitly rejected
 #   - Inputs passed via env: blocks, never direct ${{ }} in shell
+#   - Optional GitHub App token for consistent auth across public/private repos (IA-2)
 #   - SHA256 checksum for artifact integrity (SI-7)
 #   - Step summary for audit trail (AU-3)
 
@@ -81,6 +82,26 @@ jobs:
       uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       with:
         ref: ${{ inputs.tag_name }}
+
+    - name: Check for GitHub App credentials
+      id: check-app
+      env:
+        APP_ID: ${{ secrets.RELEASE_APP_ID }}
+      run: |
+        if [[ -n "${APP_ID}" ]]; then
+          echo "available=true" >> "${GITHUB_OUTPUT}"
+        else
+          echo "available=false" >> "${GITHUB_OUTPUT}"
+          echo "::notice::GitHub App credentials not found — falling back to github.token"
+        fi
+
+    - name: Generate GitHub App token
+      id: app-token
+      if: steps.check-app.outputs.available == 'true'
+      uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1.12.0
+      with:
+        app-id: ${{ secrets.RELEASE_APP_ID }}
+        private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
 
     - name: Create clean archive
       env:
@@ -155,7 +176,7 @@ jobs:
 
     - name: Upload to GitHub Release
       env:
-        GH_TOKEN: ${{ github.token }}
+        GH_TOKEN: ${{ steps.app-token.outputs.token || github.token }}
         TAG_NAME: ${{ inputs.tag_name }}
         GH_REPO: ${{ github.repository }}
       run: |

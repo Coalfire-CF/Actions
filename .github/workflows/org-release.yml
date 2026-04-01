@@ -32,6 +32,15 @@ name: Release Please
 #
 #   Missing files/dirs in the exclusion lists are skipped gracefully (no failure).
 #
+# Authentication:
+#   This workflow supports an optional GitHub App for authentication. When the
+#   org-level secrets below are configured, app tokens are used instead of the
+#   default GITHUB_TOKEN — this ensures consistent permissions across public
+#   and private repos. If the secrets are not set, the workflow falls back to
+#   github.token automatically.
+#     - RELEASE_APP_ID:          GitHub App ID (optional)
+#     - RELEASE_APP_PRIVATE_KEY: GitHub App private key in PEM format (optional)
+#
 # Usage in downstream repos (defaults — no config needed):
 #   jobs:
 #     create-release:
@@ -105,11 +114,31 @@ jobs:
       release_body: ${{ steps.release.outputs.body }}
 
     steps:
+      - name: Check for GitHub App credentials
+        id: check-app
+        env:
+          APP_ID: ${{ secrets.RELEASE_APP_ID }}
+        run: |
+          if [[ -n "${APP_ID}" ]]; then
+            echo "available=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "available=false" >> "${GITHUB_OUTPUT}"
+            echo "::notice::GitHub App credentials not found — falling back to github.token"
+          fi
+
+      - name: Generate GitHub App token
+        id: app-token
+        if: steps.check-app.outputs.available == 'true'
+        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1.12.0
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
       - name: Run Release Please
         id: release
         uses: googleapis/release-please-action@16a9c90856f42705d54a6fda1823352bdc62cf38 # v4.4.0
         with:
-          token: ${{ github.token }}
+          token: ${{ steps.app-token.outputs.token || github.token }}
 
   release-clean:
     name: Clean Release Archive
@@ -123,6 +152,7 @@ jobs:
       tag_name: ${{ needs.release.outputs.tag_name }}
       exclude_dirs: ${{ inputs.clean_exclude_dirs }}
       exclude_files: ${{ inputs.clean_exclude_files }}
+    secrets: inherit
 
   trivy-scan:
     name: Run Trivy Security Scan
