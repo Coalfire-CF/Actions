@@ -1,0 +1,9 @@
+{
+  "private": true,
+  "comments": {
+    "markdownlint-cli2": "Pinned to 0.21.0 instead of 0.22.0 due to moderate DoS vulnerability in smol-toml dependency (GHSA-v3rj-xjv7-4jmq). Upgrade to 0.22.0+ when smol-toml >= 1.6.1 is included."
+  },
+  "devDependencies": {
+    "markdownlint-cli2": "0.21.0"
+  }
+}

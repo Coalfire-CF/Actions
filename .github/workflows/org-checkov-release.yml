@@ -13,16 +13,16 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v6
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
     - name: Set up Python
-      uses: actions/setup-python@v6.2.0
+      uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
       with:
         python-version: 3.11
 
     - name: Install Checkov
       run: |
-        pip install checkov
+        pip install checkov==3.2.513
 
     - name: Run Checkov on entire repository
       id: checkov
@@ -41,7 +41,7 @@ jobs:
           fi
 
     - name: Upload Checkov release scan results
-      uses: actions/upload-artifact@v7
+      uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
       if: always()
       with:
         name: checkov-release-scan-results
@@ -65,7 +65,7 @@ jobs:
       if: always()
       run: |
         echo "## Checkov Release Scan Results" >> $GITHUB_STEP_SUMMARY
-        if [ "${{ env.CHECKOV_PASSED }}" == "true" ]; then
+        if [ "$CHECKOV_PASSED" == "true" ]; then
           echo "✅ All Terraform files passed Checkov security checks" >> $GITHUB_STEP_SUMMARY
         else
           echo "⚠️ Some Terraform files have security findings. Download the artifact for details." >> $GITHUB_STEP_SUMMARY

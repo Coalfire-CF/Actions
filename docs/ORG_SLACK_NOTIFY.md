@@ -25,13 +25,13 @@ No extra jobs are needed in downstream repos. Just add `slack_channel_id` to you
 
 ### Downstream Usage
 
-Add `slack_channel_id` and `secrets: inherit` to any workflow call:
+Add `slack_channel_id` to any workflow call. The release workflow requires `secrets: inherit` (for the GitHub App token used by release-please). PR workflows only need `SLACK_BOT_TOKEN` if you want failure notifications:
 
 ```yaml
 # Release workflow — gets both release and failure notifications
 jobs:
   create-release:
-    uses: Coalfire-CF/Actions/.github/workflows/org-release.yml@v0.4.0
+    uses: Coalfire-CF/Actions/.github/workflows/org-release.yml@main
     secrets: inherit
     with:
       slack_channel_id: 'CXXXXXXXXX'
@@ -41,8 +41,7 @@ jobs:
 # PR workflows — get failure notifications
 jobs:
   checkov-scan:
-    uses: Coalfire-CF/Actions/.github/workflows/org-checkov.yml@v0.4.0
-    secrets: inherit
+    uses: Coalfire-CF/Actions/.github/workflows/org-checkov.yml@main
     with:
       slack_channel_id: 'CXXXXXXXXX'
 ```
@@ -81,11 +80,11 @@ on:
 
 jobs:
   check:
-    uses: Coalfire-CF/Actions/.github/workflows/org-slack-notify.yml@v0.4.0
+    uses: Coalfire-CF/Actions/.github/workflows/org-slack-notify.yml@main
     secrets: inherit
     with:
       notification-type: health-check
-      channel-id: 'C08M58XQKME'
+      channel-id: 'C0123456789'
       app-name: 'My App'
       app-url: 'https://my-app.example.com/health'
 ```
@@ -97,11 +96,11 @@ The `org-slack-notify.yml` workflow can also be called directly for custom notif
 ```yaml
 jobs:
   notify:
-    uses: Coalfire-CF/Actions/.github/workflows/org-slack-notify.yml@v0.4.0
+    uses: Coalfire-CF/Actions/.github/workflows/org-slack-notify.yml@main
     secrets: inherit
     with:
       notification-type: release    # release, failure, or health-check
-      channel-id: 'C08M58XQKME'
+      channel-id: 'C0123456789'
       app-name: 'my-repo'
       release-version: 'v1.2.0'
       release-highlights: '- Added feature X'

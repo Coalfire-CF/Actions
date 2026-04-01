@@ -9,35 +9,45 @@ on:
         type: string
         default: ''
 
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
   checkov_scan:
     runs-on: ubuntu-latest
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v6
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       with:
         fetch-depth: 0
         ref: ${{ github.head_ref }}
 
     - name: Set up Python
-      uses: actions/setup-python@v6.2.0
+      uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
       with:
         python-version: 3.11
 
     - name: Install Checkov
       run: |
-        pip install checkov
+        pip install checkov==3.2.513
 
     - name: Get changed Terraform files
       id: get_changed_files
+      env:
+        BASE_REF: ${{ github.base_ref }}
+        HEAD_REF: ${{ github.head_ref }}
       run: |
-        echo "::set-output name=files::$(git diff --name-only --diff-filter=d origin/${{ github.base_ref }}..${{ github.head_ref }} -- '*.tf' | tr '\n' ' ')"
+        CHANGED_FILES=$(git diff --name-only --diff-filter=d "origin/${BASE_REF}..${HEAD_REF}" -- '*.tf' | tr '\n' ' ')
+        echo "files=$CHANGED_FILES" >> $GITHUB_OUTPUT
 
     - name: Run Checkov
       id: checkov
+      env:
+        CHANGED_FILES: ${{ steps.get_changed_files.outputs.files }}
       run: |
-          IFS=$'\n' read -ra FILES <<< "$(echo ${{ steps.get_changed_files.outputs.files }} | tr ' ' '\n')"
+          IFS=$'\n' read -ra FILES <<< "$(echo "$CHANGED_FILES" | tr ' ' '\n')"
           PASSED=true
           RESULTS=()
           for file in "${FILES[@]}"; do
@@ -56,7 +66,7 @@ jobs:
      
       
     - name: Create comments with Checkov results
-      uses: actions/github-script@v8
+      uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
       with:
         github-token: ${{ secrets.GITHUB_TOKEN }}
         script: |
@@ -104,7 +114,8 @@ jobs:
     needs: checkov_scan
     if: failure() && inputs.slack_channel_id != ''
     uses: Coalfire-CF/Actions/.github/workflows/org-slack-notify.yml@main
-    secrets: inherit
+    secrets:
+      SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
     with:
       notification-type: failure
       channel-id: ${{ inputs.slack_channel_id }}

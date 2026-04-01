@@ -27,15 +27,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout PR head (downstream repo)
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
           fetch-depth: 0
 
       - name: Configure git identity (early)
+        env:
+          GIT_ACTOR: ${{ github.actor }}
         run: |
-          git config user.name "${{ github.actor }}"
-          git config user.email "${{ github.actor }}@users.noreply.github.com"
+          git config user.name "$GIT_ACTOR"
+          git config user.email "${GIT_ACTOR}@users.noreply.github.com"
 
       - name: Install tree
         run: |
@@ -154,20 +156,23 @@ jobs:
 
       - name: Commit & push if changed
         if: ${{ steps.run.outputs.exit_code == '10' }}
+        env:
+          COMMIT_MSG: ${{ inputs.commit_message }}
         run: |
           git add -A
           if git diff --cached --quiet; then
             echo "No changes to commit."
             exit 0
           fi
-          git commit -m "${{ inputs.commit_message }}"
+          git commit -m "$COMMIT_MSG"
           git push origin HEAD
 
   notify-failure:
     needs: update-readme-on-pr
     if: failure() && inputs.slack_channel_id != ''
     uses: Coalfire-CF/Actions/.github/workflows/org-slack-notify.yml@main
-    secrets: inherit
+    secrets:
+      SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
     with:
       notification-type: failure
       channel-id: ${{ inputs.slack_channel_id }}

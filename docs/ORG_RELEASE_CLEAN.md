@@ -17,7 +17,10 @@ release (release-please creates the tag and release)
   |
   ├── release-clean   -- Builds a cleaned tarball (THIS FEATURE)
   ├── checkov-scan    -- Checkov IaC security scan (full repo)
-  └── trivy-scan      -- Trivy security scan (full repo)
+  ├── trivy-scan      -- Trivy security scan (full repo)
+  ├── gitleaks-scan   -- Secret detection across full repo history
+  ├── notify-release  -- Slack release notification (if configured)
+  └── notify-failure  -- Slack failure notification (if any job fails)
 ```
 
 The `release-clean` job:
@@ -138,13 +141,13 @@ jobs:
 
 ## Security Controls
 
-| Control | NIST 800-53 | Description |
-|---------|-------------|-------------|
-| Input validation | SI-10 | All inputs validated against allowlist regex; path traversal (`..`) rejected |
-| No shell interpolation | SC-28 | Inputs passed via `env:` blocks, never direct `${{ }}` in shell scripts |
-| SHA256 checksum | SI-7 | Integrity verification for the released artifact |
-| Step summary | AU-3 | Audit trail of what was built, excluded, and uploaded |
-| Least privilege | AC-6 | Only requires `contents: write` and `actions: read`; no `secrets: inherit` |
+| Control | Description |
+|---------|-------------|
+| Input validation | All inputs validated against allowlist regex; path traversal (`..`) rejected |
+| No shell interpolation | Inputs passed via `env:` blocks, never direct `${{ }}` in shell scripts |
+| SHA256 checksum | Integrity verification for the released artifact |
+| Step summary | Audit trail of what was built, excluded, and uploaded |
+| Least privilege | Only requires `contents: write` and `actions: read`; no `secrets: inherit` |
 
 ## Verifying a Download
 
@@ -187,7 +190,7 @@ No. The job checks out code into an ephemeral runner workspace, deletes files fr
 It is skipped with a log message. The workflow continues without error.
 
 **Q: Does this need any additional secrets?**
-No. It only uses the automatic `github.token` — no `secrets: inherit` required for the clean job itself. (The parent `org-release.yml` call still needs `secrets: inherit` for scan jobs.)
+No. It only uses the automatic `github.token` — no `secrets: inherit` required for the clean job itself. (The parent `org-release.yml` call still needs `secrets: inherit` for the GitHub App token used by release-please.)
 
 **Q: Can someone inject malicious input through the exclusion lists?**
 Inputs are validated against a strict allowlist regex (`^[a-zA-Z0-9._/,-]+$`) and checked for path traversal (`..`). Invalid inputs fail the workflow immediately.
