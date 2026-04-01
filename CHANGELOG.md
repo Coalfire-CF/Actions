@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.1](https://github.com/Coalfire-CF/Actions/compare/v0.5.0...v0.5.1) (2026-04-01)
+
+
+### Bug Fixes
+
+* add github app for release ([56412b8](https://github.com/Coalfire-CF/Actions/commit/56412b872dd4dbcea55fac2a2bf252425ce83c2e))
+* release app from token ([baef6f8](https://github.com/Coalfire-CF/Actions/commit/baef6f8e633f9b47dbcb2d8d5c776708216ddfc4))
+
 ## [0.5.0](https://github.com/Coalfire-CF/Actions/compare/v0.4.1...v0.5.0) (2026-04-01)
 
 
