@@ -35,13 +35,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout code
-      uses: actions/checkout@v6
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
     - name: Resolve Terraform version
       id: tf-version
+      env:
+        INPUT_TF_VERSION: ${{ inputs.terraform_version }}
       run: |
-        if [ -n "${{ inputs.terraform_version }}" ]; then
-          echo "version=${{ inputs.terraform_version }}" >> $GITHUB_OUTPUT
+        if [ -n "$INPUT_TF_VERSION" ]; then
+          echo "version=$INPUT_TF_VERSION" >> $GITHUB_OUTPUT
         elif [ -f .terraform-version ]; then
           echo "version=$(cat .terraform-version | tr -d '[:space:]')" >> $GITHUB_OUTPUT
         else
@@ -50,7 +52,7 @@ jobs:
         fi
 
     - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v4
+      uses: hashicorp/setup-terraform@5e8dbf3c6d9deaf4193ca7a8fb23f2ac83bb6c85 # v4
       with:
         terraform_version: ${{ steps.tf-version.outputs.version }}
 
@@ -69,7 +71,7 @@ jobs:
     - name: Get Checkout Token
       id: checkout-token
       if: steps.check-secrets.outputs.has_secrets == 'true'
-      uses: actions/create-github-app-token@v3
+      uses: actions/create-github-app-token@f8d387b68d61c58ab83c6c016672934102569859 # v3
       with:
         app-id: ${{ secrets.TF_VALIDATE_APP_CLIENT_ID }}
         private-key: ${{ secrets.TF_VALIDATE_APP_PRIVATE_KEY }}
@@ -77,9 +79,11 @@ jobs:
     
     - name: Configure Git
       if: steps.check-secrets.outputs.has_secrets == 'true'
+      env:
+        APP_TOKEN: ${{ steps.checkout-token.outputs.token }}
       run: |
-        git config --global url."https://actions:${{ steps.checkout-token.outputs.token }}@github.com".insteadOf https://github.com
-        git config --global url."https://actions:${{ steps.checkout-token.outputs.token }}@github.com/".insteadOf ssh://git@github.com/ 
+        git config --global url."https://actions:${APP_TOKEN}@github.com".insteadOf https://github.com
+        git config --global url."https://actions:${APP_TOKEN}@github.com/".insteadOf ssh://git@github.com/
         
     - name: Initialise with no backend
       run: terraform init -backend=false
@@ -91,18 +95,19 @@ jobs:
         OUTPUT=$(terraform validate)
         CLEAN_OUTPUT=$(echo "$OUTPUT" | sed -r "s/\x1B\[([0-9]{1,2}(;[0-9]{1,2})?)?[m|K]//g")
         echo "$CLEAN_OUTPUT"
-        echo "result=$CLEAN_OUTPUT" >> $GITHUB_OUTPUT
+        echo "$CLEAN_OUTPUT" > "$GITHUB_WORKSPACE/validate_output.txt"
         set -e
       continue-on-error: true
 
     - name: Create comment
       if: github.event_name == 'pull_request'
-      uses: actions/github-script@v8
+      uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
       with:
         github-token: ${{ secrets.GITHUB_TOKEN }}
         script: |
+          const fs = require('fs');
           const issue_number = context.issue.number;
-          const result = `${{ steps.validate.outputs.result }}`;
+          const result = fs.readFileSync(process.env.GITHUB_WORKSPACE + '/validate_output.txt', 'utf8');
           github.rest.issues.createComment({
             owner: context.repo.owner,
             repo: context.repo.repo,
@@ -113,7 +118,8 @@ jobs:
     needs: verify
     if: failure() && inputs.slack_channel_id != ''
     uses: Coalfire-CF/Actions/.github/workflows/org-slack-notify.yml@main
-    secrets: inherit
+    secrets:
+      SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
     with:
       notification-type: failure
       channel-id: ${{ inputs.slack_channel_id }}

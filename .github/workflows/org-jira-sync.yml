@@ -57,6 +57,9 @@ jobs:
         JIRA_ISSUE_TYPE_ID: ${{ secrets.JIRA_ISSUE_TYPE_ID }}
         JIRA_LABEL: ${{ secrets.JIRA_LABEL }}
         JIRA_API_VERSION: ${{ secrets.JIRA_API_VERSION }}
+        INPUT_ISSUE_TITLE: ${{ inputs.issue_title }}
+        INPUT_ISSUE_BODY: ${{ inputs.issue_body }}
+        INPUT_ISSUE_URL: ${{ inputs.issue_url }}
       run: |
         # Sanitize all secrets by trimming whitespace and newlines
         JIRA_BASE_URL=$(echo "$JIRA_BASE_URL" | tr -d '\n\r' | xargs)
@@ -87,17 +90,18 @@ jobs:
         API_VERSION="${JIRA_API_VERSION:-3}"
 
         # Prepare the issue description with link back to GitHub
-        GITHUB_ISSUE_URL="${{ inputs.issue_url }}"
-        ISSUE_BODY=$(cat <<EOF
-        ${{ inputs.issue_body }}
-
-        ---
-        Created from GitHub Issue: $GITHUB_ISSUE_URL
+        ISSUE_BODY=$(cat <<'EOF'
+        ${ISSUE_BODY_INPUT}
         EOF
         )
+        # Substitute the actual value via envsubst-free approach
+        ISSUE_BODY="${INPUT_ISSUE_BODY}
+
+        ---
+        Created from GitHub Issue: ${INPUT_ISSUE_URL}"
 
         # Escape JSON special characters in summary and description
-        SUMMARY=$(echo "${{ inputs.issue_title }}" | jq -Rs .)
+        SUMMARY=$(echo "$INPUT_ISSUE_TITLE" | jq -Rs .)
         DESCRIPTION=$(echo "$ISSUE_BODY" | jq -Rs .)
 
         # Build the JSON payload
@@ -169,7 +173,8 @@ jobs:
     needs: create_jira_issue
     if: failure() && inputs.slack_channel_id != ''
     uses: Coalfire-CF/Actions/.github/workflows/org-slack-notify.yml@main
-    secrets: inherit
+    secrets:
+      SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
     with:
       notification-type: failure
       channel-id: ${{ inputs.slack_channel_id }}
