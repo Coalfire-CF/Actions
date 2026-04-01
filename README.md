@@ -1,149 +1,141 @@
-# Coalfire Advisory Github Actions
+# Coalfire Advisory GitHub Actions
 
-Source repository for github actions used by Coalfire Advisory.
+Centralized reusable GitHub Actions workflows for Coalfire Advisory repositories.
 
-## Setup and usage
+## Security Posture
 
-Central location to consume actions in other repos.
+All workflows follow security-hardened patterns:
 
-## Actions
+- **SHA-pinned actions** — All third-party actions pinned to immutable commit SHAs, not mutable tags
+- **Script injection prevention** — All `${{ }}` expressions passed via `env:` blocks, never interpolated directly in `run:` scripts
+- **Least-privilege permissions** — Each workflow declares minimum required `permissions:`
+- **Explicit secrets** — Secrets forwarded explicitly where possible instead of blanket `secrets: inherit`
+- **Dependency pinning** — Tools like Checkov, markdownlint-cli2, and yq pinned to specific versions with integrity checks
 
-Current list of actions and their usage
+## Workflows
 
-### Readme Tree Writer
+### PR Workflows
 
-Creates a Tree structure of the repo and inserts it under the Tree section of a README.md
+Called by downstream repos on pull requests.
 
-### Checkov
+| Workflow | File | Description |
+|----------|------|-------------|
+| Checkov | `org-checkov.yml` | Static analysis of changed Terraform files |
+| Trivy PR | `org-trivy-pr.yml` | Security scanning of changed Terraform files |
+| Gitleaks | `org-gitleaks-pr.yml` | Secret detection on PR commits |
+| Terraform Validate | `org-terraform-validate.yml` | `terraform init` + `terraform validate` with PR comment |
+| Terraform fmt | `org-terraform-fmt.yml` | Format check and auto-fix for Terraform files |
+| Terraform Docs | `org-terraform-docs.yml` | Auto-generate and commit terraform-docs output |
+| Terraform Plan | `org-terraform-plan.yml` | Terraform plan with PR comment |
+| Terraform Apply | `org-terraform-apply.yml` | Terraform apply (manual trigger or post-merge) |
+| Markdown Lint | `org-markdown-lint.yml` | Lint changed markdown files with markdownlint-cli2 |
+| Tree README | `org-tree-readme.yml` | Auto-generate and commit directory tree in README |
+| Dependabot Refresh | `org-dependabot.yml` | Auto-detect ecosystems and regenerate dependabot.yml |
+| Trivy Exception Review | `org-trivy-exception-review.yml` | Weekly review of Trivy `.trivyignore` exceptions |
 
-Static code analysis of terraform. This action is triggered by an opened PR to the main branch.
+### Release Workflows
 
-### Markdown Linter
+Called on merge to main.
 
-Markdown linter. Triggered on PR to main branch.
+| Workflow | File | Description |
+|----------|------|-------------|
+| Release | `org-release.yml` | Release-please + security scans + clean tarball + Slack notification |
+| Release Clean | `org-release-clean.yml` | Produces stripped release tarball (no .github/, docs/, etc.) |
+| Checkov Release | `org-checkov-release.yml` | Full-repo Checkov scan on release |
+| Trivy Release | `org-trivy-release.yml` | Full-repo Trivy scan on release |
+| Gitleaks Release | `org-gitleaks-release.yml` | Full-history secret scan on release |
 
-### Release
+### Utility Workflows
 
-Creates a new tag and release PR on the repo.  This action is triggered by a merged PR to the main branch.
+| Workflow | File | Description |
+|----------|------|-------------|
+| Slack Notify | `org-slack-notify.yml` | Sends release, failure, or health-check notifications to Slack |
+| Jira Sync | `org-jira-sync.yml` | Syncs GitHub issues to Jira (Cloud or Data Center) |
+| Terraform Version Check | `org-terraform-version-check.yml` | Scheduled check for new Terraform versions, auto-creates PRs |
 
-### Terraform Validate
-#### Private Repository Access
-Access to private repositories is controlled using a custom Github App that is installed on Coalfire-CF (Github Organization).
+### Legacy / Internal
 
-Both the "App ID" and this private key are stored as Github Organization Secrets:
-- CF_TF_PULL_PRIVATE_APP_CLIENTID
-- CF_TF_PULL_PRIVATE_APP_PRIVATE_KEY
+| Workflow | File | Description |
+|----------|------|-------------|
+| Azure Deploy | `org-azure-deploy.yml` | **Deprecated** — Legacy Azure deployment example. Do not use as a template. |
+| Local Release | `release.yml` | Release workflow for the Actions repo itself |
 
-Out of an abundance of caution, the visibility for these secrets is only set for "Private repositories".
+## Usage
 
-#### Usage
-These secrets are then used in workflows to allow GHA to pull from private Github Repositories:
-(Upstream workflow in this repository)
+### Basic Setup
+
+Downstream repos call these workflows via `workflow_call`. Example `.github/workflows/` setup:
+
 ```yaml
-- name: Get Checkout Token
-      id: checkout-token
-      if: steps.check-secrets.outputs.has_secrets == 'true'
-      uses: actions/create-github-app-token@v1
-      with:
-        app-id: ${{ secrets.APP_CLIENT_ID }}
-        private-key: ${{ secrets.APP_PRIVATE_KEY }}
-        owner: ${{ github.repository_owner }}
-    
-    - name: Configure Git
-      if: steps.check-secrets.outputs.has_secrets == 'true'
-      run: |
-        git config --global url."https://actions:${{ steps.checkout-token.outputs.token }}@github.com".insteadOf https://github.com
-        git config --global url."https://actions:${{ steps.checkout-token.outputs.token }}@github.com/".insteadOf ssh://git@github.com/ 
-```
+# .github/workflows/org-release.yml
+name: Org Release
+on:
+  push:
+    branches: [main]
 
-(Downstream workflow in another pak repository):
-```yaml
-# First determine if we're in a private repo
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  actions: read
+
 jobs:
-  check-visibility:
-    runs-on: ubuntu-latest
-    outputs:
-      is_private: ${{ steps.check.outputs.is_private }}
-    steps:
-      - id: check
-        run: |
-          REPO_VISIBILITY=$(curl -s -H "Authorization: token ${{ github.token }}" \
-          "https://api.github.com/repos/${{ github.repository }}" | jq -r '.private')
-          echo "is_private=$REPO_VISIBILITY" >> $GITHUB_OUTPUT
-
-  # Only run this job if we're in a private repo
-  private-validation:
-    needs: check-visibility
-    if: needs.check-visibility.outputs.is_private == 'true'
-    uses: Coalfire-CF/Actions/.github/workflows/org-terraform-validate.yml@26244cc890299238dcd63dc69dc1499e610d5966
+  create-release:
+    uses: Coalfire-CF/Actions/.github/workflows/org-release.yml@main
+    secrets: inherit
     with:
-      terraform_version: 1.11.4
-    secrets:
-      APP_CLIENT_ID: ${{ secrets.CF_TF_PULL_PRIVATE_APP_CLIENTID }}
-      APP_PRIVATE_KEY: ${{ secrets.CF_TF_PULL_PRIVATE_APP_PRIVATE_KEY }}
-      
-  # Run this job if we're in a public repo (no secrets passed)
-  public-validation:
-    needs: check-visibility
-    if: needs.check-visibility.outputs.is_private != 'true'
-    uses: Coalfire-CF/Actions/.github/workflows/org-terraform-validate.yml@26244cc890299238dcd63dc69dc1499e610d5966
-    with:
-      terraform_version: 1.11.4
+      slack_channel_id: 'C0123456789'
 ```
 
-The Organization secrets are only directly referenced in the downstream (calling) workflow.  In my experience, trying to use them in the upstream workflow does not work.
+```yaml
+# .github/workflows/org-checkov.yml
+name: Org Checkov
+on:
+  pull_request:
 
-The Github App Token job steps will be skipped if the downstream workflow is a public repository (in which case, access to the secrets is denied).
+jobs:
+  checkov-scan:
+    uses: Coalfire-CF/Actions/.github/workflows/org-checkov.yml@main
+    with:
+      slack_channel_id: 'C0123456789'
+```
 
-Adjust "terraform_version" as needed.
+### Terraform Validate — Private Repository Access
+
+Access to private Terraform module repositories is controlled using a GitHub App. The App ID and private key are stored as org-level secrets with visibility set to private repositories only.
+
+```yaml
+# Private repo — pass app credentials for module access
+jobs:
+  validate:
+    uses: Coalfire-CF/Actions/.github/workflows/org-terraform-validate.yml@main
+    with:
+      terraform_version: '1.13.3'
+    secrets:
+      APP_CLIENT_ID: ${{ secrets.APP_CLIENT_ID }}
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+
+# Public repo — no app credentials needed
+jobs:
+  validate:
+    uses: Coalfire-CF/Actions/.github/workflows/org-terraform-validate.yml@main
+    with:
+      terraform_version: '1.13.3'
+```
 
 ### Terraform Docs
 
-Generate Terraform modules documentation then commit and push the changes. Triggered on PR to main branch.
+Wrapper around [terraform-docs GitHub Actions](https://github.com/terraform-docs/gh-actions).
 
-This is a wrapper around [terraform-docs GitHub Actions](https://github.com/terraform-docs/gh-actions).
+| Input | Description | Default | Required |
+|-------|-------------|---------|----------|
+| `find-dir` | Root directory to extract list of directories | `disabled` | no |
+| `recursive` | Update submodules recursively | `false` | no |
+| `recursive-path` | Submodules path to recursively update | `modules` | no |
+| `working-dir` | Comma-separated directories to generate docs for | `.` | no |
 
-#### Tree
-
-```
-.
-├── README.md
-└── release-please-config.json
-
-```
-
-#### Inputs
-
-| Name | Description | Default | Required |
-| ---- | ----------- | ------- | -------- |
-| find-dir | name of root directory to extract list of directories | `disabled` | no |
-| recursive | if true it will update submodules recursively | `false` | no |
-| recursive-path | submodules path to recursively update | `modules` | no |
-| working-dir | comma separated list of directories to generate docs for | `.` | no |
-
-#### Usage
-
-**Root module only**
-
-```
-name: Org Terraform Docs
-on:
-    pull_request:
-    workflow_call:
-
-jobs:
-  terraform-docs:
-    uses: Coalfire-CF/Actions/.github/workflows/org-terraform-docs.yml@main
-```
-
-**Root module and submodules**
-
-```
-name: Org Terraform Docs
-on:
-    pull_request:
-    workflow_call:
-
+```yaml
+# Root module and submodules
 jobs:
   terraform-docs:
     uses: Coalfire-CF/Actions/.github/workflows/org-terraform-docs.yml@main
@@ -151,35 +143,31 @@ jobs:
       recursive: true
 ```
 
-**Submodules only**
+### Slack Notifications
 
-```
-name: Org Terraform Docs
-on:
-    pull_request:
-    workflow_call:
+All workflows accept an optional `slack_channel_id` input. When provided, failure notifications are sent automatically. The release workflow also sends release notifications.
 
-jobs:
-  terraform-docs:
-    uses: Coalfire-CF/Actions/.github/workflows/org-terraform-docs.yml@main
-    with:
-      find-dir: modules
-```
+See [docs/ORG_SLACK_NOTIFY.md](docs/ORG_SLACK_NOTIFY.md) for full setup instructions.
 
-### **Issues**
+### Jira Integration
 
-Bug fixes and enhancements are managed, tracked, and discussed through the GitHub issues on this repository.
+Syncs GitHub issues to Jira on issue creation. Supports both Jira Cloud (API token) and Jira Data Center (PAT).
 
-Issues should be flagged appropriately.
+See [docs/ORG_JIRA_SYNC_SETUP.md](docs/ORG_JIRA_SYNC_SETUP.md) for setup instructions.
+
+### Release Artifact Cleaning
+
+Releases automatically include a cleaned tarball that strips non-essential files (.github/, docs/, etc.). Enabled by default.
+
+See [docs/ORG_RELEASE_CLEAN.md](docs/ORG_RELEASE_CLEAN.md) for details and customization.
+
+## Issues
+
+Bug fixes and enhancements are managed through GitHub issues on this repository.
+
+Issue labels:
 
 - Bug
 - Enhancement
 - Documentation
 - Code
-
-#### Code Owners
-
-- Primary Code owner: Douglas Francis (@douglas-f)
-- Backup Code owner: Michael Scribellito (@mscribellito-cf)
-
-The responsibility of the code owners is to approve and Merge PR's on the repository, and generally manage and direct issue discussions.
