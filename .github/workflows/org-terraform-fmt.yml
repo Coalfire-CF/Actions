@@ -29,15 +29,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout code
-      uses: actions/checkout@v6
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       with:
         ref: ${{ github.head_ref }}  # Checkout the PR source branch
 
     - name: Resolve Terraform version
       id: tf-version
+      env:
+        INPUT_TF_VERSION: ${{ inputs.terraform_version }}
       run: |
-        if [ -n "${{ inputs.terraform_version }}" ]; then
-          echo "version=${{ inputs.terraform_version }}" >> $GITHUB_OUTPUT
+        if [ -n "$INPUT_TF_VERSION" ]; then
+          echo "version=$INPUT_TF_VERSION" >> $GITHUB_OUTPUT
         elif [ -f .terraform-version ]; then
           echo "version=$(cat .terraform-version | tr -d '[:space:]')" >> $GITHUB_OUTPUT
         else
@@ -46,7 +48,7 @@ jobs:
         fi
 
     - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v4
+      uses: hashicorp/setup-terraform@5e8dbf3c6d9deaf4193ca7a8fb23f2ac83bb6c85 # v4
       with:
         terraform_version: ${{ steps.tf-version.outputs.version }}
 
@@ -61,7 +63,7 @@ jobs:
 
     - name: Post comment on failure
       if: failure()
-      uses: actions/github-script@v8
+      uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
       with:
         script: |
           github.rest.issues.createComment({
@@ -75,7 +77,8 @@ jobs:
     needs: verify
     if: failure() && inputs.slack_channel_id != ''
     uses: Coalfire-CF/Actions/.github/workflows/org-slack-notify.yml@main
-    secrets: inherit
+    secrets:
+      SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
     with:
       notification-type: failure
       channel-id: ${{ inputs.slack_channel_id }}

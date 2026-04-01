@@ -34,3 +34,6 @@ override.tf.json
 # Ansible
 *.pub
 *.ppk
+
+# Node
+node_modules/

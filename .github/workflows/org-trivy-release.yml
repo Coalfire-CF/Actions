@@ -13,10 +13,10 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v6
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
     - name: Run Trivy scanner (JSON)
-      uses: aquasecurity/trivy-action@0.35.0
+      uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
       with:
         scan-type: 'config'
         scan-ref: '.'
@@ -26,7 +26,7 @@ jobs:
         severity: 'CRITICAL,HIGH,MEDIUM,LOW'
 
     - name: Run Trivy scanner (Table)
-      uses: aquasecurity/trivy-action@0.35.0
+      uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
       with:
         scan-type: 'config'
         scan-ref: '.'
@@ -36,7 +36,7 @@ jobs:
         severity: 'CRITICAL,HIGH,MEDIUM,LOW'
 
     - name: Generate SBOM (CycloneDX)
-      uses: aquasecurity/trivy-action@0.35.0
+      uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
       with:
         scan-type: 'fs'
         scan-ref: '.'
@@ -72,7 +72,7 @@ jobs:
       if: always()
       run: |
         echo "## Trivy Release Scan Results" >> $GITHUB_STEP_SUMMARY
-        if [ "${{ env.TRIVY_PASSED }}" == "true" ]; then
+        if [ "$TRIVY_PASSED" == "true" ]; then
           echo "✅ No security misconfigurations found in Terraform files" >> $GITHUB_STEP_SUMMARY
         else
           echo "⚠️ Security misconfigurations found. Download the artifact for details." >> $GITHUB_STEP_SUMMARY

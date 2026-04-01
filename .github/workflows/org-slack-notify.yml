@@ -15,7 +15,8 @@ name: Slack Notification
 #   jobs:
 #     notify:
 #       uses: Coalfire-CF/Actions/.github/workflows/org-slack-notify.yml@main
-#       secrets: inherit
+#       secrets:
+#         SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
 #       with:
 #         notification-type: release
 #         channel-id: 'C0123456789'
@@ -34,7 +35,8 @@ name: Slack Notification
 #       needs: build
 #       if: failure()
 #       uses: Coalfire-CF/Actions/.github/workflows/org-slack-notify.yml@main
-#       secrets: inherit
+#       secrets:
+#         SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
 #       with:
 #         notification-type: failure
 #         channel-id: 'C0123456789'
@@ -44,7 +46,8 @@ name: Slack Notification
 #   jobs:
 #     health-check:
 #       uses: Coalfire-CF/Actions/.github/workflows/org-slack-notify.yml@main
-#       secrets: inherit
+#       secrets:
+#         SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
 #       with:
 #         notification-type: health-check
 #         channel-id: 'C0123456789'
@@ -96,20 +99,24 @@ jobs:
 
     steps:
       - name: Validate inputs
+        env:
+          NOTIFICATION_TYPE: ${{ inputs.notification-type }}
+          RELEASE_VERSION: ${{ inputs.release-version }}
+          APP_URL: ${{ inputs.app-url }}
         run: |
-          if [[ "${{ inputs.notification-type }}" != "release" && \
-                "${{ inputs.notification-type }}" != "failure" && \
-                "${{ inputs.notification-type }}" != "health-check" ]]; then
-            echo "::error::Invalid notification-type: '${{ inputs.notification-type }}'. Must be release, failure, or health-check."
+          if [[ "$NOTIFICATION_TYPE" != "release" && \
+                "$NOTIFICATION_TYPE" != "failure" && \
+                "$NOTIFICATION_TYPE" != "health-check" ]]; then
+            echo "::error::Invalid notification-type: '${NOTIFICATION_TYPE}'. Must be release, failure, or health-check."
             exit 1
           fi
 
-          if [[ "${{ inputs.notification-type }}" == "release" && -z "${{ inputs.release-version }}" ]]; then
+          if [[ "$NOTIFICATION_TYPE" == "release" && -z "$RELEASE_VERSION" ]]; then
             echo "::error::release-version is required for release notifications."
             exit 1
           fi
 
-          if [[ "${{ inputs.notification-type }}" == "health-check" && -z "${{ inputs.app-url }}" ]]; then
+          if [[ "$NOTIFICATION_TYPE" == "health-check" && -z "$APP_URL" ]]; then
             echo "::error::app-url is required for health-check notifications."
             exit 1
           fi
@@ -117,8 +124,10 @@ jobs:
       - name: Health check
         id: health
         if: inputs.notification-type == 'health-check'
+        env:
+          APP_URL: ${{ inputs.app-url }}
         run: |
-          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "${{ inputs.app-url }}" || echo "000")
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$APP_URL" || echo "000")
           echo "status=$HTTP_STATUS" >> "$GITHUB_OUTPUT"
           if [[ "$HTTP_STATUS" -ge 200 && "$HTTP_STATUS" -lt 400 ]]; then
             echo "healthy=true" >> "$GITHUB_OUTPUT"
@@ -160,12 +169,14 @@ jobs:
                 #   - Convert markdown links [text](url) to Slack links <url|text>
                 #   - Strip commit hash references (abc1234) from line ends
                 #   - Collapse multiple blank lines
+                #   - Truncate to 2900 chars (Slack section text limit is 3000)
                 CLEANED_HIGHLIGHTS=$(echo "$RELEASE_HIGHLIGHTS" \
                   | sed '/^## \[/d' \
                   | sed 's/^### \(.*\)/*\1*/' \
                   | sed 's/\[\([^]]*\)\](\([^)]*\))/<\2|\1>/g' \
                   | sed 's/ ([a-f0-9]\{7\})$//' \
-                  | sed '/^$/N;/^\n$/d')
+                  | sed '/^$/N;/^\n$/d' \
+                  | head -c 2900)
 
                 BLOCKS=$(echo "$BLOCKS" | jq \
                   --arg highlights "$CLEANED_HIGHLIGHTS" \

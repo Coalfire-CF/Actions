@@ -1,6 +1,14 @@
+# TODO: This workflow needs to be rewritten. It is a legacy example with hardcoded
+# Azure paths, references to undefined steps (fmt, validate), uses deprecated API
+# patterns (github.issues vs github.rest.issues), and has script injection
+# vulnerabilities in the github-script block. Do not use as a template.
 name: 'Terraform'
 
 on: [push, pull_request]
+
+permissions:
+  contents: read
+  pull-requests: write
 
 env:
   TF_LOG: INFO
@@ -20,11 +28,11 @@ jobs:
     steps:
     # Checkout the repository to the GitHub Actions runner
     - name: Checkout
-      uses: actions/checkout@v6
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
     # Install the preferred version of Terraform CLI 
     - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v4
+      uses: hashicorp/setup-terraform@5e8dbf3c6d9deaf4193ca7a8fb23f2ac83bb6c85 # v4
       with:
         terraform_version: 1.1.2
 
@@ -56,7 +64,7 @@ jobs:
     # Add a comment to pull requests with plan results
     - name: add-plan-comment
       id: comment
-      uses: actions/github-script@v8
+      uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
       if: github.event_name == 'pull_request'
       env:
         PLAN: "terraform\n${{ steps.plan.outputs.stdout }}"

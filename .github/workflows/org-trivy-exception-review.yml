@@ -19,7 +19,7 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v6
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
     - name: Check for expired exceptions
       id: check_expired
@@ -40,8 +40,10 @@ jobs:
         # Parse YAML and check expiration dates
         # Using yq to parse the YAML file
         if ! command -v yq &> /dev/null; then
-          echo "Installing yq..."
-          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          echo "Installing yq v4.45.1..."
+          YQ_VERSION="v4.45.1"
+          sudo wget -qO /usr/local/bin/yq "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64"
+          echo "654d2943ca1d3be2024089eb4f270f4070f491a0610481d128509b2834870049  /usr/local/bin/yq" | sha256sum -c -
           sudo chmod +x /usr/local/bin/yq
         fi
 
@@ -102,7 +104,7 @@ jobs:
 
     - name: Create issue for expired exceptions
       if: steps.check_expired.outputs.has_expired == 'true'
-      uses: actions/github-script@v8
+      uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
       with:
         github-token: ${{ secrets.GITHUB_TOKEN }}
         script: |
@@ -170,35 +172,41 @@ jobs:
 
     - name: Generate summary
       if: always()
+      env:
+        HAS_EXPIRED: ${{ steps.check_expired.outputs.has_expired }}
+        EXPIRED_LIST: ${{ steps.check_expired.outputs.expired_list }}
+        HAS_EXPIRING_SOON: ${{ steps.check_expired.outputs.has_expiring_soon }}
+        EXPIRING_SOON_LIST: ${{ steps.check_expired.outputs.expiring_soon_list }}
       run: |
         echo "## Trivy Exception Review" >> $GITHUB_STEP_SUMMARY
 
-        if [ "${{ steps.check_expired.outputs.has_expired }}" == "true" ]; then
+        if [ "$HAS_EXPIRED" == "true" ]; then
           echo "### :warning: Expired Exceptions Found" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Exception ID | Expired On | Statement |" >> $GITHUB_STEP_SUMMARY
           echo "| ------------ | ---------- | --------- |" >> $GITHUB_STEP_SUMMARY
-          echo -e "${{ steps.check_expired.outputs.expired_list }}" >> $GITHUB_STEP_SUMMARY
+          echo -e "$EXPIRED_LIST" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "An issue has been created for review." >> $GITHUB_STEP_SUMMARY
         else
           echo ":white_check_mark: No expired exceptions found." >> $GITHUB_STEP_SUMMARY
         fi
 
-        if [ "${{ steps.check_expired.outputs.has_expiring_soon }}" == "true" ]; then
+        if [ "$HAS_EXPIRING_SOON" == "true" ]; then
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### :hourglass: Expiring Within 30 Days" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Exception ID | Expires On | Statement |" >> $GITHUB_STEP_SUMMARY
           echo "| ------------ | ---------- | --------- |" >> $GITHUB_STEP_SUMMARY
-          echo -e "${{ steps.check_expired.outputs.expiring_soon_list }}" >> $GITHUB_STEP_SUMMARY
+          echo -e "$EXPIRING_SOON_LIST" >> $GITHUB_STEP_SUMMARY
         fi
 
   notify-failure:
     needs: check_exceptions
     if: failure() && inputs.slack_channel_id != ''
     uses: Coalfire-CF/Actions/.github/workflows/org-slack-notify.yml@main
-    secrets: inherit
+    secrets:
+      SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
     with:
       notification-type: failure
       channel-id: ${{ inputs.slack_channel_id }}
