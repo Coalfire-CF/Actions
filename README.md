@@ -10,7 +10,7 @@ All workflows follow security-hardened patterns:
 - **Script injection prevention** — All `${{ }}` expressions passed via `env:` blocks, never interpolated directly in `run:` scripts
 - **Least-privilege permissions** — Each workflow declares minimum required `permissions:`
 - **Explicit secrets** — Secrets forwarded explicitly where possible instead of blanket `secrets: inherit`
-- **Dependency pinning** — Tools like Checkov, markdownlint-cli2, and yq pinned to specific versions with integrity checks
+- **Dependency pinning** — Tools like markdownlint-cli2 and yq pinned to specific versions with integrity checks
 
 ## Workflows
 
@@ -20,7 +20,6 @@ Called by downstream repos on pull requests.
 
 | Workflow | File | Description |
 |----------|------|-------------|
-| Checkov | `org-checkov.yml` | Static analysis of changed Terraform files |
 | Trivy PR | `org-trivy-pr.yml` | Security scanning of changed Terraform files |
 | Gitleaks | `org-gitleaks-pr.yml` | Secret detection on PR commits |
 | Terraform Validate | `org-terraform-validate.yml` | `terraform init` + `terraform validate` with PR comment |
@@ -41,7 +40,6 @@ Called on merge to main.
 |----------|------|-------------|
 | Release | `org-release.yml` | Release-please + security scans + clean tarball + Slack notification |
 | Release Clean | `org-release-clean.yml` | Produces stripped release tarball (no .github/, docs/, etc.) |
-| Checkov Release | `org-checkov-release.yml` | Full-repo Checkov scan on release |
 | Trivy Release | `org-trivy-release.yml` | Full-repo Trivy scan on release |
 | Gitleaks Release | `org-gitleaks-release.yml` | Full-history secret scan on release |
 
@@ -83,19 +81,6 @@ jobs:
   create-release:
     uses: Coalfire-CF/Actions/.github/workflows/org-release.yml@main
     secrets: inherit
-    with:
-      slack_channel_id: 'C0123456789'
-```
-
-```yaml
-# .github/workflows/org-checkov.yml
-name: Org Checkov
-on:
-  pull_request:
-
-jobs:
-  checkov-scan:
-    uses: Coalfire-CF/Actions/.github/workflows/org-checkov.yml@main
     with:
       slack_channel_id: 'C0123456789'
 ```

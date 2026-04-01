@@ -40,8 +40,8 @@ jobs:
 ```yaml
 # PR workflows — get failure notifications
 jobs:
-  checkov-scan:
-    uses: Coalfire-CF/Actions/.github/workflows/org-checkov.yml@main
+  trivy-scan:
+    uses: Coalfire-CF/Actions/.github/workflows/org-trivy-pr.yml@main
     with:
       slack_channel_id: 'CXXXXXXXXX'
 ```
@@ -55,7 +55,6 @@ All reusable workflows support `slack_channel_id`:
 | Workflow | Notification Type |
 | -------- | ----------------- |
 | `org-release.yml` | Release + Failure |
-| `org-checkov.yml` | Failure |
 | `org-gitleaks-pr.yml` | Failure |
 | `org-trivy-pr.yml` | Failure |
 | `org-terraform-validate.yml` | Failure |

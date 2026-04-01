@@ -13,9 +13,8 @@ name: Release Please
 #
 # After release-please creates a release, this workflow runs:
 #   1. release-clean  - Produces a cleaned tarball as a release asset (on by default)
-#   2. checkov-scan   - Checkov IaC security scan against the full repo
-#   3. trivy-scan     - Trivy security scan against the full repo
-#   4. gitleaks-scan  - Gitleaks secret detection against full repo history
+#   2. trivy-scan     - Trivy security scan against the full repo
+#   3. gitleaks-scan  - Gitleaks secret detection against full repo history
 #
 # Clean Release:
 #   By default, a cleaned tarball (<repo>-<tag>-clean.tar.gz) is uploaded to each
@@ -125,15 +124,6 @@ jobs:
       exclude_dirs: ${{ inputs.clean_exclude_dirs }}
       exclude_files: ${{ inputs.clean_exclude_files }}
 
-  checkov-scan:
-    name: Run Checkov Security Scan
-    needs: release
-    if: needs.release.outputs.release_created == 'true'
-    uses: Coalfire-CF/Actions/.github/workflows/org-checkov-release.yml@main
-    permissions:
-      contents: write
-      actions: read
-
   trivy-scan:
     name: Run Trivy Security Scan
     needs: release
@@ -168,7 +158,7 @@ jobs:
 
   notify-failure:
     name: Slack Failure Notification
-    needs: [release, release-clean, checkov-scan, trivy-scan, gitleaks-scan]
+    needs: [release, release-clean, trivy-scan, gitleaks-scan]
     if: failure() && inputs.slack_channel_id != ''
     uses: Coalfire-CF/Actions/.github/workflows/org-slack-notify.yml@main
     secrets:

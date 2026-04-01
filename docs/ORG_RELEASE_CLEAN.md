@@ -16,7 +16,6 @@ When release-please creates a new release, `org-release.yml` triggers several pa
 release (release-please creates the tag and release)
   |
   ├── release-clean   -- Builds a cleaned tarball (THIS FEATURE)
-  ├── checkov-scan    -- Checkov IaC security scan (full repo)
   ├── trivy-scan      -- Trivy security scan (full repo)
   ├── gitleaks-scan   -- Secret detection across full repo history
   ├── notify-release  -- Slack release notification (if configured)
@@ -180,7 +179,7 @@ This is **complementary** — the workflow handles the explicit `-clean.tar.gz` 
 
 ## FAQ
 
-**Q: Will this break my CI scans (Checkov, Trivy)?**
+**Q: Will this break my CI scans (Trivy)?**
 No. Each scan job runs on its own isolated runner with a fresh, full checkout. They never see the cleaned copy.
 
 **Q: Does this modify my repository, branches, or tags?**
