@@ -169,12 +169,14 @@ jobs:
                 #   - Convert markdown links [text](url) to Slack links <url|text>
                 #   - Strip commit hash references (abc1234) from line ends
                 #   - Collapse multiple blank lines
+                #   - Truncate to 2900 chars (Slack section text limit is 3000)
                 CLEANED_HIGHLIGHTS=$(echo "$RELEASE_HIGHLIGHTS" \
                   | sed '/^## \[/d' \
                   | sed 's/^### \(.*\)/*\1*/' \
                   | sed 's/\[\([^]]*\)\](\([^)]*\))/<\2|\1>/g' \
                   | sed 's/ ([a-f0-9]\{7\})$//' \
-                  | sed '/^$/N;/^\n$/d')
+                  | sed '/^$/N;/^\n$/d' \
+                  | head -c 2900)
 
                 BLOCKS=$(echo "$BLOCKS" | jq \
                   --arg highlights "$CLEANED_HIGHLIGHTS" \
