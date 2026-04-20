@@ -1,0 +1,880 @@
+name: Dependabot Auto-Merge
+
+# Reusable workflow that evaluates Dependabot PRs for auto-merge eligibility.
+# It classifies the dependency, runs supply chain and breaking change checks,
+# and either approves + auto-merges or labels the PR for human review.
+#
+# Terraform module and provider bumps are always skipped (labeled for manual
+# review) until unit testing infrastructure is in place.
+#
+# Check results are recorded as labels for audit trail and dashboard visibility.
+# Cross-repo analysis caching via S3 prevents redundant API calls when the same
+# dependency+version is bumped across multiple repos.
+#
+# Prerequisites:
+#   1. Run org-label-sync.yml to ensure required labels exist in the repo
+#   2. Create a dedicated GitHub App with pull-request write + read permissions
+#   3. Create an OIDC role with S3 cache + Bedrock Converse access (see docs)
+#
+# Usage in downstream repos:
+#   name: Dependabot Auto-Merge
+#   on:
+#     pull_request_target:
+#       types: [opened, synchronize, reopened]
+#
+#   jobs:
+#     auto-merge:
+#       if: github.event.pull_request.user.login == 'dependabot[bot]'
+#       uses: Coalfire-CF/Actions/.github/workflows/org-dependabot-auto-merge.yml@main
+#       secrets: inherit
+#
+# IMPORTANT: Use pull_request_target (not pull_request) so the workflow has
+# write permissions on Dependabot PRs. The workflow only checks out metadata,
+# never executes code from the PR branch.
+
+on:
+  workflow_call:
+    inputs:
+      aws_region:
+        description: 'AWS region for OIDC, S3 cache, and Bedrock'
+        required: false
+        type: string
+        default: 'us-east-1'
+      s3_cache_bucket:
+        description: 'S3 bucket name for cross-repo analysis cache'
+        required: false
+        type: string
+        default: 'coalfire-dependabot-cache'
+      scorecard_threshold:
+        description: 'Minimum OpenSSF Scorecard score (0-10) to pass'
+        required: false
+        type: number
+        default: 5
+      auto_merge_method:
+        description: 'Merge method: merge, squash, or rebase'
+        required: false
+        type: string
+        default: 'squash'
+      bedrock_model_id:
+        description: 'Bedrock model ID for changelog analysis'
+        required: false
+        type: string
+        default: 'us.anthropic.claude-haiku-4-5-20251001-v1:0'
+      cache_ttl_days:
+        description: 'Number of days before cached analysis expires'
+        required: false
+        type: number
+        default: 30
+      slack_channel_id:
+        description: 'Slack channel ID for failure notifications (optional)'
+        required: false
+        type: string
+        default: ''
+    secrets:
+      AUTOMERGE_DEPENDABOT_ROLE_ARN:
+        description: 'IAM role ARN for OIDC assumption (S3 cache + Bedrock)'
+        required: true
+      AUTOMERGE_CLIENT_ID:
+        description: 'GitHub App client ID for PR approval and auto-merge'
+        required: true
+      AUTOMERGE_APP_PRIVATE_KEY:
+        description: 'GitHub App private key (PEM) for PR approval and auto-merge'
+        required: true
+      SLACK_BOT_TOKEN:
+        required: false
+
+jobs:
+  # ----------------------------------------------------------------
+  # Job 1: Classify the dependency and determine auto-merge eligibility
+  # ----------------------------------------------------------------
+  classify:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    outputs:
+      ecosystem: ${{ steps.metadata.outputs.package-ecosystem }}
+      dep_name: ${{ steps.parse.outputs.dep_name }}
+      from_version: ${{ steps.parse.outputs.from_version }}
+      to_version: ${{ steps.parse.outputs.to_version }}
+      update_type: ${{ steps.metadata.outputs.update-type }}
+      is_eligible: ${{ steps.decide-eligibility.outputs.is_eligible }}
+      dep_label: ${{ steps.decide-eligibility.outputs.dep_label }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Fetch Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@ffa630c65fa7e0ecfa0625b5ceda64399aea1b36 # v3
+        with:
+          github-token: ${{ github.token }}
+
+      - name: Parse dependency details
+        id: parse
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          META_DEP_NAMES: ${{ steps.metadata.outputs.dependency-names }}
+          META_PREV_VER: ${{ steps.metadata.outputs.previous-version }}
+          META_NEW_VER: ${{ steps.metadata.outputs.new-version }}
+        run: |
+          set -euo pipefail
+          echo "dep_name=${META_DEP_NAMES}" >> "$GITHUB_OUTPUT"
+          echo "from_version=${META_PREV_VER}" >> "$GITHUB_OUTPUT"
+          echo "to_version=${META_NEW_VER}" >> "$GITHUB_OUTPUT"
+
+      - name: Determine eligibility and ecosystem label
+        id: decide-eligibility
+        env:
+          ECOSYSTEM: ${{ steps.metadata.outputs.package-ecosystem }}
+          DEP_NAMES: ${{ steps.metadata.outputs.dependency-names }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          set -euo pipefail
+
+          IS_ELIGIBLE="true"
+          DEP_LABEL="dep/other"
+
+          case "$ECOSYSTEM" in
+            github-actions|github_actions) DEP_LABEL="dep/github-actions" ;;
+            docker)            DEP_LABEL="dep/docker" ;;
+            pip)               DEP_LABEL="dep/pip" ;;
+            npm)               DEP_LABEL="dep/npm" ;;
+            gomod)             DEP_LABEL="dep/gomod" ;;
+            nuget)             DEP_LABEL="dep/nuget" ;;
+            cargo)             DEP_LABEL="dep/cargo" ;;
+            bundler)           DEP_LABEL="dep/bundler" ;;
+            composer)          DEP_LABEL="dep/composer" ;;
+            terraform)
+              # Determine if this is a provider or module update.
+              # Providers typically match: hashicorp/* or registry paths.
+              # Module refs match: org/reponame patterns in source blocks.
+              if echo "$DEP_NAMES" | grep -qiE 'hashicorp/|terraform-provider-|registry\.terraform\.io'; then
+                DEP_LABEL="dep/terraform-provider"
+              else
+                DEP_LABEL="dep/terraform-module"
+              fi
+              IS_ELIGIBLE="false"
+              ;;
+            *)
+              DEP_LABEL="dep/other"
+              ;;
+          esac
+
+          echo "is_eligible=${IS_ELIGIBLE}" >> "$GITHUB_OUTPUT"
+          echo "dep_label=${DEP_LABEL}" >> "$GITHUB_OUTPUT"
+
+      - name: Apply ecosystem label
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        env:
+          DEP_LABEL: ${{ steps.decide-eligibility.outputs.dep_label }}
+          IS_ELIGIBLE: ${{ steps.decide-eligibility.outputs.is_eligible }}
+        with:
+          script: |
+            const depLabel = process.env.DEP_LABEL;
+            const isEligible = process.env.IS_ELIGIBLE === 'true';
+            const prNumber = context.payload.pull_request.number;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            // Apply ecosystem label
+            const labelsToAdd = [depLabel];
+
+            if (isEligible) {
+              labelsToAdd.push('merge/eligible');
+            } else {
+              labelsToAdd.push('merge/skipped', 'blocked/terraform-no-tests');
+            }
+
+            await github.rest.issues.addLabels({
+              owner, repo,
+              issue_number: prNumber,
+              labels: labelsToAdd,
+            });
+
+            if (!isEligible) {
+              core.info(`Terraform dependency detected — skipping auto-merge pipeline`);
+            }
+
+  # ----------------------------------------------------------------
+  # Job 2: Supply chain checks (OSV.dev + OpenSSF Scorecard)
+  # ----------------------------------------------------------------
+  supply_chain_check:
+    needs: classify
+    if: needs.classify.outputs.is_eligible == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write
+    outputs:
+      osv_clear: ${{ steps.checks.outputs.osv_clear }}
+      scorecard_pass: ${{ steps.checks.outputs.scorecard_pass }}
+      scorecard_score: ${{ steps.checks.outputs.scorecard_score }}
+      cache_hit: ${{ steps.checks.outputs.cache_hit }}
+    steps:
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@ff717079ee2060e4bcee96c4779b553acc87447c # v4
+        with:
+          role-to-assume: ${{ secrets.AUTOMERGE_DEPENDABOT_ROLE_ARN }}
+          aws-region: ${{ inputs.aws_region }}
+
+      - name: Run supply chain checks
+        id: checks
+        env:
+          DEP_NAME: ${{ needs.classify.outputs.dep_name }}
+          TO_VERSION: ${{ needs.classify.outputs.to_version }}
+          ECOSYSTEM: ${{ needs.classify.outputs.ecosystem }}
+          S3_BUCKET: ${{ inputs.s3_cache_bucket }}
+          CACHE_TTL_DAYS: ${{ inputs.cache_ttl_days }}
+          SCORECARD_THRESHOLD: ${{ inputs.scorecard_threshold }}
+        run: |
+          set -euo pipefail
+          cat > /tmp/supply_chain_check.sh <<'BASH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          # -----------------------------------------------------------
+          # Normalize dependency name for S3 key (replace / with --)
+          # -----------------------------------------------------------
+          SAFE_DEP_NAME=$(echo "$DEP_NAME" | sed 's|/|--|g')
+          CACHE_KEY="analyses/${SAFE_DEP_NAME}/${TO_VERSION}.json"
+
+          # -----------------------------------------------------------
+          # Check S3 cache
+          # -----------------------------------------------------------
+          CACHE_HIT="false"
+          OSV_CLEAR="true"
+          SCORECARD_PASS="true"
+          SCORECARD_SCORE="0"
+
+          CACHED=$(aws s3 cp "s3://${S3_BUCKET}/${CACHE_KEY}" /tmp/cached_analysis.json 2>/dev/null && echo "ok" || echo "miss")
+          if [ "$CACHED" = "ok" ]; then
+            # Validate TTL
+            ANALYZED_AT=$(jq -r '.analyzed_at // ""' /tmp/cached_analysis.json)
+            if [ -n "$ANALYZED_AT" ]; then
+              ANALYZED_EPOCH=$(date -d "$ANALYZED_AT" +%s 2>/dev/null || date -jf "%Y-%m-%dT%H:%M:%SZ" "$ANALYZED_AT" +%s 2>/dev/null || echo 0)
+              NOW_EPOCH=$(date +%s)
+              AGE_DAYS=$(( (NOW_EPOCH - ANALYZED_EPOCH) / 86400 ))
+              if [ "$AGE_DAYS" -lt "$CACHE_TTL_DAYS" ]; then
+                CACHE_HIT="true"
+                OSV_CLEAR=$(jq -r '.osv.clear // "true"' /tmp/cached_analysis.json)
+                SCORECARD_PASS=$(jq -r '.scorecard.pass // "true"' /tmp/cached_analysis.json)
+                SCORECARD_SCORE=$(jq -r '.scorecard.score // "0"' /tmp/cached_analysis.json)
+                echo "Cache hit for ${DEP_NAME}@${TO_VERSION} (age: ${AGE_DAYS}d)"
+              fi
+            fi
+          fi
+
+          if [ "$CACHE_HIT" = "false" ]; then
+            echo "Cache miss — running live checks for ${DEP_NAME}@${TO_VERSION}"
+
+            # ---------------------------------------------------------
+            # OSV.dev vulnerability check
+            # ---------------------------------------------------------
+            # Map Dependabot ecosystems to OSV ecosystems
+            OSV_ECOSYSTEM=""
+            case "$ECOSYSTEM" in
+              github-actions) OSV_ECOSYSTEM="GitHub Actions" ;;
+              npm)            OSV_ECOSYSTEM="npm" ;;
+              pip)            OSV_ECOSYSTEM="PyPI" ;;
+              gomod)          OSV_ECOSYSTEM="Go" ;;
+              cargo)          OSV_ECOSYSTEM="crates.io" ;;
+              nuget)          OSV_ECOSYSTEM="NuGet" ;;
+              *)              OSV_ECOSYSTEM="" ;;
+            esac
+
+            OSV_VULNS="[]"
+            if [ -n "$OSV_ECOSYSTEM" ]; then
+              OSV_RESPONSE=$(curl -sf --max-time 30 \
+                -X POST "https://api.osv.dev/v1/query" \
+                -H "Content-Type: application/json" \
+                -d "$(jq -n \
+                  --arg pkg "$DEP_NAME" \
+                  --arg ver "$TO_VERSION" \
+                  --arg eco "$OSV_ECOSYSTEM" \
+                  '{package: {name: $pkg, ecosystem: $eco}, version: $ver}')" \
+                2>/dev/null || echo '{"vulns":[]}')
+              OSV_VULNS=$(echo "$OSV_RESPONSE" | jq '.vulns // []')
+              VULN_COUNT=$(echo "$OSV_VULNS" | jq 'length')
+              if [ "$VULN_COUNT" -gt 0 ]; then
+                OSV_CLEAR="false"
+                echo "::warning::Found ${VULN_COUNT} known vulnerabilities for ${DEP_NAME}@${TO_VERSION}"
+              fi
+            else
+              echo "No OSV ecosystem mapping for '${ECOSYSTEM}' — skipping OSV check"
+            fi
+
+            # ---------------------------------------------------------
+            # OpenSSF Scorecard check
+            # ---------------------------------------------------------
+            # Extract the GitHub owner/repo from the dependency name
+            SCORECARD_REPO=""
+            case "$ECOSYSTEM" in
+              github-actions)
+                # actions/checkout -> github.com/actions/checkout
+                SCORECARD_REPO="github.com/${DEP_NAME}"
+                ;;
+              npm|pip|gomod|cargo)
+                # Attempt to resolve via the dependency name if it looks like a GitHub path
+                if echo "$DEP_NAME" | grep -qE '^github\.com/'; then
+                  SCORECARD_REPO="${DEP_NAME}"
+                elif echo "$DEP_NAME" | grep -qE '^[a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+$'; then
+                  SCORECARD_REPO="github.com/${DEP_NAME}"
+                fi
+                ;;
+            esac
+
+            if [ -n "$SCORECARD_REPO" ]; then
+              SCORECARD_RESPONSE=$(curl -sf --max-time 30 \
+                "https://api.securityscorecards.dev/projects/${SCORECARD_REPO}" \
+                2>/dev/null || echo '{}')
+              SCORECARD_SCORE=$(echo "$SCORECARD_RESPONSE" | jq -r '.score // 0')
+
+              if [ "$(echo "$SCORECARD_SCORE < $SCORECARD_THRESHOLD" | bc -l)" -eq 1 ]; then
+                SCORECARD_PASS="false"
+                echo "::warning::Scorecard ${SCORECARD_SCORE}/10 below threshold ${SCORECARD_THRESHOLD} for ${SCORECARD_REPO}"
+              else
+                echo "Scorecard ${SCORECARD_SCORE}/10 meets threshold for ${SCORECARD_REPO}"
+              fi
+            else
+              echo "Cannot resolve Scorecard repo for '${DEP_NAME}' — skipping Scorecard check"
+              SCORECARD_SCORE="N/A"
+            fi
+
+            # ---------------------------------------------------------
+            # Write to S3 cache (partial — supply chain fields only)
+            # Breaking change check will merge its fields in separately
+            # ---------------------------------------------------------
+            jq -n \
+              --arg dep "$DEP_NAME" \
+              --arg ver "$TO_VERSION" \
+              --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+              --argjson osv_clear "$([ "$OSV_CLEAR" = "true" ] && echo true || echo false)" \
+              --argjson osv_vulns "$OSV_VULNS" \
+              --arg sc_score "$SCORECARD_SCORE" \
+              --argjson sc_pass "$([ "$SCORECARD_PASS" = "true" ] && echo true || echo false)" \
+              '{
+                dependency: $dep,
+                version: $ver,
+                analyzed_at: $ts,
+                osv: { clear: $osv_clear, vulns: $osv_vulns },
+                scorecard: { score: $sc_score, pass: $sc_pass }
+              }' > /tmp/supply_chain_result.json
+
+            aws s3 cp /tmp/supply_chain_result.json "s3://${S3_BUCKET}/${CACHE_KEY}" \
+              --content-type "application/json" --quiet
+          fi
+
+          # -----------------------------------------------------------
+          # Set outputs
+          # -----------------------------------------------------------
+          echo "osv_clear=${OSV_CLEAR}" >> "$GITHUB_OUTPUT"
+          echo "scorecard_pass=${SCORECARD_PASS}" >> "$GITHUB_OUTPUT"
+          echo "scorecard_score=${SCORECARD_SCORE}" >> "$GITHUB_OUTPUT"
+          echo "cache_hit=${CACHE_HIT}" >> "$GITHUB_OUTPUT"
+          BASH
+          chmod +x /tmp/supply_chain_check.sh
+          bash /tmp/supply_chain_check.sh
+
+      - name: Apply supply chain labels
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        env:
+          OSV_CLEAR: ${{ steps.checks.outputs.osv_clear }}
+          SCORECARD_PASS: ${{ steps.checks.outputs.scorecard_pass }}
+          CACHE_HIT: ${{ steps.checks.outputs.cache_hit }}
+        with:
+          script: |
+            const prNumber = context.payload.pull_request.number;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const labels = [];
+
+            labels.push(process.env.OSV_CLEAR === 'true' ? 'check/osv-clear' : 'check/osv-vuln');
+            labels.push(process.env.SCORECARD_PASS === 'true' ? 'check/scorecard-pass' : 'check/scorecard-low');
+            if (process.env.CACHE_HIT === 'true') labels.push('check/cached');
+
+            await github.rest.issues.addLabels({
+              owner, repo,
+              issue_number: prNumber,
+              labels,
+            });
+
+  # ----------------------------------------------------------------
+  # Job 3: Breaking change detection (semver + AI changelog analysis)
+  # Runs in parallel with supply_chain_check
+  # ----------------------------------------------------------------
+  breaking_change_check:
+    needs: classify
+    if: needs.classify.outputs.is_eligible == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write
+    outputs:
+      semver_type: ${{ steps.checks.outputs.semver_type }}
+      has_breaking_changes: ${{ steps.checks.outputs.has_breaking_changes }}
+      confidence: ${{ steps.checks.outputs.confidence }}
+      risk_summary: ${{ steps.checks.outputs.risk_summary }}
+    steps:
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@ff717079ee2060e4bcee96c4779b553acc87447c # v4
+        with:
+          role-to-assume: ${{ secrets.AUTOMERGE_DEPENDABOT_ROLE_ARN }}
+          aws-region: ${{ inputs.aws_region }}
+
+      - name: Run breaking change checks
+        id: checks
+        env:
+          DEP_NAME: ${{ needs.classify.outputs.dep_name }}
+          FROM_VERSION: ${{ needs.classify.outputs.from_version }}
+          TO_VERSION: ${{ needs.classify.outputs.to_version }}
+          ECOSYSTEM: ${{ needs.classify.outputs.ecosystem }}
+          S3_BUCKET: ${{ inputs.s3_cache_bucket }}
+          CACHE_TTL_DAYS: ${{ inputs.cache_ttl_days }}
+          BEDROCK_MODEL_ID: ${{ inputs.bedrock_model_id }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cat > /tmp/breaking_change_check.sh <<'BASH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          SAFE_DEP_NAME=$(echo "$DEP_NAME" | sed 's|/|--|g')
+          CACHE_KEY="analyses/${SAFE_DEP_NAME}/${TO_VERSION}.json"
+
+          # -----------------------------------------------------------
+          # Check S3 cache for existing breaking change analysis
+          # -----------------------------------------------------------
+          CACHE_HIT="false"
+          SEMVER_TYPE="unknown"
+          HAS_BREAKING="false"
+          CONFIDENCE="0"
+          RISK_SUMMARY=""
+
+          CACHED=$(aws s3 cp "s3://${S3_BUCKET}/${CACHE_KEY}" /tmp/cached_analysis.json 2>/dev/null && echo "ok" || echo "miss")
+          if [ "$CACHED" = "ok" ]; then
+            # Check if breaking change fields already exist in cache
+            BC_EXISTS=$(jq -r '.changelog // empty' /tmp/cached_analysis.json)
+            if [ -n "$BC_EXISTS" ]; then
+              ANALYZED_AT=$(jq -r '.analyzed_at // ""' /tmp/cached_analysis.json)
+              if [ -n "$ANALYZED_AT" ]; then
+                ANALYZED_EPOCH=$(date -d "$ANALYZED_AT" +%s 2>/dev/null || date -jf "%Y-%m-%dT%H:%M:%SZ" "$ANALYZED_AT" +%s 2>/dev/null || echo 0)
+                NOW_EPOCH=$(date +%s)
+                AGE_DAYS=$(( (NOW_EPOCH - ANALYZED_EPOCH) / 86400 ))
+                if [ "$AGE_DAYS" -lt "$CACHE_TTL_DAYS" ]; then
+                  CACHE_HIT="true"
+                  SEMVER_TYPE=$(jq -r '.semver.type // "unknown"' /tmp/cached_analysis.json)
+                  HAS_BREAKING=$(jq -r '.changelog.breaking // "false"' /tmp/cached_analysis.json)
+                  CONFIDENCE=$(jq -r '.changelog.confidence // "0"' /tmp/cached_analysis.json)
+                  RISK_SUMMARY=$(jq -r '.changelog.summary // ""' /tmp/cached_analysis.json)
+                  echo "Cache hit for breaking change analysis of ${DEP_NAME}@${TO_VERSION}"
+                fi
+              fi
+            fi
+          fi
+
+          if [ "$CACHE_HIT" = "false" ]; then
+            echo "Running breaking change analysis for ${DEP_NAME}: ${FROM_VERSION} -> ${TO_VERSION}"
+
+            # ---------------------------------------------------------
+            # Semver analysis
+            # ---------------------------------------------------------
+            # Strip leading 'v' for comparison
+            FROM_CLEAN=$(echo "$FROM_VERSION" | sed 's/^v//')
+            TO_CLEAN=$(echo "$TO_VERSION" | sed 's/^v//')
+
+            FROM_MAJOR=$(echo "$FROM_CLEAN" | cut -d. -f1)
+            TO_MAJOR=$(echo "$TO_CLEAN" | cut -d. -f1)
+            FROM_MINOR=$(echo "$FROM_CLEAN" | cut -d. -f2)
+            TO_MINOR=$(echo "$TO_CLEAN" | cut -d. -f2)
+
+            if [ "$TO_MAJOR" != "$FROM_MAJOR" ]; then
+              SEMVER_TYPE="major"
+            elif [ "$TO_MINOR" != "$FROM_MINOR" ]; then
+              SEMVER_TYPE="minor"
+            else
+              SEMVER_TYPE="patch"
+            fi
+
+            echo "Semver: ${FROM_VERSION} -> ${TO_VERSION} = ${SEMVER_TYPE}"
+
+            # ---------------------------------------------------------
+            # Fetch release notes from GitHub
+            # ---------------------------------------------------------
+            RELEASE_NOTES=""
+
+            # Determine the upstream repo for release notes
+            UPSTREAM_REPO=""
+            case "$ECOSYSTEM" in
+              github-actions)
+                UPSTREAM_REPO="$DEP_NAME"
+                ;;
+              *)
+                # For other ecosystems, try the dep name as a GitHub repo path
+                if echo "$DEP_NAME" | grep -qE '^[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+$'; then
+                  UPSTREAM_REPO="$DEP_NAME"
+                fi
+                ;;
+            esac
+
+            if [ -n "$UPSTREAM_REPO" ]; then
+              # Try tag formats: v1.2.3, 1.2.3, the exact version string
+              for TAG_FMT in "${TO_VERSION}" "v${TO_VERSION}" "${TO_CLEAN}"; do
+                NOTES=$(curl -sf --max-time 15 \
+                  -H "Authorization: token ${GH_TOKEN}" \
+                  -H "Accept: application/vnd.github+json" \
+                  "https://api.github.com/repos/${UPSTREAM_REPO}/releases/tags/${TAG_FMT}" \
+                  2>/dev/null | jq -r '.body // ""' || echo "")
+                if [ -n "$NOTES" ]; then
+                  RELEASE_NOTES="$NOTES"
+                  break
+                fi
+              done
+            fi
+
+            if [ -z "$RELEASE_NOTES" ]; then
+              RELEASE_NOTES="No release notes available."
+            fi
+
+            # Truncate to ~4000 chars to keep Claude API costs low
+            RELEASE_NOTES=$(echo "$RELEASE_NOTES" | head -c 4000)
+
+            # ---------------------------------------------------------
+            # Bedrock Converse API analysis
+            # ---------------------------------------------------------
+            PROMPT=$(jq -n \
+              --arg dep "$DEP_NAME" \
+              --arg from "$FROM_VERSION" \
+              --arg to "$TO_VERSION" \
+              --arg semver "$SEMVER_TYPE" \
+              --arg notes "$RELEASE_NOTES" \
+              '"You are a dependency update analyzer. Analyze this update and determine if it contains breaking changes.\n\nDependency: " + $dep + "\nFrom: " + $from + "\nTo: " + $to + "\nSemver bump type: " + $semver + "\n\nRelease notes:\n" + $notes + "\n\nRespond with ONLY a JSON object (no markdown fencing):\n{\"breaking\": true/false, \"confidence\": 0.0-1.0, \"risks\": [\"list of specific risks if any\"], \"summary\": \"one sentence summary\"}"')
+
+            jq -n \
+              --argjson prompt "$PROMPT" \
+              '[{
+                role: "user",
+                content: [{
+                  text: $prompt
+                }]
+              }]' > /tmp/bedrock_messages.json
+
+            echo '{"maxTokens":512}' > /tmp/bedrock_config.json
+
+            AI_RESPONSE=$(aws bedrock-runtime converse \
+              --model-id "$BEDROCK_MODEL_ID" \
+              --messages file:///tmp/bedrock_messages.json \
+              --inference-config file:///tmp/bedrock_config.json \
+              --output json 2>/tmp/bedrock_err.log \
+              || echo '{"output":{"message":{"content":[{"text":"{\"breaking\":false,\"confidence\":0,\"risks\":[\"API call failed\"],\"summary\":\"Unable to analyze — defaulting to safe\"}"}]}}}')
+
+            if [ -s /tmp/bedrock_err.log ]; then
+              echo "Bedrock stderr: $(cat /tmp/bedrock_err.log)"
+            fi
+
+            # Parse the Bedrock Converse response
+            AI_TEXT=$(echo "$AI_RESPONSE" | jq -r '.output.message.content[0].text // "{}"')
+            HAS_BREAKING=$(echo "$AI_TEXT" | jq -r '.breaking // false')
+            CONFIDENCE=$(echo "$AI_TEXT" | jq -r '.confidence // 0')
+            RISK_SUMMARY=$(echo "$AI_TEXT" | jq -r '.summary // "Analysis unavailable"')
+            AI_RISKS=$(echo "$AI_TEXT" | jq -r '.risks // []')
+
+            # Override: major bump is always flagged regardless of AI
+            if [ "$SEMVER_TYPE" = "major" ]; then
+              HAS_BREAKING="true"
+            fi
+
+            # ---------------------------------------------------------
+            # Merge results into S3 cache
+            # ---------------------------------------------------------
+            # Read existing cache entry (from supply chain check) or start fresh
+            if [ -f /tmp/cached_analysis.json ]; then
+              EXISTING=$(cat /tmp/cached_analysis.json)
+            else
+              EXISTING='{}'
+            fi
+
+            echo "$EXISTING" | jq \
+              --arg dep "$DEP_NAME" \
+              --arg ver "$TO_VERSION" \
+              --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+              --arg sv_type "$SEMVER_TYPE" \
+              --arg sv_from "$FROM_VERSION" \
+              --arg sv_to "$TO_VERSION" \
+              --argjson breaking "$([ "$HAS_BREAKING" = "true" ] && echo true || echo false)" \
+              --argjson conf "$CONFIDENCE" \
+              --arg summary "$RISK_SUMMARY" \
+              --argjson risks "$AI_RISKS" \
+              '. + {
+                dependency: $dep,
+                version: $ver,
+                analyzed_at: $ts,
+                semver: { type: $sv_type, from: $sv_from, to: $sv_to },
+                changelog: { breaking: $breaking, confidence: ($conf | tonumber), summary: $summary, risks: $risks }
+              }' > /tmp/merged_analysis.json
+
+            aws s3 cp /tmp/merged_analysis.json "s3://${S3_BUCKET}/${CACHE_KEY}" \
+              --content-type "application/json" --quiet
+          fi
+
+          # -----------------------------------------------------------
+          # Set outputs
+          # -----------------------------------------------------------
+          echo "semver_type=${SEMVER_TYPE}" >> "$GITHUB_OUTPUT"
+          echo "has_breaking_changes=${HAS_BREAKING}" >> "$GITHUB_OUTPUT"
+          echo "confidence=${CONFIDENCE}" >> "$GITHUB_OUTPUT"
+
+          # Escape newlines for GITHUB_OUTPUT
+          SAFE_SUMMARY=$(echo "$RISK_SUMMARY" | tr '\n' ' ')
+          echo "risk_summary=${SAFE_SUMMARY}" >> "$GITHUB_OUTPUT"
+          BASH
+          chmod +x /tmp/breaking_change_check.sh
+          bash /tmp/breaking_change_check.sh
+
+      - name: Apply breaking change labels
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        env:
+          SEMVER_TYPE: ${{ steps.checks.outputs.semver_type }}
+          HAS_BREAKING: ${{ steps.checks.outputs.has_breaking_changes }}
+        with:
+          script: |
+            const prNumber = context.payload.pull_request.number;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const labels = [];
+
+            const semverType = process.env.SEMVER_TYPE;
+            if (semverType === 'major') labels.push('check/semver-major');
+            else if (semverType === 'minor') labels.push('check/semver-minor');
+            else labels.push('check/semver-patch');
+
+            const hasBreaking = process.env.HAS_BREAKING === 'true';
+            if (hasBreaking) {
+              labels.push('check/changelog-breaking');
+            } else {
+              labels.push('check/changelog-safe');
+            }
+
+            await github.rest.issues.addLabels({
+              owner, repo,
+              issue_number: prNumber,
+              labels,
+            });
+
+  # ----------------------------------------------------------------
+  # Job 4: Decision — approve + auto-merge or block with reason
+  # ----------------------------------------------------------------
+  decide:
+    needs: [classify, supply_chain_check, breaking_change_check]
+    if: needs.classify.outputs.is_eligible == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
+        with:
+          client-id: ${{ secrets.AUTOMERGE_CLIENT_ID }}
+          private-key: ${{ secrets.AUTOMERGE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
+      - name: Evaluate checks and decide
+        id: decision
+        env:
+          OSV_CLEAR: ${{ needs.supply_chain_check.outputs.osv_clear }}
+          SCORECARD_PASS: ${{ needs.supply_chain_check.outputs.scorecard_pass }}
+          SCORECARD_SCORE: ${{ needs.supply_chain_check.outputs.scorecard_score }}
+          SEMVER_TYPE: ${{ needs.breaking_change_check.outputs.semver_type }}
+          HAS_BREAKING: ${{ needs.breaking_change_check.outputs.has_breaking_changes }}
+          CONFIDENCE: ${{ needs.breaking_change_check.outputs.confidence }}
+          RISK_SUMMARY: ${{ needs.breaking_change_check.outputs.risk_summary }}
+          DEP_NAME: ${{ needs.classify.outputs.dep_name }}
+          TO_VERSION: ${{ needs.classify.outputs.to_version }}
+        run: |
+          set -euo pipefail
+
+          DECISION="approve"
+          RISK_LEVEL="low"
+          BLOCKED_LABELS=""
+          REASONS=""
+
+          # Check for blockers
+          if [ "$OSV_CLEAR" != "true" ]; then
+            DECISION="block"
+            RISK_LEVEL="high"
+            BLOCKED_LABELS="${BLOCKED_LABELS} blocked/known-vuln"
+            REASONS="${REASONS}\n- Known vulnerability found in target version"
+          fi
+
+          if [ "$SCORECARD_PASS" != "true" ]; then
+            DECISION="block"
+            RISK_LEVEL="high"
+            BLOCKED_LABELS="${BLOCKED_LABELS} blocked/low-scorecard"
+            REASONS="${REASONS}\n- OpenSSF Scorecard below threshold (score: ${SCORECARD_SCORE})"
+          fi
+
+          if [ "$SEMVER_TYPE" = "major" ]; then
+            DECISION="block"
+            RISK_LEVEL="high"
+            BLOCKED_LABELS="${BLOCKED_LABELS} blocked/major-bump"
+            REASONS="${REASONS}\n- Major version bump requires manual review"
+          fi
+
+          if [ "$HAS_BREAKING" = "true" ] && [ "$SEMVER_TYPE" != "major" ]; then
+            # Breaking change in a non-major bump — extra concerning
+            DECISION="block"
+            RISK_LEVEL="high"
+            BLOCKED_LABELS="${BLOCKED_LABELS} blocked/breaking-change"
+            REASONS="${REASONS}\n- Breaking change detected: ${RISK_SUMMARY}"
+          fi
+
+          # Determine if medium risk (not blocked but warrants attention)
+          if [ "$DECISION" = "approve" ] && [ "$SEMVER_TYPE" = "minor" ]; then
+            RISK_LEVEL="medium"
+          fi
+
+          echo "decision=${DECISION}" >> "$GITHUB_OUTPUT"
+          echo "risk_level=${RISK_LEVEL}" >> "$GITHUB_OUTPUT"
+          echo "blocked_labels=${BLOCKED_LABELS}" >> "$GITHUB_OUTPUT"
+
+          # Write step summary
+          {
+            echo "## Dependabot Auto-Merge Decision"
+            echo ""
+            echo "| Field | Value |"
+            echo "|-------|-------|"
+            echo "| Dependency | \`${DEP_NAME}\` |"
+            echo "| Version | \`${TO_VERSION}\` |"
+            echo "| Decision | **${DECISION}** |"
+            echo "| Risk | ${RISK_LEVEL} |"
+            echo "| OSV Clear | ${OSV_CLEAR} |"
+            echo "| Scorecard Pass | ${SCORECARD_PASS} (${SCORECARD_SCORE}) |"
+            echo "| Semver | ${SEMVER_TYPE} |"
+            echo "| Breaking Changes | ${HAS_BREAKING} |"
+            echo "| AI Summary | ${RISK_SUMMARY} |"
+            if [ -n "$REASONS" ]; then
+              echo ""
+              echo "### Blocking Reasons"
+              echo -e "$REASONS"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Apply decision labels
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        env:
+          DECISION: ${{ steps.decision.outputs.decision }}
+          RISK_LEVEL: ${{ steps.decision.outputs.risk_level }}
+          BLOCKED_LABELS: ${{ steps.decision.outputs.blocked_labels }}
+        with:
+          script: |
+            const prNumber = context.payload.pull_request.number;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const decision = process.env.DECISION;
+            const riskLevel = process.env.RISK_LEVEL;
+            const blockedLabels = process.env.BLOCKED_LABELS.trim().split(/\s+/).filter(Boolean);
+
+            // Remove any existing merge/* labels (authoritative update)
+            const mergeLabels = ['merge/eligible', 'merge/approved', 'merge/blocked', 'merge/manual-review', 'merge/skipped'];
+            const riskLabels = ['risk/low', 'risk/medium', 'risk/high'];
+
+            const currentLabels = await github.rest.issues.listLabelsOnIssue({
+              owner, repo, issue_number: prNumber,
+            });
+            const currentNames = currentLabels.data.map(l => l.name);
+
+            for (const label of [...mergeLabels, ...riskLabels]) {
+              if (currentNames.includes(label)) {
+                await github.rest.issues.removeLabel({
+                  owner, repo, issue_number: prNumber, name: label,
+                }).catch(() => {});
+              }
+            }
+
+            // Apply new labels
+            const newLabels = [`risk/${riskLevel}`];
+
+            if (decision === 'approve') {
+              newLabels.push('merge/approved');
+            } else {
+              newLabels.push('merge/blocked');
+              newLabels.push(...blockedLabels);
+            }
+
+            await github.rest.issues.addLabels({
+              owner, repo,
+              issue_number: prNumber,
+              labels: newLabels,
+            });
+
+      - name: Approve and auto-merge
+        if: steps.decision.outputs.decision == 'approve'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          MERGE_METHOD: ${{ inputs.auto_merge_method }}
+          DEP_NAME: ${{ needs.classify.outputs.dep_name }}
+          TO_VERSION: ${{ needs.classify.outputs.to_version }}
+        run: |
+          set -euo pipefail
+
+          # Approve the PR using the GitHub App token
+          gh pr review "$PR_NUMBER" --approve \
+            --body "Auto-approved by Dependabot Auto-Merge: all supply chain and breaking change checks passed for ${DEP_NAME}@${TO_VERSION}." \
+            --repo "$GITHUB_REPOSITORY"
+
+          # Enable auto-merge
+          gh pr merge "$PR_NUMBER" --auto "--${MERGE_METHOD}" \
+            --repo "$GITHUB_REPOSITORY"
+
+          echo "Auto-merge enabled for PR #${PR_NUMBER}"
+
+      - name: Add review comment for blocked PRs
+        if: steps.decision.outputs.decision != 'approve'
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        env:
+          RISK_SUMMARY: ${{ needs.breaking_change_check.outputs.risk_summary }}
+          BLOCKED_LABELS: ${{ steps.decision.outputs.blocked_labels }}
+          DEP_NAME: ${{ needs.classify.outputs.dep_name }}
+          TO_VERSION: ${{ needs.classify.outputs.to_version }}
+        with:
+          script: |
+            const blockedLabels = process.env.BLOCKED_LABELS.trim().split(/\s+/).filter(Boolean);
+            const reasons = blockedLabels.map(l => `- \`${l}\``).join('\n');
+            const body = [
+              `## Auto-Merge Blocked`,
+              ``,
+              `**${process.env.DEP_NAME}@${process.env.TO_VERSION}** did not pass automated checks.`,
+              ``,
+              `### Blocking Reasons`,
+              reasons,
+              ``,
+              `### AI Analysis`,
+              process.env.RISK_SUMMARY || '_No analysis available_',
+              ``,
+              `Please review and merge manually if appropriate.`,
+            ].join('\n');
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body,
+            });
+
+  # ----------------------------------------------------------------
+  # Job 5: Failure notification (standard pattern)
+  # ----------------------------------------------------------------
+  notify_failure:
+    needs: [classify, supply_chain_check, breaking_change_check, decide]
+    if: failure() && inputs.slack_channel_id != ''
+    uses: Coalfire-CF/Actions/.github/workflows/org-slack-notify.yml@main
+    with:
+      notification-type: 'failure'
+      channel-id: ${{ inputs.slack_channel_id }}
+    secrets:
+      SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
