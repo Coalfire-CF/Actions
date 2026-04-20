@@ -576,6 +576,16 @@ jobs:
 
             # Parse the Bedrock Converse response
             AI_TEXT=$(echo "$AI_RESPONSE" | jq -r '.output.message.content[0].text // "{}"')
+            # Strip markdown fences if present, then validate JSON
+            AI_TEXT=$(echo "$AI_TEXT" | sed '/^```/d' | sed 's/^[[:space:]]*//')
+            if ! echo "$AI_TEXT" | jq empty 2>/dev/null; then
+              # Try extracting JSON between first { and last }
+              AI_TEXT=$(echo "$AI_TEXT" | sed -n '/^{/,/^}/p' | head -20)
+              if ! echo "$AI_TEXT" | jq empty 2>/dev/null; then
+                echo "::warning::Failed to parse AI response as JSON, using safe defaults"
+                AI_TEXT='{"breaking":false,"confidence":0,"risks":["Failed to parse AI response"],"summary":"Unable to parse — defaulting to safe"}'
+              fi
+            fi
             HAS_BREAKING=$(echo "$AI_TEXT" | jq -r '.breaking // false')
             CONFIDENCE=$(echo "$AI_TEXT" | jq -r '.confidence // 0')
             RISK_SUMMARY=$(echo "$AI_TEXT" | jq -r '.summary // "Analysis unavailable"')
