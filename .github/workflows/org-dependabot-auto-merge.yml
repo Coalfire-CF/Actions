@@ -238,10 +238,10 @@ jobs:
           # Normalize dependency name for S3 key (replace / with --)
           # -----------------------------------------------------------
           SAFE_DEP_NAME=$(echo "$DEP_NAME" | sed 's|/|--|g')
-          CACHE_KEY="analyses/${SAFE_DEP_NAME}/${TO_VERSION}.json"
+          CACHE_KEY="analyses/shared/${SAFE_DEP_NAME}/${TO_VERSION}.json"
 
           # -----------------------------------------------------------
-          # Check S3 cache
+          # Check S3 cache (shared — supply chain data is universal)
           # -----------------------------------------------------------
           CACHE_HIT="false"
           OSV_CLEAR="true"
@@ -417,7 +417,45 @@ jobs:
       has_breaking_changes: ${{ steps.checks.outputs.has_breaking_changes }}
       confidence: ${{ steps.checks.outputs.confidence }}
       risk_summary: ${{ steps.checks.outputs.risk_summary }}
+      applies_to_repo: ${{ steps.checks.outputs.applies_to_repo }}
     steps:
+      - name: Checkout default branch (for usage analysis)
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Gather dependency usage context
+        id: usage
+        env:
+          DEP_NAME: ${{ needs.classify.outputs.dep_name }}
+          ECOSYSTEM: ${{ needs.classify.outputs.ecosystem }}
+        run: |
+          set -euo pipefail
+          USAGE=""
+          case "$ECOSYSTEM" in
+            github-actions|github_actions)
+              # Find all workflow files that reference this action
+              USAGE=$(grep -rn "$DEP_NAME" .github/workflows/ 2>/dev/null | head -30 || echo "No usage found")
+              ;;
+            npm)
+              # Find imports/requires of the package
+              USAGE=$(grep -rn --include='*.js' --include='*.ts' --include='*.mjs' --include='*.cjs' -E "(require|import).*['\"]${DEP_NAME}['\"]" . 2>/dev/null | head -30 || echo "No usage found")
+              ;;
+            pip)
+              USAGE=$(grep -rn --include='*.py' -E "(import|from) ${DEP_NAME}" . 2>/dev/null | head -30 || echo "No usage found")
+              ;;
+            gomod)
+              USAGE=$(grep -rn --include='*.go' "${DEP_NAME}" . 2>/dev/null | head -30 || echo "No usage found")
+              ;;
+            *)
+              USAGE="Usage analysis not supported for ecosystem: ${ECOSYSTEM}"
+              ;;
+          esac
+          # Truncate to 3000 chars to stay within prompt budget
+          USAGE=$(echo "$USAGE" | head -c 3000)
+          # Write to file to avoid GITHUB_OUTPUT escaping issues
+          echo "$USAGE" > /tmp/dep_usage_context.txt
+
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@ff717079ee2060e4bcee96c4779b553acc87447c # v4
         with:
@@ -442,20 +480,24 @@ jobs:
           set -euo pipefail
 
           SAFE_DEP_NAME=$(echo "$DEP_NAME" | sed 's|/|--|g')
-          CACHE_KEY="analyses/${SAFE_DEP_NAME}/${TO_VERSION}.json"
+          SAFE_REPO_NAME=$(echo "$GITHUB_REPOSITORY" | sed 's|/|--|g')
+          SHARED_CACHE_KEY="analyses/shared/${SAFE_DEP_NAME}/${TO_VERSION}.json"
+          REPO_CACHE_KEY="analyses/repos/${SAFE_REPO_NAME}/${SAFE_DEP_NAME}/${TO_VERSION}.json"
 
           # -----------------------------------------------------------
-          # Check S3 cache for existing breaking change analysis
+          # Check S3 cache — shared (changelog) and repo-scoped (applicability)
           # -----------------------------------------------------------
-          CACHE_HIT="false"
+          SHARED_CACHE_HIT="false"
+          REPO_CACHE_HIT="false"
           SEMVER_TYPE="unknown"
           HAS_BREAKING="false"
           CONFIDENCE="0"
           RISK_SUMMARY=""
+          APPLIES_TO_REPO="true"
 
-          CACHED=$(aws s3 cp "s3://${S3_BUCKET}/${CACHE_KEY}" /tmp/cached_analysis.json 2>/dev/null && echo "ok" || echo "miss")
+          # Check shared cache for universal changelog analysis
+          CACHED=$(aws s3 cp "s3://${S3_BUCKET}/${SHARED_CACHE_KEY}" /tmp/cached_analysis.json 2>/dev/null && echo "ok" || echo "miss")
           if [ "$CACHED" = "ok" ]; then
-            # Check if breaking change fields already exist in cache
             BC_EXISTS=$(jq -r '.changelog // empty' /tmp/cached_analysis.json)
             if [ -n "$BC_EXISTS" ]; then
               ANALYZED_AT=$(jq -r '.analyzed_at // ""' /tmp/cached_analysis.json)
@@ -464,18 +506,35 @@ jobs:
                 NOW_EPOCH=$(date +%s)
                 AGE_DAYS=$(( (NOW_EPOCH - ANALYZED_EPOCH) / 86400 ))
                 if [ "$AGE_DAYS" -lt "$CACHE_TTL_DAYS" ]; then
-                  CACHE_HIT="true"
+                  SHARED_CACHE_HIT="true"
                   SEMVER_TYPE=$(jq -r '.semver.type // "unknown"' /tmp/cached_analysis.json)
                   HAS_BREAKING=$(jq -r '.changelog.breaking // "false"' /tmp/cached_analysis.json)
                   CONFIDENCE=$(jq -r '.changelog.confidence // "0"' /tmp/cached_analysis.json)
                   RISK_SUMMARY=$(jq -r '.changelog.summary // ""' /tmp/cached_analysis.json)
-                  echo "Cache hit for breaking change analysis of ${DEP_NAME}@${TO_VERSION}"
+                  echo "Shared cache hit for changelog analysis of ${DEP_NAME}@${TO_VERSION}"
                 fi
               fi
             fi
           fi
 
-          if [ "$CACHE_HIT" = "false" ]; then
+          # Check repo-scoped cache for applicability
+          REPO_CACHED=$(aws s3 cp "s3://${S3_BUCKET}/${REPO_CACHE_KEY}" /tmp/cached_repo_analysis.json 2>/dev/null && echo "ok" || echo "miss")
+          if [ "$REPO_CACHED" = "ok" ]; then
+            REPO_AT=$(jq -r '.analyzed_at // ""' /tmp/cached_repo_analysis.json)
+            if [ -n "$REPO_AT" ]; then
+              REPO_EPOCH=$(date -d "$REPO_AT" +%s 2>/dev/null || date -jf "%Y-%m-%dT%H:%M:%SZ" "$REPO_AT" +%s 2>/dev/null || echo 0)
+              NOW_EPOCH=$(date +%s)
+              REPO_AGE_DAYS=$(( (NOW_EPOCH - REPO_EPOCH) / 86400 ))
+              if [ "$REPO_AGE_DAYS" -lt "$CACHE_TTL_DAYS" ]; then
+                REPO_CACHE_HIT="true"
+                APPLIES_TO_REPO=$(jq -r '.applies_to_repo // "true"' /tmp/cached_repo_analysis.json)
+                RISK_SUMMARY=$(jq -r '.risk_summary // "'"$RISK_SUMMARY"'"' /tmp/cached_repo_analysis.json)
+                echo "Repo cache hit for applicability of ${DEP_NAME}@${TO_VERSION} in ${GITHUB_REPOSITORY}"
+              fi
+            fi
+          fi
+
+          if [ "$SHARED_CACHE_HIT" = "false" ]; then
             echo "Running breaking change analysis for ${DEP_NAME}: ${FROM_VERSION} -> ${TO_VERSION}"
 
             # ---------------------------------------------------------
@@ -520,14 +579,28 @@ jobs:
             esac
 
             if [ -n "$UPSTREAM_REPO" ]; then
-              # Try tag formats: v1.2.3, 1.2.3, the exact version string
-              for TAG_FMT in "${TO_VERSION}" "v${TO_VERSION}" "${TO_CLEAN}"; do
+              # Build list of candidate tags to try.
+              # Dependabot often reports bare major versions (e.g. "9") while
+              # upstream tags use full semver (e.g. "v9.0.0"), so we expand
+              # short versions into .0 and .0.0 suffixes.
+              CANDIDATE_TAGS=("${TO_VERSION}" "v${TO_VERSION}" "${TO_CLEAN}")
+              DOTS="${TO_CLEAN//[^.]}"
+              if [ "${#DOTS}" -eq 0 ]; then
+                # Bare major (e.g. "9") — also try 9.0.0, v9.0.0, 9.0, v9.0
+                CANDIDATE_TAGS+=("${TO_CLEAN}.0.0" "v${TO_CLEAN}.0.0" "${TO_CLEAN}.0" "v${TO_CLEAN}.0")
+              elif [ "${#DOTS}" -eq 1 ]; then
+                # Major.minor (e.g. "9.1") — also try 9.1.0, v9.1.0
+                CANDIDATE_TAGS+=("${TO_CLEAN}.0" "v${TO_CLEAN}.0")
+              fi
+
+              for TAG_FMT in "${CANDIDATE_TAGS[@]}"; do
                 NOTES=$(curl -sf --max-time 15 \
                   -H "Authorization: token ${GH_TOKEN}" \
                   -H "Accept: application/vnd.github+json" \
                   "https://api.github.com/repos/${UPSTREAM_REPO}/releases/tags/${TAG_FMT}" \
                   2>/dev/null | jq -r '.body // ""' || echo "")
                 if [ -n "$NOTES" ]; then
+                  echo "Found release notes at tag: ${TAG_FMT}"
                   RELEASE_NOTES="$NOTES"
                   break
                 fi
@@ -544,13 +617,19 @@ jobs:
             # ---------------------------------------------------------
             # Bedrock Converse API analysis
             # ---------------------------------------------------------
+            USAGE_CONTEXT=""
+            if [ -f /tmp/dep_usage_context.txt ]; then
+              USAGE_CONTEXT=$(cat /tmp/dep_usage_context.txt)
+            fi
+
             PROMPT=$(jq -n \
               --arg dep "$DEP_NAME" \
               --arg from "$FROM_VERSION" \
               --arg to "$TO_VERSION" \
               --arg semver "$SEMVER_TYPE" \
               --arg notes "$RELEASE_NOTES" \
-              '"You are a dependency update analyzer. Analyze this update and determine if it contains breaking changes.\n\nDependency: " + $dep + "\nFrom: " + $from + "\nTo: " + $to + "\nSemver bump type: " + $semver + "\n\nRelease notes:\n" + $notes + "\n\nRespond with ONLY a JSON object (no markdown fencing):\n{\"breaking\": true/false, \"confidence\": 0.0-1.0, \"risks\": [\"list of specific risks if any\"], \"summary\": \"one sentence summary\"}"')
+              --arg usage "$USAGE_CONTEXT" \
+              '"You are a dependency update analyzer. Analyze this update and determine if it contains breaking changes.\n\nDependency: " + $dep + "\nFrom: " + $from + "\nTo: " + $to + "\nSemver bump type: " + $semver + "\n\nRelease notes:\n" + $notes + "\n\nThis is how the dependency is currently used in the consuming repository:\n" + $usage + "\n\nRespond with ONLY a JSON object (no markdown fencing):\n{\"breaking\": true/false, \"confidence\": 0.0-1.0, \"risks\": [\"list of specific risks if any\"], \"summary\": \"one sentence summary of whether the breaking changes affect this repo based on the actual usage shown above\", \"applies_to_repo\": true/false}"')
 
             jq -n \
               --argjson prompt "$PROMPT" \
@@ -590,6 +669,7 @@ jobs:
             CONFIDENCE=$(echo "$AI_TEXT" | jq -r '.confidence // 0')
             RISK_SUMMARY=$(echo "$AI_TEXT" | jq -r '.summary // "Analysis unavailable"')
             AI_RISKS=$(echo "$AI_TEXT" | jq -r '.risks // []')
+            APPLIES_TO_REPO=$(echo "$AI_TEXT" | jq -r '.applies_to_repo // true')
 
             # Override: major bump is always flagged regardless of AI
             if [ "$SEMVER_TYPE" = "major" ]; then
@@ -597,7 +677,7 @@ jobs:
             fi
 
             # ---------------------------------------------------------
-            # Merge results into S3 cache
+            # Write shared cache (universal changelog + semver analysis)
             # ---------------------------------------------------------
             # Read existing cache entry (from supply chain check) or start fresh
             if [ -f /tmp/cached_analysis.json ]; then
@@ -625,7 +705,82 @@ jobs:
                 changelog: { breaking: $breaking, confidence: ($conf | tonumber), summary: $summary, risks: $risks }
               }' > /tmp/merged_analysis.json
 
-            aws s3 cp /tmp/merged_analysis.json "s3://${S3_BUCKET}/${CACHE_KEY}" \
+            aws s3 cp /tmp/merged_analysis.json "s3://${S3_BUCKET}/${SHARED_CACHE_KEY}" \
+              --content-type "application/json" --quiet
+          fi
+
+          # ---------------------------------------------------------
+          # Repo-scoped applicability analysis
+          # On shared cache hit + repo miss, run a lightweight Bedrock
+          # call that only assesses whether the known breaking changes
+          # apply to this repo's usage patterns.
+          # ---------------------------------------------------------
+          if [ "$SHARED_CACHE_HIT" = "true" ] && [ "$REPO_CACHE_HIT" = "false" ]; then
+            echo "Shared cache hit but no repo analysis — running applicability check for ${GITHUB_REPOSITORY}"
+            USAGE_CONTEXT=""
+            if [ -f /tmp/dep_usage_context.txt ]; then
+              USAGE_CONTEXT=$(cat /tmp/dep_usage_context.txt)
+            fi
+
+            APPLY_PROMPT=$(jq -n \
+              --arg dep "$DEP_NAME" \
+              --arg from "$FROM_VERSION" \
+              --arg to "$TO_VERSION" \
+              --arg summary "$RISK_SUMMARY" \
+              --arg usage "$USAGE_CONTEXT" \
+              '"You are a dependency update analyzer. A previous analysis found these breaking changes:\n\nDependency: " + $dep + "\nFrom: " + $from + "\nTo: " + $to + "\nBreaking change summary: " + $summary + "\n\nHere is how this dependency is actually used in the consuming repository:\n" + $usage + "\n\nBased on the actual usage shown, do the breaking changes affect this repository?\n\nRespond with ONLY a JSON object (no markdown fencing):\n{\"applies_to_repo\": true/false, \"summary\": \"one sentence explaining whether and why the breaking changes affect this specific usage\"}"')
+
+            jq -n \
+              --argjson prompt "$APPLY_PROMPT" \
+              '[{
+                role: "user",
+                content: [{
+                  text: $prompt
+                }]
+              }]' > /tmp/bedrock_apply_messages.json
+
+            echo '{"maxTokens":256}' > /tmp/bedrock_apply_config.json
+
+            APPLY_RESPONSE=$(aws bedrock-runtime converse \
+              --model-id "$BEDROCK_MODEL_ID" \
+              --messages file:///tmp/bedrock_apply_messages.json \
+              --inference-config file:///tmp/bedrock_apply_config.json \
+              --output json 2>/tmp/bedrock_apply_err.log \
+              || echo '{"output":{"message":{"content":[{"text":"{\"applies_to_repo\":true,\"summary\":\"Unable to assess applicability — defaulting to assume it applies\"}"}]}}}')
+
+            APPLY_TEXT=$(echo "$APPLY_RESPONSE" | jq -r '.output.message.content[0].text // "{}"')
+            APPLY_TEXT=$(echo "$APPLY_TEXT" | sed '/^```/d' | sed 's/^[[:space:]]*//')
+            if ! echo "$APPLY_TEXT" | jq empty 2>/dev/null; then
+              APPLY_TEXT=$(echo "$APPLY_TEXT" | sed -n '/^{/,/^}/p' | head -20)
+              if ! echo "$APPLY_TEXT" | jq empty 2>/dev/null; then
+                APPLY_TEXT='{"applies_to_repo":true,"summary":"Unable to parse — defaulting to assume it applies"}'
+              fi
+            fi
+            APPLIES_TO_REPO=$(echo "$APPLY_TEXT" | jq -r '.applies_to_repo // true')
+            RISK_SUMMARY=$(echo "$APPLY_TEXT" | jq -r '.summary // "'"$RISK_SUMMARY"'"')
+          fi
+
+          # ---------------------------------------------------------
+          # Write repo-scoped cache (applicability analysis)
+          # ---------------------------------------------------------
+          if [ "$REPO_CACHE_HIT" = "false" ]; then
+            jq -n \
+              --arg dep "$DEP_NAME" \
+              --arg ver "$TO_VERSION" \
+              --arg repo "$GITHUB_REPOSITORY" \
+              --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+              --argjson applies "$([ "$APPLIES_TO_REPO" = "true" ] && echo true || echo false)" \
+              --arg summary "$RISK_SUMMARY" \
+              '{
+                dependency: $dep,
+                version: $ver,
+                repository: $repo,
+                analyzed_at: $ts,
+                applies_to_repo: $applies,
+                risk_summary: $summary
+              }' > /tmp/repo_analysis.json
+
+            aws s3 cp /tmp/repo_analysis.json "s3://${S3_BUCKET}/${REPO_CACHE_KEY}" \
               --content-type "application/json" --quiet
           fi
 
@@ -635,6 +790,7 @@ jobs:
           echo "semver_type=${SEMVER_TYPE}" >> "$GITHUB_OUTPUT"
           echo "has_breaking_changes=${HAS_BREAKING}" >> "$GITHUB_OUTPUT"
           echo "confidence=${CONFIDENCE}" >> "$GITHUB_OUTPUT"
+          echo "applies_to_repo=${APPLIES_TO_REPO}" >> "$GITHUB_OUTPUT"
 
           # Escape newlines for GITHUB_OUTPUT
           SAFE_SUMMARY=$(echo "$RISK_SUMMARY" | tr '\n' ' ')
@@ -702,6 +858,7 @@ jobs:
           HAS_BREAKING: ${{ needs.breaking_change_check.outputs.has_breaking_changes }}
           CONFIDENCE: ${{ needs.breaking_change_check.outputs.confidence }}
           RISK_SUMMARY: ${{ needs.breaking_change_check.outputs.risk_summary }}
+          APPLIES_TO_REPO: ${{ needs.breaking_change_check.outputs.applies_to_repo }}
           DEP_NAME: ${{ needs.classify.outputs.dep_name }}
           TO_VERSION: ${{ needs.classify.outputs.to_version }}
         run: |
@@ -765,7 +922,8 @@ jobs:
             echo "| Scorecard Pass | ${SCORECARD_PASS} (${SCORECARD_SCORE}) |"
             echo "| Semver | ${SEMVER_TYPE} |"
             echo "| Breaking Changes | ${HAS_BREAKING} |"
-            echo "| AI Summary | ${RISK_SUMMARY} |"
+            echo "| Applies to Repo | ${APPLIES_TO_REPO} |"
+            echo "| Analysis | ${RISK_SUMMARY} |"
             if [ -n "$REASONS" ]; then
               echo ""
               echo "### Blocking Reasons"
