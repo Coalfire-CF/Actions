@@ -1,0 +1,162 @@
+name: Sync Dependabot Auto-Merge Labels
+
+# Reusable workflow that ensures all required labels for the Dependabot
+# auto-merge system exist in the calling repository. Labels are created
+# if missing and updated (color/description) if they have drifted.
+#
+# This workflow is idempotent and safe to run repeatedly.
+#
+# Usage in downstream repos (on-demand):
+#   jobs:
+#     sync-labels:
+#       uses: Coalfire-CF/Actions/.github/workflows/org-label-sync.yml@main
+#       secrets: inherit
+#
+# Usage with a weekly schedule:
+#   on:
+#     schedule:
+#       - cron: '0 6 * * 1'
+#     workflow_dispatch:
+#   jobs:
+#     sync-labels:
+#       uses: Coalfire-CF/Actions/.github/workflows/org-label-sync.yml@main
+#       secrets: inherit
+
+on:
+  workflow_call:
+    inputs:
+      slack_channel_id:
+        description: 'Slack channel ID for failure notifications (optional)'
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  issues: write
+
+jobs:
+  sync_labels:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sync labels
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: |
+            // ---------------------------------------------------------------
+            // Label taxonomy for Dependabot auto-merge system
+            // 6 categories, 35 labels
+            // ---------------------------------------------------------------
+            const labels = [
+              // --- dep/ : Dependency Ecosystem (blue) ---
+              { name: 'dep/github-actions',      color: '0075ca', description: 'GitHub Actions version bump' },
+              { name: 'dep/terraform-provider',   color: '0075ca', description: 'Terraform provider update' },
+              { name: 'dep/terraform-module',     color: '0075ca', description: 'Terraform module reference update' },
+              { name: 'dep/docker',               color: '0075ca', description: 'Docker base image update' },
+              { name: 'dep/pip',                  color: '0075ca', description: 'Python dependency' },
+              { name: 'dep/npm',                  color: '0075ca', description: 'Node.js dependency' },
+              { name: 'dep/gomod',                color: '0075ca', description: 'Go module dependency' },
+              { name: 'dep/nuget',                color: '0075ca', description: '.NET NuGet dependency' },
+              { name: 'dep/cargo',                color: '0075ca', description: 'Rust Cargo dependency' },
+              { name: 'dep/bundler',              color: '0075ca', description: 'Ruby Bundler dependency' },
+              { name: 'dep/composer',             color: '0075ca', description: 'PHP Composer dependency' },
+              { name: 'dep/other',                color: '0075ca', description: 'Other ecosystem dependency' },
+
+              // --- merge/ : Auto-Merge Lifecycle ---
+              { name: 'merge/eligible',           color: '2ea44f', description: 'Auto-merge checks in progress' },
+              { name: 'merge/approved',           color: '0e8a16', description: 'All checks passed — auto-merge enabled' },
+              { name: 'merge/blocked',            color: 'd73a49', description: 'Auto-merge blocked — see blocked/* labels' },
+              { name: 'merge/manual-review',      color: 'e4e669', description: 'Requires human review' },
+              { name: 'merge/skipped',            color: 'cccccc', description: 'Not eligible for auto-merge (terraform deps)' },
+
+              // --- check/ : Individual Check Results ---
+              { name: 'check/osv-clear',          color: '0e8a16', description: 'No known vulnerabilities in OSV.dev' },
+              { name: 'check/osv-vuln',           color: 'd73a49', description: 'Known vulnerability found in OSV.dev' },
+              { name: 'check/scorecard-pass',     color: '0e8a16', description: 'OpenSSF Scorecard meets threshold' },
+              { name: 'check/scorecard-low',      color: 'd73a49', description: 'OpenSSF Scorecard below threshold' },
+              { name: 'check/semver-patch',       color: '0e8a16', description: 'Patch version bump' },
+              { name: 'check/semver-minor',       color: '0e8a16', description: 'Minor version bump' },
+              { name: 'check/semver-major',       color: 'd73a49', description: 'Major version bump detected' },
+              { name: 'check/changelog-safe',     color: '0e8a16', description: 'AI analysis: no breaking changes detected' },
+              { name: 'check/changelog-risk',     color: 'fbca04', description: 'AI analysis: potential breaking changes' },
+              { name: 'check/changelog-breaking',  color: 'd73a49', description: 'AI analysis: confirmed breaking changes' },
+              { name: 'check/cached',             color: 'c5def5', description: 'Analysis result loaded from cross-repo cache' },
+
+              // --- risk/ : Overall Risk Level ---
+              { name: 'risk/low',                 color: '0e8a16', description: 'Low risk — patch bump, clean checks' },
+              { name: 'risk/medium',              color: 'fbca04', description: 'Medium risk — minor bump or scorecard concerns' },
+              { name: 'risk/high',                color: 'd73a49', description: 'High risk — major bump, vulns, or breaking changes' },
+
+              // --- blocked/ : Blocking Reasons ---
+              { name: 'blocked/known-vuln',       color: 'b60205', description: 'Target version has known vulnerability' },
+              { name: 'blocked/low-scorecard',    color: 'b60205', description: 'OpenSSF Scorecard below threshold' },
+              { name: 'blocked/major-bump',       color: 'b60205', description: 'Major semver bump requires manual review' },
+              { name: 'blocked/breaking-change',  color: 'b60205', description: 'Breaking change detected in changelog' },
+              { name: 'blocked/analysis-error',   color: 'b60205', description: 'Automated analysis failed — needs manual check' },
+              { name: 'blocked/terraform-no-tests', color: 'b60205', description: 'Terraform dep — unit tests not yet available' },
+            ];
+
+            // Fetch existing labels (paginate)
+            const existing = await github.paginate(github.rest.issues.listLabelsForRepo, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 100,
+            });
+
+            const existingMap = new Map(existing.map(l => [l.name, l]));
+
+            let created = 0;
+            let updated = 0;
+            let unchanged = 0;
+
+            for (const label of labels) {
+              const current = existingMap.get(label.name);
+
+              if (!current) {
+                // Create missing label
+                await github.rest.issues.createLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name: label.name,
+                  color: label.color,
+                  description: label.description,
+                });
+                core.info(`Created: ${label.name}`);
+                created++;
+              } else if (current.color !== label.color || current.description !== label.description) {
+                // Update drifted label
+                await github.rest.issues.updateLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name: label.name,
+                  color: label.color,
+                  description: label.description,
+                });
+                core.info(`Updated: ${label.name}`);
+                updated++;
+              } else {
+                unchanged++;
+              }
+            }
+
+            core.summary
+              .addHeading('Label Sync Results', 2)
+              .addTable([
+                [{data: 'Action', header: true}, {data: 'Count', header: true}],
+                ['Created', String(created)],
+                ['Updated', String(updated)],
+                ['Unchanged', String(unchanged)],
+                ['Total defined', String(labels.length)],
+              ])
+              .write();
+
+            core.info(`Label sync complete: ${created} created, ${updated} updated, ${unchanged} unchanged`);
+
+  notify_failure:
+    needs: [sync_labels]
+    if: failure() && inputs.slack_channel_id != ''
+    uses: Coalfire-CF/Actions/.github/workflows/org-slack-notify.yml@main
+    with:
+      notification-type: 'failure'
+      channel-id: ${{ inputs.slack_channel_id }}
+    secrets:
+      SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}

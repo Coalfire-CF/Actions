@@ -1033,7 +1033,7 @@ jobs:
               `### Blocking Reasons`,
               reasons,
               ``,
-              `### AI Analysis`,
+              `### Analysis`,
               process.env.RISK_SUMMARY || '_No analysis available_',
               ``,
               `Please review and merge manually if appropriate.`,
