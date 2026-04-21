@@ -434,8 +434,20 @@ jobs:
           USAGE=""
           case "$ECOSYSTEM" in
             github-actions|github_actions)
-              # Find all workflow files that reference this action
-              USAGE=$(grep -rn "$DEP_NAME" .github/workflows/ 2>/dev/null | head -30 || echo "No usage found")
+              # Find workflow files that reference this action, then extract
+              # the full step (uses + with/env/script blocks) for context.
+              # grep -A 50 captures the step body so the model can see
+              # inline scripts and input parameters, not just the uses: line.
+              USAGE=""
+              for wf in .github/workflows/*.yml .github/workflows/*.yaml; do
+                [ -f "$wf" ] || continue
+                if grep -q "$DEP_NAME" "$wf" 2>/dev/null; then
+                  STEP_CONTEXT=$(grep -n -A 50 "$DEP_NAME" "$wf" 2>/dev/null | head -80)
+                  USAGE="${USAGE}--- ${wf} ---\n${STEP_CONTEXT}\n\n"
+                fi
+              done
+              USAGE=$(echo -e "$USAGE")
+              [ -z "$USAGE" ] && USAGE="No usage found"
               ;;
             npm)
               # Find imports/requires of the package
