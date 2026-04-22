@@ -110,7 +110,7 @@ jobs:
       - name: Get GitHub App Token
         id: app-token
         if: steps.check-app-secrets.outputs.has_secrets == 'true'
-        uses: actions/create-github-app-token@f8d387b68d61c58ab83c6c016672934102569859 # v3
+        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3
         with:
           app-id: ${{ secrets.TF_PLAN_APP_CLIENT_ID }}
           private-key: ${{ secrets.TF_PLAN_APP_PRIVATE_KEY }}
@@ -126,7 +126,7 @@ jobs:
 
       - name: Configure AWS credentials (OIDC)
         if: inputs.aws_role_arn != ''
-        uses: aws-actions/configure-aws-credentials@ff717079ee2060e4bcee96c4779b553acc87447c # v4
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
         with:
           role-to-assume: ${{ inputs.aws_role_arn }}
           aws-region: ${{ inputs.aws_region }}
@@ -164,7 +164,7 @@ jobs:
 
       - name: Upload plan artifact
         if: always()
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: tfplan-${{ github.run_id }}
           path: |
@@ -174,7 +174,7 @@ jobs:
 
       - name: Post plan to PR
         if: github.event_name == 'pull_request' && always()
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
