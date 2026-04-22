@@ -30,6 +30,8 @@ Called by downstream repos on pull requests.
 | Markdown Lint | `org-markdown-lint.yml` | Lint changed markdown files with markdownlint-cli2 |
 | Tree README | `org-tree-readme.yml` | Auto-generate and commit directory tree in README |
 | Dependabot Refresh | `org-dependabot.yml` | Auto-detect ecosystems and regenerate dependabot.yml |
+| Dependabot Auto-Merge | `org-dependabot-auto-merge.yml` | Evaluate and auto-merge non-terraform Dependabot PRs ([docs](docs/ORG_DEPENDABOT_AUTO_MERGE.md)) |
+| Label Sync | `org-label-sync.yml` | Sync Dependabot auto-merge label taxonomy to downstream repos ([taxonomy](docs/ORG_LABEL_TAXONOMY.md)) |
 | Trivy Exception Review | `org-trivy-exception-review.yml` | Weekly review of Trivy `.trivyignore` exceptions |
 
 ### Release Workflows
