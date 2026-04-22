@@ -165,7 +165,7 @@ jobs:
           echo "dep_label=${DEP_LABEL}" >> "$GITHUB_OUTPUT"
 
       - name: Apply ecosystem label
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           DEP_LABEL: ${{ steps.decide-eligibility.outputs.dep_label }}
           IS_ELIGIBLE: ${{ steps.decide-eligibility.outputs.is_eligible }}
@@ -214,7 +214,7 @@ jobs:
       cache_hit: ${{ steps.checks.outputs.cache_hit }}
     steps:
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@ff717079ee2060e4bcee96c4779b553acc87447c # v4
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
         with:
           role-to-assume: ${{ secrets.AUTOMERGE_DEPENDABOT_ROLE_ARN }}
           aws-region: ${{ inputs.aws_region }}
@@ -378,7 +378,7 @@ jobs:
           bash /tmp/supply_chain_check.sh
 
       - name: Apply supply chain labels
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           OSV_CLEAR: ${{ steps.checks.outputs.osv_clear }}
           SCORECARD_PASS: ${{ steps.checks.outputs.scorecard_pass }}
@@ -469,7 +469,7 @@ jobs:
           echo "$USAGE" > /tmp/dep_usage_context.txt
 
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@ff717079ee2060e4bcee96c4779b553acc87447c # v4
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
         with:
           role-to-assume: ${{ secrets.AUTOMERGE_DEPENDABOT_ROLE_ARN }}
           aws-region: ${{ inputs.aws_region }}
@@ -812,7 +812,7 @@ jobs:
           bash /tmp/breaking_change_check.sh
 
       - name: Apply breaking change labels
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           SEMVER_TYPE: ${{ steps.checks.outputs.semver_type }}
           HAS_BREAKING: ${{ steps.checks.outputs.has_breaking_changes }}
@@ -944,7 +944,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Apply decision labels
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           DECISION: ${{ steps.decision.outputs.decision }}
           RISK_LEVEL: ${{ steps.decision.outputs.risk_level }}
@@ -1015,7 +1015,7 @@ jobs:
 
       - name: Add review comment for blocked PRs
         if: steps.decision.outputs.decision != 'approve'
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           RISK_SUMMARY: ${{ needs.breaking_change_check.outputs.risk_summary }}
           BLOCKED_LABELS: ${{ steps.decision.outputs.blocked_labels }}
