@@ -1,0 +1,91 @@
+name: Test Cosign Signing
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-cosign:
+    name: Test Cosign Sign & Verify
+    runs-on: ubuntu-latest
+    steps:
+      - name: Write cosign public key
+        env:
+          COSIGN_PUBLIC_KEY: ${{ vars.COSIGN_PUBLIC_KEY }}
+        run: |
+          if [[ -z "${COSIGN_PUBLIC_KEY}" ]]; then
+            echo "::error::COSIGN_PUBLIC_KEY org variable is not set"
+            exit 1
+          fi
+          echo "${COSIGN_PUBLIC_KEY}" > cosign.pub
+          echo "Wrote cosign.pub from org variable"
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@cad07c2e89fa2edd6e2d7bab4c1aa38e53f76003 # v4.1.1
+
+      - name: Create test artifacts
+        run: |
+          echo "test release content" > test-archive.tar.gz
+          sha256sum test-archive.tar.gz > test-archive.tar.gz.sha256
+          echo "Test artifacts:"
+          ls -la test-*
+
+      - name: Create signing config (skip transparency log)
+        run: cosign signing-config create --out cosign-signing-config.json
+
+      - name: Sign artifacts
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+        run: |
+          set -eo pipefail
+
+          echo "Signing tarball..."
+          cosign sign-blob --yes \
+            --signing-config cosign-signing-config.json \
+            --key env://COSIGN_PRIVATE_KEY \
+            --bundle test-archive.tar.gz.bundle \
+            test-archive.tar.gz
+
+          echo "Signing checksum..."
+          cosign sign-blob --yes \
+            --signing-config cosign-signing-config.json \
+            --key env://COSIGN_PRIVATE_KEY \
+            --bundle test-archive.tar.gz.sha256.bundle \
+            test-archive.tar.gz.sha256
+
+          echo "Bundles created:"
+          ls -la *.bundle
+
+      - name: Verify signatures
+        run: |
+          set -eo pipefail
+
+          echo "Verifying tarball..."
+          cosign verify-blob --insecure-ignore-tlog \
+            --key cosign.pub \
+            --bundle test-archive.tar.gz.bundle \
+            test-archive.tar.gz
+
+          echo "Verifying checksum..."
+          cosign verify-blob --insecure-ignore-tlog \
+            --key cosign.pub \
+            --bundle test-archive.tar.gz.sha256.bundle \
+            test-archive.tar.gz.sha256
+
+          echo "All signatures verified successfully"
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## Cosign Test Results"
+            echo ""
+            echo "| Check | Status |"
+            echo "|---|---|"
+            echo "| COSIGN_PUBLIC_KEY var | $([ -f cosign.pub ] && echo 'OK' || echo 'MISSING') |"
+            echo "| Tarball bundle | $([ -f test-archive.tar.gz.bundle ] && echo 'OK' || echo 'MISSING') |"
+            echo "| Checksum bundle | $([ -f test-archive.tar.gz.sha256.bundle ] && echo 'OK' || echo 'MISSING') |"
+          } >> "$GITHUB_STEP_SUMMARY"

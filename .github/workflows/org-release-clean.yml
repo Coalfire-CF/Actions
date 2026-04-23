@@ -14,6 +14,7 @@ name: Release Artifact Cleaner
 #   - Inputs passed via env: blocks, never direct ${{ }} in shell
 #   - Optional GitHub App token for consistent auth across public/private repos (IA-2)
 #   - SHA256 checksum for artifact integrity (SI-7)
+#   - Cosign signature for artifact authenticity (SI-7, SC-8)
 #   - Step summary for audit trail (AU-3)
 
 on:
@@ -33,6 +34,11 @@ on:
         required: false
         type: string
         default: 'CHANGELOG.md,release-please-config.json,.release-please-manifest.json,.gitignore,.gitattributes,CLAUDE.md,.claudeignore'
+      cosign_sign:
+        description: 'Sign release artifacts with cosign (requires COSIGN_PRIVATE_KEY and COSIGN_PASSWORD org secrets)'
+        required: false
+        type: boolean
+        default: true
 
 permissions:
   contents: write # Required to upload release assets
@@ -174,6 +180,70 @@ jobs:
         echo "SHA256: ${CHECKSUM}"
         echo "CHECKSUM=${CHECKSUM}" >> "${GITHUB_ENV}"
 
+    - name: Install cosign
+      if: inputs.cosign_sign
+      uses: sigstore/cosign-installer@cad07c2e89fa2edd6e2d7bab4c1aa38e53f76003 # v4.1.1
+
+    - name: Write cosign public key
+      if: inputs.cosign_sign
+      env:
+        COSIGN_PUBLIC_KEY: ${{ vars.COSIGN_PUBLIC_KEY }}
+      run: |
+        if [[ -z "${COSIGN_PUBLIC_KEY}" ]]; then
+          echo "::error::COSIGN_PUBLIC_KEY org variable is not set"
+          exit 1
+        fi
+        echo "${COSIGN_PUBLIC_KEY}" > cosign.pub
+        echo "Wrote cosign.pub from org variable"
+
+    - name: Create signing config (skip transparency log)
+      if: inputs.cosign_sign
+      run: cosign signing-config create --out cosign-signing-config.json
+
+    - name: Sign release artifacts
+      if: inputs.cosign_sign
+      env:
+        COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+        COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+      run: |
+        set -eo pipefail
+
+        echo "Signing ${ARCHIVE_NAME}..."
+        cosign sign-blob --yes \
+          --signing-config cosign-signing-config.json \
+          --key env://COSIGN_PRIVATE_KEY \
+          --bundle "${ARCHIVE_NAME}.bundle" \
+          "${ARCHIVE_NAME}"
+
+        echo "Signing ${CHECKSUM_NAME}..."
+        cosign sign-blob --yes \
+          --signing-config cosign-signing-config.json \
+          --key env://COSIGN_PRIVATE_KEY \
+          --bundle "${CHECKSUM_NAME}.bundle" \
+          "${CHECKSUM_NAME}"
+
+        echo "Bundles created:"
+        ls -la *.bundle
+
+    - name: Verify signatures
+      if: inputs.cosign_sign
+      run: |
+        set -eo pipefail
+
+        echo "Verifying ${ARCHIVE_NAME}..."
+        cosign verify-blob --insecure-ignore-tlog \
+          --key cosign.pub \
+          --bundle "${ARCHIVE_NAME}.bundle" \
+          "${ARCHIVE_NAME}"
+
+        echo "Verifying ${CHECKSUM_NAME}..."
+        cosign verify-blob --insecure-ignore-tlog \
+          --key cosign.pub \
+          --bundle "${CHECKSUM_NAME}.bundle" \
+          "${CHECKSUM_NAME}"
+
+        echo "All signatures verified successfully"
+
     - name: Upload to GitHub Release
       env:
         GH_TOKEN: ${{ steps.app-token.outputs.token || github.token }}
@@ -181,7 +251,11 @@ jobs:
         GH_REPO: ${{ github.repository }}
       run: |
         set -eo pipefail
-        gh release upload "${TAG_NAME}" "${ARCHIVE_NAME}" "${CHECKSUM_NAME}" --repo "${GH_REPO}" --clobber
+        ASSETS=("${ARCHIVE_NAME}" "${CHECKSUM_NAME}")
+        if [[ -f "${ARCHIVE_NAME}.bundle" ]]; then
+          ASSETS+=("${ARCHIVE_NAME}.bundle" "${CHECKSUM_NAME}.bundle" "cosign.pub")
+        fi
+        gh release upload "${TAG_NAME}" "${ASSETS[@]}" --repo "${GH_REPO}" --clobber
 
     - name: Upload workflow artifact
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -190,6 +264,8 @@ jobs:
         path: |
           ${{ env.ARCHIVE_NAME }}
           ${{ env.CHECKSUM_NAME }}
+          *.bundle
+          cosign.pub
         retention-days: 30
 
     - name: Generate step summary
@@ -208,6 +284,11 @@ jobs:
           echo "| Archive | \`${ARCHIVE_NAME:-N/A}\` |"
           echo "| Size | ${ARCHIVE_SIZE:-N/A} |"
           echo "| SHA256 | \`${CHECKSUM:-N/A}\` |"
+          if [[ -f "${ARCHIVE_NAME}.bundle" ]]; then
+            echo "| Cosign Signed | Yes |"
+          else
+            echo "| Cosign Signed | No |"
+          fi
           echo ""
           echo "### Excluded"
           echo "- Directories: \`${EXCLUDE_DIRS}\`"
