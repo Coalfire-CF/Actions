@@ -23,7 +23,9 @@ name: Release Please
 #   its own isolated runner — scan jobs always see the full repo.
 #
 #   The tarball and a SHA256 checksum file are attached as release assets and also
-#   available as workflow artifacts (30-day retention).
+#   available as workflow artifacts (30-day retention). When cosign signing is
+#   enabled (default), cosign .bundle files are also attached for both the
+#   tarball and checksum, along with cosign.pub for verification.
 #
 #   .git/ is always removed. Default exclusions:
 #     dirs:  .github, docs, .claude
@@ -82,6 +84,11 @@ on:
         required: false
         type: string
         default: 'CHANGELOG.md,release-please-config.json,.release-please-manifest.json,.gitignore,.gitattributes,CLAUDE.md,.claudeignore'
+      cosign_sign:
+        description: 'Sign release artifacts with cosign (requires COSIGN_PRIVATE_KEY and COSIGN_PASSWORD org secrets)'
+        required: false
+        type: boolean
+        default: true
       slack_channel_id:
         description: 'Slack channel ID for release and failure notifications (optional)'
         required: false
@@ -152,6 +159,7 @@ jobs:
       tag_name: ${{ needs.release.outputs.tag_name }}
       exclude_dirs: ${{ inputs.clean_exclude_dirs }}
       exclude_files: ${{ inputs.clean_exclude_files }}
+      cosign_sign: ${{ inputs.cosign_sign }}
     secrets: inherit
 
   trivy-scan:

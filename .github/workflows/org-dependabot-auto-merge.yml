@@ -107,7 +107,7 @@ jobs:
 
       - name: Fetch Dependabot metadata
         id: metadata
-        uses: dependabot/fetch-metadata@ffa630c65fa7e0ecfa0625b5ceda64399aea1b36 # v3
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3
         with:
           github-token: ${{ github.token }}
 
@@ -215,7 +215,7 @@ jobs:
       cache_hit: ${{ steps.checks.outputs.cache_hit }}
     steps:
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
+        uses: aws-actions/configure-aws-credentials@ec61189d14ec14c8efccab744f656cffd0e33f37 # v6.1.0
         with:
           role-to-assume: ${{ secrets.AUTOMERGE_DEPENDABOT_ROLE_ARN }}
           aws-region: ${{ inputs.aws_region }}
@@ -470,7 +470,7 @@ jobs:
           echo "$USAGE" > /tmp/dep_usage_context.txt
 
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
+        uses: aws-actions/configure-aws-credentials@ec61189d14ec14c8efccab744f656cffd0e33f37 # v6.1.0
         with:
           role-to-assume: ${{ secrets.AUTOMERGE_DEPENDABOT_ROLE_ARN }}
           aws-region: ${{ inputs.aws_region }}
