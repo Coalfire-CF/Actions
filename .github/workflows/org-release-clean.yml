@@ -9,13 +9,13 @@ name: Release Artifact Cleaner
 # GitHub-auto-generated source archives.
 #
 # Security controls:
-#   - All inputs validated against allowlist regex (SC-28, SI-10)
+#   - All inputs validated against allowlist regex
 #   - Path traversal (..) explicitly rejected
 #   - Inputs passed via env: blocks, never direct ${{ }} in shell
-#   - Optional GitHub App token for consistent auth across public/private repos (IA-2)
-#   - SHA256 checksum for artifact integrity (SI-7)
-#   - Cosign signature for artifact authenticity (SI-7, SC-8)
-#   - Step summary for audit trail (AU-3)
+#   - Optional GitHub App token for consistent auth across public/private repos
+#   - SHA256 checksum for artifact integrity
+#   - Cosign signature for artifact authenticity
+#   - Step summary for audit trail
 
 on:
   workflow_call:

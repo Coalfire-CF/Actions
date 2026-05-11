@@ -1,0 +1,447 @@
+name: Terratest
+
+# Reusable workflow that runs Terratest integration tests against Terraform modules.
+# Terratest (Go) handles the full init/apply/verify/destroy lifecycle internally.
+#
+# Prerequisites for calling repositories:
+#   - test/ directory with Go test files using //go:build terratest tag
+#   - go.mod / go.sum in the test directory (or repo root)
+#   - OIDC trust configured in target cloud provider(s)
+#
+# Security controls:
+#   - Cloud auth via OIDC only — no long-lived secrets
+#   - Inputs validated against allowlist patterns
+#   - Path traversal rejected in all path inputs
+#   - GitHub App token scoped to repo owner for private module access
+#   - Test timeout enforced to prevent runaway resource creation
+#   - Step summary and artifacts for audit trail
+
+on:
+  workflow_call:
+    inputs:
+      test_mode:
+        description: 'Test mode: pr (post results to PR comment) or release (gate release pipeline)'
+        required: false
+        default: 'pr'
+        type: string
+      go_version:
+        description: 'Go version for running Terratest'
+        required: false
+        default: '1.23'
+        type: string
+      terraform_version:
+        description: 'Terraform version (leave empty to use .terraform-version)'
+        required: false
+        default: ''
+        type: string
+      test_directory:
+        description: 'Directory containing Terratest Go test files'
+        required: false
+        default: 'test'
+        type: string
+      test_timeout:
+        description: 'Go test timeout (e.g., 30m, 1h)'
+        required: false
+        default: '30m'
+        type: string
+      working_directory:
+        description: 'Working directory (repo root by default)'
+        required: false
+        default: '.'
+        type: string
+      # AWS OIDC
+      aws_role_arn:
+        description: 'AWS IAM role ARN for OIDC authentication (leave empty to skip AWS auth)'
+        required: false
+        default: ''
+        type: string
+      aws_region:
+        description: 'AWS region for OIDC authentication'
+        required: false
+        default: 'us-east-1'
+        type: string
+      # Azure OIDC
+      azure_client_id:
+        description: 'Azure App Registration client ID for OIDC (leave empty to skip Azure auth)'
+        required: false
+        default: ''
+        type: string
+      azure_tenant_id:
+        description: 'Azure AD tenant ID for OIDC'
+        required: false
+        default: ''
+        type: string
+      azure_subscription_id:
+        description: 'Azure subscription ID for OIDC'
+        required: false
+        default: ''
+        type: string
+      # GCP OIDC
+      gcp_workload_identity_provider:
+        description: 'GCP Workload Identity Provider resource name (leave empty to skip GCP auth)'
+        required: false
+        default: ''
+        type: string
+      gcp_service_account:
+        description: 'GCP service account email for Workload Identity Federation'
+        required: false
+        default: ''
+        type: string
+      slack_channel_id:
+        description: 'Slack channel ID for failure notifications (optional)'
+        required: false
+        default: ''
+        type: string
+    secrets:
+      TERRATEST_APP_CLIENT_ID:
+        description: 'GitHub App client ID for private module access'
+        required: false
+      TERRATEST_APP_PRIVATE_KEY:
+        description: 'GitHub App private key for private module access'
+        required: false
+
+  workflow_dispatch:
+    inputs:
+      test_mode:
+        description: 'Test mode'
+        required: false
+        default: 'pr'
+        type: choice
+        options:
+          - pr
+          - release
+      go_version:
+        description: 'Go version'
+        required: false
+        default: '1.23'
+        type: string
+      terraform_version:
+        description: 'Terraform version'
+        required: false
+        default: ''
+        type: string
+      test_directory:
+        description: 'Test directory'
+        required: false
+        default: 'test'
+        type: string
+      test_timeout:
+        description: 'Test timeout'
+        required: false
+        default: '30m'
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write
+
+jobs:
+  terratest:
+    name: Terratest
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.working_directory }}
+    steps:
+      - name: Validate inputs
+        env:
+          TEST_MODE: ${{ inputs.test_mode }}
+          TEST_DIR: ${{ inputs.test_directory }}
+          TEST_TIMEOUT: ${{ inputs.test_timeout }}
+          WORKING_DIR: ${{ inputs.working_directory }}
+          GO_VERSION: ${{ inputs.go_version }}
+          TF_VERSION: ${{ inputs.terraform_version }}
+          AWS_ROLE_ARN: ${{ inputs.aws_role_arn }}
+          AWS_REGION: ${{ inputs.aws_region }}
+          AZURE_CLIENT_ID: ${{ inputs.azure_client_id }}
+          AZURE_TENANT_ID: ${{ inputs.azure_tenant_id }}
+          AZURE_SUBSCRIPTION_ID: ${{ inputs.azure_subscription_id }}
+          GCP_WI_PROVIDER: ${{ inputs.gcp_workload_identity_provider }}
+          GCP_SA: ${{ inputs.gcp_service_account }}
+        run: |
+          set -eo pipefail
+
+          validate_input() {
+            local name="$1"
+            local value="$2"
+            local pattern="$3"
+
+            if [[ -z "$value" ]]; then
+              return 0
+            fi
+
+            if [[ ! "$value" =~ $pattern ]]; then
+              echo "::error::Invalid ${name}: contains disallowed characters. Allowed pattern: ${pattern}"
+              exit 1
+            fi
+
+            if [[ "$value" == *".."* ]]; then
+              echo "::error::Invalid ${name}: path traversal (..) detected"
+              exit 1
+            fi
+          }
+
+          # Validate test_mode is one of the allowed values
+          if [[ "$TEST_MODE" != "pr" && "$TEST_MODE" != "release" ]]; then
+            echo "::error::Invalid test_mode: must be 'pr' or 'release'"
+            exit 1
+          fi
+
+          # Path and version inputs
+          validate_input "test_directory" "$TEST_DIR" '^[a-zA-Z0-9._/-]+$'
+          validate_input "test_timeout" "$TEST_TIMEOUT" '^[0-9]+[mhMs]+$'
+          validate_input "working_directory" "$WORKING_DIR" '^[a-zA-Z0-9._/-]+$'
+          validate_input "go_version" "$GO_VERSION" '^[0-9]+\.[0-9]+(\.[0-9]+)?$'
+          validate_input "terraform_version" "$TF_VERSION" '^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$'
+
+          # Cloud credential inputs
+          validate_input "aws_role_arn" "$AWS_ROLE_ARN" '^arn:aws(-us-gov)?:iam::[0-9]+:role/[a-zA-Z0-9._/@=+-]+$'
+          validate_input "aws_region" "$AWS_REGION" '^[a-z]{2}(-gov)?-[a-z]+-[0-9]+$'
+          validate_input "azure_client_id" "$AZURE_CLIENT_ID" '^[0-9a-fA-F-]+$'
+          validate_input "azure_tenant_id" "$AZURE_TENANT_ID" '^[0-9a-fA-F-]+$'
+          validate_input "azure_subscription_id" "$AZURE_SUBSCRIPTION_ID" '^[0-9a-fA-F-]+$'
+          validate_input "gcp_workload_identity_provider" "$GCP_WI_PROVIDER" '^projects/[0-9]+/locations/[a-z-]+/workloadIdentityPools/[a-zA-Z0-9._-]+/providers/[a-zA-Z0-9._-]+$'
+          validate_input "gcp_service_account" "$GCP_SA" '^[a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.iam\.gserviceaccount\.com$'
+
+          echo "Input validation passed"
+
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Resolve Terraform version
+        id: tf-version
+        working-directory: .
+        env:
+          INPUT_TF_VERSION: ${{ inputs.terraform_version }}
+        run: |
+          if [ -n "$INPUT_TF_VERSION" ]; then
+            echo "version=$INPUT_TF_VERSION" >> $GITHUB_OUTPUT
+          elif [ -f .terraform-version ]; then
+            echo "version=$(cat .terraform-version | tr -d '[:space:]')" >> $GITHUB_OUTPUT
+          else
+            VERSION=$(curl -s https://raw.githubusercontent.com/Coalfire-CF/Actions/main/.terraform-version | tr -d '[:space:]')
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Setup Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version: ${{ inputs.go_version }}
+          cache-dependency-path: ${{ inputs.test_directory }}/go.sum
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@5e8dbf3c6d9deaf4193ca7a8fb23f2ac83bb6c85 # v4
+        with:
+          terraform_version: ${{ steps.tf-version.outputs.version }}
+          terraform_wrapper: false
+
+      - name: Check for GitHub App secrets
+        id: check-app-secrets
+        run: |
+          if [ -n "$TERRATEST_APP_CLIENT_ID" ] && [ -n "$TERRATEST_APP_PRIVATE_KEY" ]; then
+            echo "has_secrets=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_secrets=false" >> $GITHUB_OUTPUT
+          fi
+        env:
+          TERRATEST_APP_CLIENT_ID: ${{ secrets.TERRATEST_APP_CLIENT_ID }}
+          TERRATEST_APP_PRIVATE_KEY: ${{ secrets.TERRATEST_APP_PRIVATE_KEY }}
+
+      - name: Get GitHub App Token
+        id: app-token
+        if: steps.check-app-secrets.outputs.has_secrets == 'true'
+        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3
+        with:
+          app-id: ${{ secrets.TERRATEST_APP_CLIENT_ID }}
+          private-key: ${{ secrets.TERRATEST_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
+      - name: Configure Git for private modules
+        if: steps.check-app-secrets.outputs.has_secrets == 'true'
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          git config --global url."https://actions:${APP_TOKEN}@github.com".insteadOf https://github.com
+          git config --global url."https://actions:${APP_TOKEN}@github.com/".insteadOf ssh://git@github.com/
+
+      # --- Cloud OIDC Authentication (conditional) ---
+
+      - name: Configure AWS credentials (OIDC)
+        if: inputs.aws_role_arn != ''
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
+        with:
+          role-to-assume: ${{ inputs.aws_role_arn }}
+          aws-region: ${{ inputs.aws_region }}
+
+      - name: Configure Azure credentials (OIDC)
+        if: inputs.azure_client_id != ''
+        uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
+        with:
+          client-id: ${{ inputs.azure_client_id }}
+          tenant-id: ${{ inputs.azure_tenant_id }}
+          subscription-id: ${{ inputs.azure_subscription_id }}
+
+      - name: Configure GCP credentials (OIDC)
+        if: inputs.gcp_workload_identity_provider != ''
+        uses: google-github-actions/auth@ba79af03959ebeac9769e648f473a284504d9193 # v2.1.10
+        with:
+          workload_identity_provider: ${{ inputs.gcp_workload_identity_provider }}
+          service_account: ${{ inputs.gcp_service_account }}
+
+      # --- Run Terratest ---
+
+      - name: Install gotestsum
+        run: go install gotest.tools/gotestsum@v1.13.0
+
+      - name: Download Go dependencies
+        env:
+          TEST_DIR: ${{ inputs.test_directory }}
+        run: |
+          cd "${TEST_DIR}"
+          go mod download
+
+      - name: Run Terratest
+        id: terratest
+        env:
+          TEST_DIR: ${{ inputs.test_directory }}
+          TEST_TIMEOUT: ${{ inputs.test_timeout }}
+        run: |
+          set +e
+          cd "${TEST_DIR}"
+          gotestsum \
+            --format standard-verbose \
+            --junitfile "${GITHUB_WORKSPACE}/terratest-results.xml" \
+            --jsonfile "${GITHUB_WORKSPACE}/terratest-results.json" \
+            -- -tags terratest -timeout "${TEST_TIMEOUT}" ./... 2>&1 | tee "${GITHUB_WORKSPACE}/terratest_output.txt"
+          EXIT_CODE=${PIPESTATUS[0]}
+          set -e
+
+          echo "exitcode=${EXIT_CODE}" >> "${GITHUB_OUTPUT}"
+
+          if [ "${EXIT_CODE}" -ne 0 ]; then
+            echo "::error::Terratest failed with exit code ${EXIT_CODE}"
+            exit "${EXIT_CODE}"
+          fi
+        continue-on-error: true
+
+      # --- Reporting ---
+
+      - name: Upload test artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: terratest-results-${{ github.run_id }}
+          path: |
+            terratest_output.txt
+            terratest-results.xml
+            terratest-results.json
+          retention-days: 30
+
+      - name: Post results to PR
+        if: inputs.test_mode == 'pr' && github.event_name == 'pull_request' && always()
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          TERRATEST_EXIT_CODE: ${{ steps.terratest.outputs.exitcode }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const exitCode = process.env.TERRATEST_EXIT_CODE || '1';
+            const status = exitCode === '0' ? 'Passed' : 'Failed';
+
+            // Parse JUnit XML for summary counts
+            let summary = '';
+            try {
+              const xml = fs.readFileSync(process.env.GITHUB_WORKSPACE + '/terratest-results.xml', 'utf8');
+              const testsMatch = xml.match(/tests="(\d+)"/);
+              const failuresMatch = xml.match(/failures="(\d+)"/);
+              const skippedMatch = xml.match(/skipped="(\d+)"/);
+              const timeMatch = xml.match(/time="([^"]+)"/);
+              const tests = testsMatch ? parseInt(testsMatch[1], 10) : 0;
+              const failures = failuresMatch ? parseInt(failuresMatch[1], 10) : 0;
+              const skipped = skippedMatch ? parseInt(skippedMatch[1], 10) : 0;
+              const duration = timeMatch ? timeMatch[1] + 's' : '?';
+              const passed = tests - failures - skipped;
+              summary = `| Tests | Passed | Failed | Skipped | Duration |\n| --- | --- | --- | --- | --- |\n| ${tests} | ${passed} | ${failures} | ${skipped} | ${duration} |`;
+            } catch (e) {
+              summary = '_Could not parse test summary._';
+            }
+
+            // Read raw output for details
+            let output = '';
+            try {
+              output = fs.readFileSync(process.env.GITHUB_WORKSPACE + '/terratest_output.txt', 'utf8');
+            } catch (e) {
+              output = 'No test output captured.';
+            }
+
+            if (output.length > 55000) {
+              output = output.substring(0, 55000) + '\n... (truncated)';
+            }
+
+            const body = `### Terratest Results — ${status}\n\n${summary}\n\n<details><summary>Full Output</summary>\n\n\`\`\`\n${output}\n\`\`\`\n</details>`;
+
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: body
+            });
+
+      - name: Generate step summary
+        if: always()
+        env:
+          TEST_DIR: ${{ inputs.test_directory }}
+          TEST_MODE: ${{ inputs.test_mode }}
+          TEST_TIMEOUT: ${{ inputs.test_timeout }}
+          GO_VERSION: ${{ inputs.go_version }}
+          TF_VERSION: ${{ steps.tf-version.outputs.version }}
+          EXIT_CODE: ${{ steps.terratest.outputs.exitcode }}
+        run: |
+          if [ "${EXIT_CODE}" = "0" ]; then
+            STATUS="Passed"
+          else
+            STATUS="Failed (exit code ${EXIT_CODE})"
+          fi
+
+          {
+            echo "## Terratest Results"
+            echo ""
+            echo "| Property | Value |"
+            echo "| --- | --- |"
+            echo "| Status | ${STATUS} |"
+            echo "| Mode | \`${TEST_MODE}\` |"
+            echo "| Test Directory | \`${TEST_DIR}\` |"
+            echo "| Timeout | \`${TEST_TIMEOUT}\` |"
+            echo "| Go Version | \`${GO_VERSION}\` |"
+            echo "| Terraform Version | \`${TF_VERSION}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # Append JUnit summary to step summary if available
+          if [ -f "${GITHUB_WORKSPACE}/terratest-results.xml" ]; then
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "### Test Report" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo '```xml' >> "$GITHUB_STEP_SUMMARY"
+            head -5 "${GITHUB_WORKSPACE}/terratest-results.xml" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Fail pipeline on test failure
+        if: steps.terratest.outputs.exitcode != '0'
+        env:
+          EXIT_CODE: ${{ steps.terratest.outputs.exitcode }}
+        run: |
+          echo "::error::Terratest failed with exit code ${EXIT_CODE} — blocking pipeline"
+          exit 1
+
+  notify-failure:
+    needs: terratest
+    if: failure() && inputs.slack_channel_id != ''
+    uses: Coalfire-CF/Actions/.github/workflows/org-slack-notify.yml@main
+    secrets:
+      SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+    with:
+      notification-type: failure
+      channel-id: ${{ inputs.slack_channel_id }}
