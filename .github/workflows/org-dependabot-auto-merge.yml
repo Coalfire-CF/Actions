@@ -215,7 +215,7 @@ jobs:
       cache_hit: ${{ steps.checks.outputs.cache_hit }}
     steps:
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@ec61189d14ec14c8efccab744f656cffd0e33f37 # v6.1.0
+        uses: aws-actions/configure-aws-credentials@d979d5b3a71173a29b74b5b88418bfda9437d885 # v6.1.1
         with:
           role-to-assume: ${{ secrets.AUTOMERGE_DEPENDABOT_ROLE_ARN }}
           aws-region: ${{ inputs.aws_region }}
@@ -470,7 +470,7 @@ jobs:
           echo "$USAGE" > /tmp/dep_usage_context.txt
 
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@ec61189d14ec14c8efccab744f656cffd0e33f37 # v6.1.0
+        uses: aws-actions/configure-aws-credentials@d979d5b3a71173a29b74b5b88418bfda9437d885 # v6.1.1
         with:
           role-to-assume: ${{ secrets.AUTOMERGE_DEPENDABOT_ROLE_ARN }}
           aws-region: ${{ inputs.aws_region }}
