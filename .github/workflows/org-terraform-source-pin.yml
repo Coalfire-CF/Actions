@@ -1,0 +1,63 @@
+name: "Terraform Source Pin Check"
+
+on:
+  workflow_call:
+    inputs:
+      scan_root:
+        description: 'Directory (relative to the repo root) to scan for *.tf files'
+        required: false
+        type: string
+        default: '.'
+      actions_ref:
+        description: 'Ref of Coalfire-CF/Actions to source the check script from'
+        required: false
+        type: string
+        default: 'main'
+      slack_channel_id:
+        description: 'Slack channel ID for failure notifications (optional)'
+        required: false
+        type: string
+        default: ''
+  workflow_dispatch:
+    inputs:
+      scan_root:
+        description: 'Directory (relative to the repo root) to scan for *.tf files'
+        required: false
+        type: string
+        default: '.'
+  pull_request:
+
+jobs:
+  source-pin:
+    name: Check Coalfire-CF module source pins
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout target repo
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ github.head_ref }} # PR source branch when triggered by pull_request
+          path: target
+
+      - name: Checkout Actions repo (source-pin check script)
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          repository: Coalfire-CF/Actions
+          ref: ${{ inputs.actions_ref || 'main' }}
+          path: actions-tools
+
+      - name: Run Terraform source-pin check
+        env:
+          SCAN_ROOT: ${{ inputs.scan_root || '.' }}
+        run: |
+          chmod +x actions-tools/scripts/source-pin-check.sh
+          actions-tools/scripts/source-pin-check.sh "target/${SCAN_ROOT}"
+
+  notify-failure:
+    needs: source-pin
+    if: failure() && inputs.slack_channel_id != ''
+    uses: Coalfire-CF/Actions/.github/workflows/org-slack-notify.yml@main
+    secrets:
+      SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+    with:
+      notification-type: failure
+      channel-id: ${{ inputs.slack_channel_id }}
