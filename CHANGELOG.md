@@ -1,5 +1,71 @@
 # Changelog
 
+## [0.6.0](https://github.com/Coalfire-CF/Actions/compare/v0.5.1...v0.6.0) (2026-07-01)
+
+
+### Features
+
+* add cosign signing to release clean pipeline ([60e3f48](https://github.com/Coalfire-CF/Actions/commit/60e3f48c3a14428e92ce2b7e8407df4983f2d960))
+* add cosign signing to release clean pipeline ([6e1639c](https://github.com/Coalfire-CF/Actions/commit/6e1639c0930c446eed8db84f6f40aaa438ec290f))
+* auto merge dependabot ([9145ca7](https://github.com/Coalfire-CF/Actions/commit/9145ca7f5772e190eca1ccbdbf7551f29219e7b0))
+* auto merge dependabot ([3dfdaa6](https://github.com/Coalfire-CF/Actions/commit/3dfdaa6e97fdf8b37a5ead855e250f2efa97e940))
+* convert dependabot auto-merge to use Bedrock Converse ([24412dd](https://github.com/Coalfire-CF/Actions/commit/24412ddf1097157d32cda58241fc50bdeb52ef32))
+* two-tier S3 cache and repo-scoped applicability analysis ([be018f1](https://github.com/Coalfire-CF/Actions/commit/be018f14020cf8b95c834b23a663ce62c1a5b62b))
+
+
+### Bug Fixes
+
+* dependabot restriction ([222e26d](https://github.com/Coalfire-CF/Actions/commit/222e26d8e9da13a557218956cc2d5649843b7f6f))
+* dependabot restriction ([d7f5867](https://github.com/Coalfire-CF/Actions/commit/d7f58672717884218550d116940200a83b942764))
+* harden Bedrock response parsing in breaking change check ([6476a64](https://github.com/Coalfire-CF/Actions/commit/6476a641253d1b9780ff1a89923bd07ab5d374dd))
+* include full step context in GitHub Actions usage analysis ([e5da858](https://github.com/Coalfire-CF/Actions/commit/e5da858bc429ff515fb00a6f616ae4f5e8640592))
+* restore org-checkov-release.yml for backward compatibility ([4cdeda8](https://github.com/Coalfire-CF/Actions/commit/4cdeda8188182d43cd5622c3eb5cb8d80c2b18bc))
+* restore org-checkov-release.yml for backward compatibility ([ef89945](https://github.com/Coalfire-CF/Actions/commit/ef8994570449c3e3868494e8d87479ba8efecb4d))
+
+
+### Miscellaneous
+
+* bump terraform version to 1.15.3 ([555ffc9](https://github.com/Coalfire-CF/Actions/commit/555ffc9193c89d56a5c795d9bde5175ce23a9c66))
+* bump terraform version to 1.15.3 ([e9cacd0](https://github.com/Coalfire-CF/Actions/commit/e9cacd06b61ad5dd1fc5e47b1167420dfab5ed52))
+* bump terraform version to 1.15.7 ([807a6b5](https://github.com/Coalfire-CF/Actions/commit/807a6b5f387e40cbe22aaa8488de2759fd8113f0))
+* bump terraform version to 1.15.7 ([ebddbbf](https://github.com/Coalfire-CF/Actions/commit/ebddbbfefebdd48ac3cebba381bd9839d35fc4bf))
+* **deps:** bump actions/checkout from 6 to 7 ([a98715c](https://github.com/Coalfire-CF/Actions/commit/a98715cd3322a66856b814aafe6836006b832faa))
+* **deps:** bump actions/checkout from 6 to 7 ([6198ebd](https://github.com/Coalfire-CF/Actions/commit/6198ebdfe746466b92befe57dd9d0f58f7e5c0d8))
+* **deps:** bump actions/create-github-app-token from 1.12.0 to 3.0.0 ([df5f494](https://github.com/Coalfire-CF/Actions/commit/df5f4941a1718081c1815df3fbf01798a9a3cffb))
+* **deps:** bump actions/create-github-app-token from 1.12.0 to 3.0.0 ([37c8514](https://github.com/Coalfire-CF/Actions/commit/37c8514005e3c6a9464e6b1c6f3b2d376f6008cc))
+* **deps:** bump actions/create-github-app-token from 3.1.1 to 3.2.0 ([c98ecb8](https://github.com/Coalfire-CF/Actions/commit/c98ecb8c8d7a7b16d8d2ab04d3539b10eebc7bfa))
+* **deps:** bump actions/create-github-app-token from 3.1.1 to 3.2.0 ([a20f547](https://github.com/Coalfire-CF/Actions/commit/a20f547418c1bc1694f726d0dc874b036edcfea1))
+* **deps:** bump actions/github-script from 8.0.0 to 9.0.0 ([8c79386](https://github.com/Coalfire-CF/Actions/commit/8c7938612c95a320126683b5d87fdc6af7a26523))
+* **deps:** bump actions/github-script from 8.0.0 to 9.0.0 ([5e68a38](https://github.com/Coalfire-CF/Actions/commit/5e68a3807a8b4019562b221005155923540dc77f))
+* **deps:** bump actions/setup-node from 4.4.0 to 6.3.0 ([546ef76](https://github.com/Coalfire-CF/Actions/commit/546ef766441e23335aa0f98f9e2a9519bf2269ff))
+* **deps:** bump actions/setup-node from 4.4.0 to 6.3.0 ([137096a](https://github.com/Coalfire-CF/Actions/commit/137096a81c1ab15a55dc288c3e88146021b51cde))
+* **deps:** bump actions/setup-node from 6.3.0 to 6.4.0 ([37cd50c](https://github.com/Coalfire-CF/Actions/commit/37cd50c30bbab67aff5ee5c92ebce485678f3df0))
+* **deps:** bump actions/setup-node from 6.3.0 to 6.4.0 ([f298f60](https://github.com/Coalfire-CF/Actions/commit/f298f6000942e668eff61bceeea72e0dca4f91b8))
+* **deps:** bump actions/setup-python from 6.2.0 to 6.3.0 ([43dc86f](https://github.com/Coalfire-CF/Actions/commit/43dc86f880b347c6221363e945ba9bdce0831dca))
+* **deps:** bump actions/setup-python from 6.2.0 to 6.3.0 ([064c8a7](https://github.com/Coalfire-CF/Actions/commit/064c8a70cb335078dc03f5fb6af78b4dd6013abc))
+* **deps:** bump actions/upload-artifact from 7.0.0 to 7.0.1 ([5976cc5](https://github.com/Coalfire-CF/Actions/commit/5976cc5d9a25c527b1569d3441248a88e7b4a585))
+* **deps:** bump actions/upload-artifact from 7.0.0 to 7.0.1 ([e461ec5](https://github.com/Coalfire-CF/Actions/commit/e461ec508fa3cf518c2e8580f7e963ab6fb7748b))
+* **deps:** bump aquasecurity/trivy-action from 0.35.0 to 0.36.0 ([2911b4a](https://github.com/Coalfire-CF/Actions/commit/2911b4aef757904379f66102f5cf66d2cee36b8f))
+* **deps:** bump aquasecurity/trivy-action from 0.35.0 to 0.36.0 ([4578438](https://github.com/Coalfire-CF/Actions/commit/457843838b2cf0c6adc23ef76043018a1f84f00a))
+* **deps:** bump aws-actions/configure-aws-credentials ([b73cc3b](https://github.com/Coalfire-CF/Actions/commit/b73cc3bd5ef245ba7352dd392d4033bbb534a8f4))
+* **deps:** bump aws-actions/configure-aws-credentials ([1f98e44](https://github.com/Coalfire-CF/Actions/commit/1f98e4471425c3e7a507f4b591f60d7e0fcf8e8e))
+* **deps:** bump aws-actions/configure-aws-credentials ([1ee65b1](https://github.com/Coalfire-CF/Actions/commit/1ee65b1500006a68c34716de87c2063fba73a345))
+* **deps:** bump aws-actions/configure-aws-credentials ([9290937](https://github.com/Coalfire-CF/Actions/commit/929093779c81df080bf0d649ded7d6db6cbde873))
+* **deps:** bump aws-actions/configure-aws-credentials from 4.3.1 to 6.1.0 ([92807c2](https://github.com/Coalfire-CF/Actions/commit/92807c2861d7132f28dfe5013ac0cea95ff0985b))
+* **deps:** bump aws-actions/configure-aws-credentials from 6.1.0 to 6.1.1 ([1e16e5b](https://github.com/Coalfire-CF/Actions/commit/1e16e5bdb8f0d13e485cb113b6c59c0e3de53b88))
+* **deps:** bump aws-actions/configure-aws-credentials from 6.1.1 to 6.2.1 ([139c556](https://github.com/Coalfire-CF/Actions/commit/139c55678a58ae34fb356faa120fb58bc2d00596))
+* **deps:** bump aws-actions/configure-aws-credentials from ff717079ee2060e4bcee96c4779b553acc87447c to 7474bc4690e29a8392af63c5b98e7449536d5c3a ([e6380a0](https://github.com/Coalfire-CF/Actions/commit/e6380a03642aab5c14e5605b70827b341ccb441a))
+* **deps:** bump dependabot/fetch-metadata from 3.0.0 to 3.1.0 ([f378746](https://github.com/Coalfire-CF/Actions/commit/f378746afdb6751bce19b2679813a55fd40e22ea))
+* **deps:** bump dependabot/fetch-metadata from 3.0.0 to 3.1.0 ([f93a63e](https://github.com/Coalfire-CF/Actions/commit/f93a63e91b99d67a5e1d296bea14b581c42bc21d))
+* **deps:** bump googleapis/release-please-action from 4.4.0 to 5.0.0 ([e794cdb](https://github.com/Coalfire-CF/Actions/commit/e794cdb3a0909ade901dcc150111d1fcc93b137e))
+* **deps:** bump googleapis/release-please-action from 4.4.0 to 5.0.0 ([85fdfb9](https://github.com/Coalfire-CF/Actions/commit/85fdfb9c47e2faedbb9525a0a101390ef470c2fb))
+* **deps:** bump hashicorp/setup-terraform from 4.0.0 to 4.0.1 ([5d1fce9](https://github.com/Coalfire-CF/Actions/commit/5d1fce9fb857d22f41b54cc776b1cea57f64cd7e))
+* **deps:** bump hashicorp/setup-terraform from 4.0.0 to 4.0.1 ([fead13d](https://github.com/Coalfire-CF/Actions/commit/fead13de775f5acc52dec43f9af931245eef9b11))
+* **deps:** bump sigstore/cosign-installer from 4.1.1 to 4.1.2 ([31581a7](https://github.com/Coalfire-CF/Actions/commit/31581a73ca75bd46607bb5749ae1e840b6a937d2))
+* **deps:** bump sigstore/cosign-installer from 4.1.1 to 4.1.2 ([a4f0c0e](https://github.com/Coalfire-CF/Actions/commit/a4f0c0e4c944bc54893b49158c72d935d163a07a))
+* remove test-cosign workflow ([7555e24](https://github.com/Coalfire-CF/Actions/commit/7555e249c64db64dd6d574587ca41857cc7f0b8c))
+* remove test-cosign workflow after validation ([7d9ebe2](https://github.com/Coalfire-CF/Actions/commit/7d9ebe2a330843dc3100e08ff5cb23f995ec55b7))
+
 ## [0.5.1](https://github.com/Coalfire-CF/Actions/compare/v0.5.0...v0.5.1) (2026-04-01)
 
 
