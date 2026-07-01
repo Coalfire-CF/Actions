@@ -103,7 +103,7 @@ jobs:
       dep_label: ${{ steps.decide-eligibility.outputs.dep_label }}
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
 
       - name: Fetch Dependabot metadata
         id: metadata
@@ -215,7 +215,7 @@ jobs:
       cache_hit: ${{ steps.checks.outputs.cache_hit }}
     steps:
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@d979d5b3a71173a29b74b5b88418bfda9437d885 # v6.1.1
+        uses: aws-actions/configure-aws-credentials@254c19bd240aabef8777f48595e9d2d7b972184b # v6.2.1
         with:
           role-to-assume: ${{ secrets.AUTOMERGE_DEPENDABOT_ROLE_ARN }}
           aws-region: ${{ inputs.aws_region }}
@@ -421,7 +421,7 @@ jobs:
       applies_to_repo: ${{ steps.checks.outputs.applies_to_repo }}
     steps:
       - name: Checkout default branch (for usage analysis)
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
         with:
           ref: ${{ github.event.repository.default_branch }}
 
@@ -470,7 +470,7 @@ jobs:
           echo "$USAGE" > /tmp/dep_usage_context.txt
 
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@d979d5b3a71173a29b74b5b88418bfda9437d885 # v6.1.1
+        uses: aws-actions/configure-aws-credentials@254c19bd240aabef8777f48595e9d2d7b972184b # v6.2.1
         with:
           role-to-assume: ${{ secrets.AUTOMERGE_DEPENDABOT_ROLE_ARN }}
           aws-region: ${{ inputs.aws_region }}
