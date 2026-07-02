@@ -1,5 +1,44 @@
 # Changelog
 
+## [0.7.0](https://github.com/Coalfire-CF/Actions/compare/v0.6.0...v0.7.0) (2026-07-02)
+
+
+### Features
+
+* add reusable Terratest workflow with multi-cloud OIDC ([a2477d4](https://github.com/Coalfire-CF/Actions/commit/a2477d44fe20feb72ab20a42c74a93c105b93a29))
+* add Terraform source-pin gate (F04) ([8da3502](https://github.com/Coalfire-CF/Actions/commit/8da350245eaf2ceee17fe5a412064084ac766627))
+* **opa:** add org-opa advisory policy-as-code runner (F08/ADR-0003) ([33d6c8f](https://github.com/Coalfire-CF/Actions/commit/33d6c8f2ce2e241596eac96c3b90ea1ce2e34fca))
+* **source-pin:** adopt SHA-preferred semantics + strict input; wire tests into CI ([a94aad9](https://github.com/Coalfire-CF/Actions/commit/a94aad9b74f34a2efef1eca3e12297ad161db311))
+* **uses-pin:** add workflow uses: pin gate (SHA-preferred, advisory) ([a2abef8](https://github.com/Coalfire-CF/Actions/commit/a2abef810ac6536d3b4a8145889fb39be0fb7aec))
+* v0.7.0 consolidated gates + root-cause fixes ([#129](https://github.com/Coalfire-CF/Actions/issues/129), [#130](https://github.com/Coalfire-CF/Actions/issues/130)) ([598c71c](https://github.com/Coalfire-CF/Actions/commit/598c71ca4c6034a6cd0517a4d29f56c5d08e585e))
+* **version-band:** add org-terraform-version-band gate + band mirror ([243c734](https://github.com/Coalfire-CF/Actions/commit/243c734a2fce81df10f16f861a3a1c7c6fc6b32c))
+
+
+### Bug Fixes
+
+* **ci:** self-PR script fallback for pin gates + MD029 in ORG_OPA ([276c3d5](https://github.com/Coalfire-CF/Actions/commit/276c3d5e6f44bc24aab76f53b6791693385ba21d))
+* **org-release-clean:** restore NIST control breadcrumbs; annotate terratest ([43cbeb3](https://github.com/Coalfire-CF/Actions/commit/43cbeb3c0000735077232f092d8b569ffffc4316))
+* **release:** type org-release secrets interface + fix caller contract (F42/N1) ([10c4cd6](https://github.com/Coalfire-CF/Actions/commit/10c4cd6b56fd0cd8c1fe4bf8c2025dc47266fde3))
+* remove deprecated org-azure-deploy workflow (F39, D2) ([cab4f8d](https://github.com/Coalfire-CF/Actions/commit/cab4f8de3033a6b6f3e6c5a1356668e379353406))
+* remove org-checkov-release.yml straggler ([#130](https://github.com/Coalfire-CF/Actions/issues/130)) ([739bdc5](https://github.com/Coalfire-CF/Actions/commit/739bdc57019d44016aeb9bea9a9f01b6e8481777))
+* **terraform:** fail-closed version validation in resolve (F36) ([31c6c2a](https://github.com/Coalfire-CF/Actions/commit/31c6c2aaa076398f385295551a02616309ac1dd7))
+* **terraform:** hermetic TF-version resolution via baked default (F36, Plan B) ([3cc48bd](https://github.com/Coalfire-CF/Actions/commit/3cc48bd82545274409921db21d860f2997c90529))
+* **terratest:** declare SLACK_BOT_TOKEN secret and fail-closed version resolution ([fffcab4](https://github.com/Coalfire-CF/Actions/commit/fffcab450ab0cf05f258c1784c162cdd22490ba3))
+* **terratest:** harden input validation and shell safety ([7842d90](https://github.com/Coalfire-CF/Actions/commit/7842d90df75c62b549b811e6536de8dc5d595ca9))
+* **terratest:** honest pass/fail state and informative reporting ([b3254d4](https://github.com/Coalfire-CF/Actions/commit/b3254d4dd73f5f510881fd4b98719d7d0233b007))
+* **terratest:** honor working_directory and add job hardening ([a5e447e](https://github.com/Coalfire-CF/Actions/commit/a5e447e38b7edef818c185fa1a62cfbb12bc3f92))
+* **terratest:** pin notify-failure to the local sibling workflow ref ([33c9772](https://github.com/Coalfire-CF/Actions/commit/33c977254d7fb24081c79a49744a5ef2c27dc9de))
+* **terratest:** quote $GITHUB_OUTPUT in check-app-secrets step ([bfaad5c](https://github.com/Coalfire-CF/Actions/commit/bfaad5c92ba4177978028bb9ef69c7c98cf523c5))
+* **terratest:** resolve TF version from baked literal, not raw main fetch (Plan B) ([42c779a](https://github.com/Coalfire-CF/Actions/commit/42c779a8c0c8ad8cb5df00a37aef4bf8214b1254))
+* **workflows:** declare forwarded SLACK_BOT_TOKEN secret (N3) ([4a3a208](https://github.com/Coalfire-CF/Actions/commit/4a3a208765d850279391664bdf1f50a1fe68f51d))
+* **workflows:** pin internal sibling calls to local ./ refs (N2/D3) ([ceb0c16](https://github.com/Coalfire-CF/Actions/commit/ceb0c1606e0969d2b25f240344ec2c9ee30aa3b5))
+
+
+### Documentation
+
+* add new-gate rows + ORG_SOURCE_PIN/ORG_VERSION_BAND one-pagers ([0dd87d7](https://github.com/Coalfire-CF/Actions/commit/0dd87d787862342785dfbe2f7be67b7e211829fd))
+* **terratest:** fix OIDC trust policies for PR mode, lint to zero, add notes ([d9c8ebf](https://github.com/Coalfire-CF/Actions/commit/d9c8ebf2aac735457b2fa5b683c347bd4133a7ca))
+
 ## [0.6.0](https://github.com/Coalfire-CF/Actions/compare/v0.5.1...v0.6.0) (2026-07-01)
 
 
