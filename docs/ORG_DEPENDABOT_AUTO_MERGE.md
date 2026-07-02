@@ -31,11 +31,11 @@ The breaking change check does more than semver detection. It:
 
 1. **Fetches upstream release notes** from GitHub releases, with expanded tag format
    matching (e.g. Dependabot reports version `9` but the release tag is `v9.0.0`)
-2. **Gathers usage context** by checking out the consuming repo's default branch and
+1. **Gathers usage context** by checking out the consuming repo's default branch and
    searching for how the dependency is actually used (inline scripts, imports, etc.)
-3. **Sends both to Bedrock** so the model can assess whether breaking changes in the
+1. **Sends both to Bedrock** so the model can assess whether breaking changes in the
    release notes actually affect this specific repo's usage patterns
-4. **Returns an `applies_to_repo` flag** alongside the generic breaking change analysis
+1. **Returns an `applies_to_repo` flag** alongside the generic breaking change analysis
 
 ## Prerequisites
 
@@ -267,6 +267,6 @@ With ~2,700 Dependabot PRs/month and ~80% cache hit rate at steady state:
 ## Rollout
 
 1. Run `org-label-sync.yml` on target repos
-2. Enable on a few repos in dry-run (observe labels, no auto-merge)
-3. Enable auto-merge on those repos, monitor for 1 week
-4. Expand to remaining repos
+1. Enable on a few repos in dry-run (observe labels, no auto-merge)
+1. Enable auto-merge on those repos, monitor for 1 week
+1. Expand to remaining repos
