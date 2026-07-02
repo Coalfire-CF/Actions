@@ -197,7 +197,7 @@ jobs:
   notify-failure:
     needs: apply
     if: failure() && inputs.slack_channel_id != ''
-    uses: Coalfire-CF/Actions/.github/workflows/org-slack-notify.yml@main
+    uses: ./.github/workflows/org-slack-notify.yml
     secrets:
       SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
     with:

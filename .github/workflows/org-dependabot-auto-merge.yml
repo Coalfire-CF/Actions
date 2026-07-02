@@ -1053,7 +1053,7 @@ jobs:
   notify_failure:
     needs: [classify, supply_chain_check, breaking_change_check, decide]
     if: failure() && inputs.slack_channel_id != ''
-    uses: Coalfire-CF/Actions/.github/workflows/org-slack-notify.yml@main
+    uses: ./.github/workflows/org-slack-notify.yml
     with:
       notification-type: 'failure'
       channel-id: ${{ inputs.slack_channel_id }}

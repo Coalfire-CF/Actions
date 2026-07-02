@@ -193,7 +193,7 @@ jobs:
     name: Clean Release Archive
     needs: release
     if: needs.release.outputs.release_created == 'true' && inputs.clean_release
-    uses: Coalfire-CF/Actions/.github/workflows/org-release-clean.yml@main
+    uses: ./.github/workflows/org-release-clean.yml
     permissions:
       contents: write # N1: actions:read dropped — no nested job reads the Actions API; keeps restricted callers startup-clean.
     with:
@@ -212,7 +212,7 @@ jobs:
     name: Run Trivy Security Scan
     needs: release
     if: needs.release.outputs.release_created == 'true'
-    uses: Coalfire-CF/Actions/.github/workflows/org-trivy-release.yml@main
+    uses: ./.github/workflows/org-trivy-release.yml
     permissions:
       contents: write
 
@@ -220,7 +220,7 @@ jobs:
     name: Run Gitleaks Secret Scan
     needs: release
     if: needs.release.outputs.release_created == 'true'
-    uses: Coalfire-CF/Actions/.github/workflows/org-gitleaks-release.yml@main
+    uses: ./.github/workflows/org-gitleaks-release.yml
     permissions:
       contents: write
 
@@ -228,7 +228,7 @@ jobs:
     name: Slack Release Notification
     needs: release
     if: needs.release.outputs.release_created == 'true' && inputs.slack_channel_id != ''
-    uses: Coalfire-CF/Actions/.github/workflows/org-slack-notify.yml@main
+    uses: ./.github/workflows/org-slack-notify.yml
     secrets:
       SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
     with:
@@ -242,7 +242,7 @@ jobs:
     name: Slack Failure Notification
     needs: [release, release-clean, trivy-scan, gitleaks-scan]
     if: failure() && inputs.slack_channel_id != ''
-    uses: Coalfire-CF/Actions/.github/workflows/org-slack-notify.yml@main
+    uses: ./.github/workflows/org-slack-notify.yml
     secrets:
       SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
     with:

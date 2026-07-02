@@ -158,7 +158,7 @@ jobs:
   notify_failure:
     needs: [sync_labels]
     if: failure() && inputs.slack_channel_id != ''
-    uses: Coalfire-CF/Actions/.github/workflows/org-slack-notify.yml@main
+    uses: ./.github/workflows/org-slack-notify.yml
     with:
       notification-type: 'failure'
       channel-id: ${{ inputs.slack_channel_id }}
