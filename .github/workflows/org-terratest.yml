@@ -192,18 +192,21 @@ jobs:
           fi
 
           # Path and version inputs
-          validate_input "test_directory" "$TEST_DIR" '^[a-zA-Z0-9._/-]+$'
-          validate_input "test_timeout" "$TEST_TIMEOUT" '^[0-9]+[mhMs]+$'
-          validate_input "working_directory" "$WORKING_DIR" '^[a-zA-Z0-9._/-]+$'
+          # Path inputs disallow a leading '/' (reject absolute paths); '_' is already allowed.
+          validate_input "test_directory" "$TEST_DIR" '^[a-zA-Z0-9._-][a-zA-Z0-9._/-]*$'
+          # Go durations: one or more <int><unit> segments, e.g. 30m, 1h30m. Lowercase units only.
+          validate_input "test_timeout" "$TEST_TIMEOUT" '^([0-9]+(ms|s|m|h))+$'
+          validate_input "working_directory" "$WORKING_DIR" '^[a-zA-Z0-9._-][a-zA-Z0-9._/-]*$'
           validate_input "go_version" "$GO_VERSION" '^[0-9]+\.[0-9]+(\.[0-9]+)?$'
           validate_input "terraform_version" "$TF_VERSION" '^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$'
 
           # Cloud credential inputs
           validate_input "aws_role_arn" "$AWS_ROLE_ARN" '^arn:aws(-us-gov)?:iam::[0-9]+:role/[a-zA-Z0-9._/@=+-]+$'
           validate_input "aws_region" "$AWS_REGION" '^[a-z]{2}(-gov)?-[a-z]+-[0-9]+$'
-          validate_input "azure_client_id" "$AZURE_CLIENT_ID" '^[0-9a-fA-F-]+$'
-          validate_input "azure_tenant_id" "$AZURE_TENANT_ID" '^[0-9a-fA-F-]+$'
-          validate_input "azure_subscription_id" "$AZURE_SUBSCRIPTION_ID" '^[0-9a-fA-F-]+$'
+          # Azure IDs are canonical UUIDs (8-4-4-4-12 hex).
+          validate_input "azure_client_id" "$AZURE_CLIENT_ID" '^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$'
+          validate_input "azure_tenant_id" "$AZURE_TENANT_ID" '^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$'
+          validate_input "azure_subscription_id" "$AZURE_SUBSCRIPTION_ID" '^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$'
           validate_input "gcp_workload_identity_provider" "$GCP_WI_PROVIDER" '^projects/[0-9]+/locations/[a-z-]+/workloadIdentityPools/[a-zA-Z0-9._-]+/providers/[a-zA-Z0-9._-]+$'
           validate_input "gcp_service_account" "$GCP_SA" '^[a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.iam\.gserviceaccount\.com$'
 
@@ -281,6 +284,7 @@ jobs:
         env:
           APP_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
+          set -eo pipefail
           git config --global url."https://actions:${APP_TOKEN}@github.com".insteadOf https://github.com
           git config --global url."https://actions:${APP_TOKEN}@github.com/".insteadOf ssh://git@github.com/
 
