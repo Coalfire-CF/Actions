@@ -191,6 +191,7 @@ created by Dependabot"** to be enabled under Org Settings > Actions > General.
 | `aws_region` | No | `us-east-1` | AWS region for OIDC, S3, and Bedrock |
 | `s3_cache_bucket` | No | `my-dependabot-cache` | S3 bucket for analysis cache |
 | `scorecard_threshold` | No | `5` | Minimum OpenSSF Scorecard score (0-10) |
+| `first_party_prefix` | No | `Coalfire-CF/` | Dependency-name prefix treated as first-party; Scorecard gate waived for matches (all other gates still apply) |
 | `auto_merge_method` | No | `squash` | Merge method: merge, squash, or rebase |
 | `bedrock_model_id` | No | `us.anthropic.claude-haiku-4-5-20251001-v1:0` | Bedrock model ID for changelog analysis |
 | `cache_ttl_days` | No | `30` | Days before cached analysis expires |
