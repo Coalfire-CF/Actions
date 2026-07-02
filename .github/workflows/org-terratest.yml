@@ -268,9 +268,9 @@ jobs:
         id: check-app-secrets
         run: |
           if [ -n "$TERRATEST_APP_CLIENT_ID" ] && [ -n "$TERRATEST_APP_PRIVATE_KEY" ]; then
-            echo "has_secrets=true" >> $GITHUB_OUTPUT
+            echo "has_secrets=true" >> "$GITHUB_OUTPUT"
           else
-            echo "has_secrets=false" >> $GITHUB_OUTPUT
+            echo "has_secrets=false" >> "$GITHUB_OUTPUT"
           fi
         env:
           TERRATEST_APP_CLIENT_ID: ${{ secrets.TERRATEST_APP_CLIENT_ID }}
