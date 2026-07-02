@@ -340,13 +340,13 @@ jobs:
           EXIT_CODE=${PIPESTATUS[0]}
           set -e
 
+          # Record the result and succeed here so the reporting steps below always run.
+          # The dedicated 'Fail pipeline on test failure' step is the single failure gate,
+          # so this step reports honest green/red (not the yellow of continue-on-error).
           echo "exitcode=${EXIT_CODE}" >> "${GITHUB_OUTPUT}"
-
           if [ "${EXIT_CODE}" -ne 0 ]; then
-            echo "::error::Terratest failed with exit code ${EXIT_CODE}"
-            exit "${EXIT_CODE}"
+            echo "::warning::Terratest exited ${EXIT_CODE}; the pipeline is failed by a later gate step"
           fi
-        continue-on-error: true
 
       # --- Reporting ---
 
@@ -405,7 +405,7 @@ jobs:
 
             const body = `### Terratest Results — ${status}\n\n${summary}\n\n<details><summary>Full Output</summary>\n\n\`\`\`\n${output}\n\`\`\`\n</details>`;
 
-            github.rest.issues.createComment({
+            await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
@@ -441,14 +441,23 @@ jobs:
             echo "| Terraform Version | \`${TF_VERSION}\` |"
           } >> "$GITHUB_STEP_SUMMARY"
 
-          # Append JUnit summary to step summary if available
-          if [ -f "${GITHUB_WORKSPACE}/terratest-results.xml" ]; then
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "### Test Report" >> "$GITHUB_STEP_SUMMARY"
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo '```xml' >> "$GITHUB_STEP_SUMMARY"
-            head -5 "${GITHUB_WORKSPACE}/terratest-results.xml" >> "$GITHUB_STEP_SUMMARY"
-            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          # Append a parsed JUnit summary table (same attributes as the PR comment) rather
+          # than a raw head -5 of the XML, which showed the open tag but no totals.
+          XML="${GITHUB_WORKSPACE}/terratest-results.xml"
+          if [ -f "$XML" ]; then
+            TESTS=$(grep -oE 'tests="[0-9]+"' "$XML" | head -1 | grep -oE '[0-9]+' || true)
+            FAILURES=$(grep -oE 'failures="[0-9]+"' "$XML" | head -1 | grep -oE '[0-9]+' || true)
+            SKIPPED=$(grep -oE 'skipped="[0-9]+"' "$XML" | head -1 | grep -oE '[0-9]+' || true)
+            TESTS=${TESTS:-0}; FAILURES=${FAILURES:-0}; SKIPPED=${SKIPPED:-0}
+            PASSED=$((TESTS - FAILURES - SKIPPED))
+            {
+              echo ""
+              echo "### Test Report"
+              echo ""
+              echo "| Tests | Passed | Failed | Skipped |"
+              echo "| --- | --- | --- | --- |"
+              echo "| ${TESTS} | ${PASSED} | ${FAILURES} | ${SKIPPED} |"
+            } >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Fail pipeline on test failure
