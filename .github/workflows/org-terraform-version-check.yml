@@ -39,11 +39,22 @@ jobs:
           CURRENT_VERSION: ${{ steps.current.outputs.version }}
           LATEST_VERSION: ${{ steps.latest.outputs.version }}
         run: |
+          set -eo pipefail
+          # Respect the org version-band ceiling (RFC-0004/ADR-0013): never
+          # auto-propose a bump that would cross the band's upper bound.
+          CEILING=""
+          if [ -f .terraform-version-band ]; then
+            CEILING="$(tr -d '[:space:]' < .terraform-version-band | sed -E 's/.*<([0-9]+\.[0-9]+\.[0-9]+).*/\1/')"
+          fi
           if [ "$CURRENT_VERSION" = "$LATEST_VERSION" ]; then
-            echo "needs_update=false" >> $GITHUB_OUTPUT
+            echo "needs_update=false" >> "$GITHUB_OUTPUT"
             echo "Already on latest version: $CURRENT_VERSION"
+          elif [ -n "$CEILING" ] && [ "$(printf '%s\n%s\n' "$LATEST_VERSION" "$CEILING" | sort -V | head -1)" != "$LATEST_VERSION" ]; then
+            # LATEST >= CEILING → out of band; do not open a bump PR automatically.
+            echo "needs_update=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Latest Terraform ${LATEST_VERSION} is at/above the org band ceiling (< ${CEILING}). Skipping auto-bump PR; a band raise is a manual RFC-0004/ADR-0013 decision."
           else
-            echo "needs_update=true" >> $GITHUB_OUTPUT
+            echo "needs_update=true" >> "$GITHUB_OUTPUT"
             echo "Update available: $CURRENT_VERSION -> $LATEST_VERSION"
           fi
 
@@ -71,7 +82,12 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git checkout -b "chore/terraform-${LATEST_VERSION}"
           echo "$LATEST_VERSION" > .terraform-version
-          git add .terraform-version
+          # F36 (Plan B): keep the baked DEFAULT_TF_VERSION literals in lockstep
+          # with .terraform-version so the hermetic fallback never drifts stale.
+          while IFS= read -r wf; do
+            sed -i -E "s/DEFAULT_TF_VERSION: '[0-9]+\.[0-9]+\.[0-9]+'/DEFAULT_TF_VERSION: '${LATEST_VERSION}'/" "$wf"
+          done < <(grep -rlE "DEFAULT_TF_VERSION: '[0-9]" .github/workflows/ || true)
+          git add .terraform-version .github/workflows/
           git commit -m "chore: bump terraform version to ${LATEST_VERSION}"
           git push origin "chore/terraform-${LATEST_VERSION}"
 

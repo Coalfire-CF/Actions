@@ -39,6 +39,9 @@ on:
         default: ''
         type: string
     secrets:
+      SLACK_BOT_TOKEN:
+        description: 'Slack bot token for failure notifications (required if slack_channel_id is set)'
+        required: false
       TF_PLAN_APP_CLIENT_ID:
         description: 'GitHub App client ID for private module access'
         required: false
@@ -80,15 +83,28 @@ jobs:
         working-directory: .
         env:
           INPUT_TF_VERSION: ${{ inputs.terraform_version }}
+          # F36 (Plan B): baked hermetic default. github.job_workflow_sha is
+          # empty cross-repo (verified 2026-07-02, actions/runner#2417) and
+          # github.sha is the caller's commit, so a raw fetch from Actions/main
+          # was both mutable and unresolvable. This literal travels with the
+          # pinned workflow commit; org-terraform-version-check bumps it in
+          # lockstep with .terraform-version.
+          DEFAULT_TF_VERSION: '1.15.7'
         run: |
           if [ -n "$INPUT_TF_VERSION" ]; then
-            echo "version=$INPUT_TF_VERSION" >> $GITHUB_OUTPUT
+            VERSION="$INPUT_TF_VERSION"
           elif [ -f .terraform-version ]; then
-            echo "version=$(cat .terraform-version | tr -d '[:space:]')" >> $GITHUB_OUTPUT
+            VERSION="$(tr -d '[:space:]' < .terraform-version)"
           else
-            VERSION=$(curl -s https://raw.githubusercontent.com/Coalfire-CF/Actions/main/.terraform-version | tr -d '[:space:]')
-            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            VERSION="${DEFAULT_TF_VERSION}"
           fi
+          # Fail-closed (F36): an empty/malformed .terraform-version or a
+          # pre-release input must NOT fall through to setup-terraform's "latest".
+          if ! echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Could not resolve a concrete X.Y.Z Terraform version (got '${VERSION}')"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4
@@ -203,7 +219,7 @@ jobs:
   notify-failure:
     needs: plan
     if: failure() && inputs.slack_channel_id != ''
-    uses: Coalfire-CF/Actions/.github/workflows/org-slack-notify.yml@main
+    uses: ./.github/workflows/org-slack-notify.yml
     secrets:
       SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
     with:

@@ -25,6 +25,9 @@ on:
         required: true
         type: string
     secrets:
+      SLACK_BOT_TOKEN:
+        description: 'Slack bot token for failure notifications (required if slack_channel_id is set)'
+        required: false
       JIRA_API_TOKEN:
         required: false
       JIRA_PAT:
@@ -172,7 +175,7 @@ jobs:
   notify-failure:
     needs: create_jira_issue
     if: failure() && inputs.slack_channel_id != ''
-    uses: Coalfire-CF/Actions/.github/workflows/org-slack-notify.yml@main
+    uses: ./.github/workflows/org-slack-notify.yml
     secrets:
       SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
     with:

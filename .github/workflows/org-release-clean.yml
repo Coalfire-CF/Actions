@@ -39,10 +39,22 @@ on:
         required: false
         type: boolean
         default: true
+    secrets:
+      RELEASE_APP_ID:
+        description: 'GitHub App ID for release auth (optional; falls back to github.token)'
+        required: false
+      RELEASE_APP_PRIVATE_KEY:
+        description: 'GitHub App private key, PEM (optional; required if RELEASE_APP_ID is set)'
+        required: false
+      COSIGN_PRIVATE_KEY:
+        description: 'Cosign signing key (required only if cosign_sign is true)'
+        required: false
+      COSIGN_PASSWORD:
+        description: 'Cosign key password (required only if cosign_sign is true)'
+        required: false
 
 permissions:
-  contents: write # Required to upload release assets
-  actions: read
+  contents: write # Required to upload release assets. (N1: actions:read dropped — no Actions-API access here.)
 
 jobs:
   release_clean:

@@ -4,8 +4,7 @@ on:
   workflow_call:
 
 permissions:
-  contents: write
-  actions: read
+  contents: write # N1: actions:read dropped — no Actions-API access; keeps restricted callers startup-clean.
 
 jobs:
   trivy_release_scan:

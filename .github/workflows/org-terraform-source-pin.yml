@@ -1,0 +1,112 @@
+name: "Terraform Source Pin Check"
+
+on:
+  workflow_call:
+    inputs:
+      scan_root:
+        description: 'Directory (relative to the repo root) to scan for *.tf files'
+        required: false
+        type: string
+        default: '.'
+      actions_ref:
+        description: 'Ref of Coalfire-CF/Actions to source the check script from'
+        required: false
+        type: string
+        default: 'main'
+      slack_channel_id:
+        description: 'Slack channel ID for failure notifications (optional)'
+        required: false
+        type: string
+        default: ''
+      strict:
+        description: 'Fail the job on unpinned/unauditable sources. Default false (advisory: warn-only, exit 0). Flip to true on the recorded promotion (RFC-0008).'
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      SLACK_BOT_TOKEN:
+        description: 'Slack bot token for failure notifications (required if slack_channel_id is set)'
+        required: false
+  workflow_dispatch:
+    inputs:
+      scan_root:
+        description: 'Directory (relative to the repo root) to scan for *.tf files'
+        required: false
+        type: string
+        default: '.'
+      strict:
+        description: 'Fail the job on unpinned/unauditable sources (default false = advisory).'
+        required: false
+        type: boolean
+        default: false
+  pull_request:
+
+jobs:
+  source-pin:
+    name: Check Coalfire-CF module source pins
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout target repo
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ github.head_ref }} # PR source branch when triggered by pull_request
+          path: target
+
+      - name: Checkout Actions repo (source-pin check script)
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          repository: Coalfire-CF/Actions
+          ref: ${{ inputs.actions_ref || 'main' }}
+          path: actions-tools
+
+      - name: Run Terraform source-pin check
+        env:
+          SCAN_ROOT: ${{ inputs.scan_root || '.' }}
+          STRICT: ${{ inputs.strict && 'true' || 'false' }}
+        run: |
+          # Prefer the script from the pinned Actions checkout; fall back to the
+          # target's own copy when self-testing this repo's PR (the script isn't
+          # on Actions main until this PR merges).
+          SCRIPT=actions-tools/scripts/source-pin-check.sh
+          [ -f "$SCRIPT" ] || SCRIPT=target/scripts/source-pin-check.sh
+          chmod +x "$SCRIPT"
+          "$SCRIPT" "target/${SCAN_ROOT}"
+
+  uses-pin:
+    name: "Check workflow uses: pins"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout target repo
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ github.head_ref }} # PR source branch when triggered by pull_request
+          path: target
+
+      - name: Checkout Actions repo (uses-pin check script)
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          repository: Coalfire-CF/Actions
+          ref: ${{ inputs.actions_ref || 'main' }}
+          path: actions-tools
+
+      - name: Run workflow uses-pin check
+        env:
+          SCAN_ROOT: ${{ inputs.scan_root || '.' }}
+          STRICT: ${{ inputs.strict && 'true' || 'false' }}
+        run: |
+          # Prefer the pinned Actions checkout; fall back to the target's copy
+          # when self-testing this repo's PR (script not yet on Actions main).
+          SCRIPT=actions-tools/scripts/uses-pin-check.sh
+          [ -f "$SCRIPT" ] || SCRIPT=target/scripts/uses-pin-check.sh
+          chmod +x "$SCRIPT"
+          "$SCRIPT" "target/${SCAN_ROOT}"
+
+  notify-failure:
+    needs: [source-pin, uses-pin]
+    if: failure() && inputs.slack_channel_id != ''
+    uses: ./.github/workflows/org-slack-notify.yml
+    secrets:
+      SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+    with:
+      notification-type: failure
+      channel-id: ${{ inputs.slack_channel_id }}

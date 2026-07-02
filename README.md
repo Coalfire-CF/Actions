@@ -33,6 +33,10 @@ Called by downstream repos on pull requests.
 | Dependabot Auto-Merge | `org-dependabot-auto-merge.yml` | Evaluate and auto-merge non-terraform Dependabot PRs ([docs](docs/ORG_DEPENDABOT_AUTO_MERGE.md)) |
 | Label Sync | `org-label-sync.yml` | Sync Dependabot auto-merge label taxonomy to downstream repos ([taxonomy](docs/ORG_LABEL_TAXONOMY.md)) |
 | Trivy Exception Review | `org-trivy-exception-review.yml` | Weekly review of Trivy `.trivyignore` exceptions |
+| Terraform Source Pin | `org-terraform-source-pin.yml` | SHA-preferred pin gate for Coalfire-CF module sources **and** workflow `uses:` refs — advisory (`strict: false`) ([docs](docs/ORG_SOURCE_PIN.md)) |
+| Terraform Version Band | `org-terraform-version-band.yml` | Enforces the org Terraform version band `>= 1.15.7, < 2.0.0` — advisory ([docs](docs/ORG_VERSION_BAND.md)) |
+| OPA Policy Check | `org-opa.yml` | Tier-1 advisory OPA/Rego policy-as-code runner ([docs](docs/ORG_OPA.md)) |
+| Terratest | `org-terratest.yml` | Reusable Terratest / behavioral-test harness with multi-cloud OIDC ([docs](docs/ORG_TERRATEST.md)) |
 
 ### Release Workflows
 
@@ -57,7 +61,6 @@ Called on merge to main.
 
 | Workflow | File | Description |
 |----------|------|-------------|
-| Azure Deploy | `org-azure-deploy.yml` | **Deprecated** — Legacy Azure deployment example. Do not use as a template. |
 | Local Release | `release.yml` | Release workflow for the Actions repo itself |
 
 ## Usage
@@ -97,7 +100,7 @@ jobs:
   validate:
     uses: Coalfire-CF/Actions/.github/workflows/org-terraform-validate.yml@main
     with:
-      terraform_version: '1.13.3'
+      terraform_version: '1.15.7' # or omit to use .terraform-version
     secrets:
       APP_CLIENT_ID: ${{ secrets.APP_CLIENT_ID }}
       APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
@@ -107,7 +110,7 @@ jobs:
   validate:
     uses: Coalfire-CF/Actions/.github/workflows/org-terraform-validate.yml@main
     with:
-      terraform_version: '1.13.3'
+      terraform_version: '1.15.7' # or omit to use .terraform-version
 ```
 
 ### Terraform Docs

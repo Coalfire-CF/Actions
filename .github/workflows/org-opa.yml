@@ -1,0 +1,185 @@
+name: "OPA Policy Check"
+
+# Tier-1 Advisory policy-as-code runner (ADR-0003 / F08). Runs the org OPA/Rego
+# policy set (from Coalfire-CF/org-opa-policies) against a caller's Terraform.
+#
+# HARD REQUIREMENT (ADR-0003): Tier-1 is ADVISORY — this workflow MUST NOT fail
+# the pipeline by default. It emits ::warning / ::notice annotations only.
+# A per-domain `blocking: true` input is the recorded Tier-2 opt-in (never
+# global, never silent). If the policy repo/ref is unreachable (e.g. before
+# Workstream E lands org-opa-policies), the workflow skips gracefully (::notice).
+
+on:
+  workflow_call:
+    inputs:
+      policy_repo:
+        description: 'Repository holding the OPA/Rego policies'
+        required: false
+        type: string
+        default: 'Coalfire-CF/org-opa-policies'
+      policy_ref:
+        description: 'Ref of the policy repo — a release commit SHA (RFC-0008). Empty = skip with a notice.'
+        required: false
+        type: string
+        default: ''
+      policy_path:
+        description: 'Path within the policy repo containing .rego policies'
+        required: false
+        type: string
+        default: 'policies'
+      plan_json_artifact:
+        description: 'Optional: name of an uploaded artifact containing a Terraform plan JSON (post-plan mode). Empty = pre-plan/static mode.'
+        required: false
+        type: string
+        default: ''
+      working_directory:
+        description: 'Directory in the caller repo to evaluate (pre-plan mode)'
+        required: false
+        type: string
+        default: '.'
+      opa_version:
+        description: 'OPA version to install'
+        required: false
+        type: string
+        default: '0.69.0'
+      blocking:
+        description: 'Tier-2 opt-in (ADR-0003): fail the pipeline on policy violations. Default false = Tier-1 advisory (warn-only).'
+        required: false
+        type: boolean
+        default: false
+      slack_channel_id:
+        description: 'Slack channel ID for failure notifications (optional; only meaningful when blocking is true)'
+        required: false
+        type: string
+        default: ''
+    secrets:
+      SLACK_BOT_TOKEN:
+        description: 'Slack bot token for failure notifications (required if slack_channel_id is set)'
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  opa:
+    name: OPA policy check (advisory)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout target repo
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ github.head_ref }}
+          path: target
+
+      - name: Checkout policies
+        id: policies
+        continue-on-error: true
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          repository: ${{ inputs.policy_repo }}
+          ref: ${{ inputs.policy_ref }}
+          path: policies
+
+      - name: Guard — policies available?
+        id: guard
+        env:
+          POLICY_REF: ${{ inputs.policy_ref }}
+          CHECKOUT_OUTCOME: ${{ steps.policies.outcome }}
+        run: |
+          set -eo pipefail
+          if [ -z "$POLICY_REF" ]; then
+            echo "::notice::org-opa: no policy_ref provided — skipping (advisory). Pin org-opa-policies by release SHA to enable."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          elif [ "$CHECKOUT_OUTCOME" != "success" ]; then
+            echo "::notice::org-opa: policy repo/ref unreachable (${{ inputs.policy_repo }}@${POLICY_REF}) — skipping (advisory)."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install OPA
+        if: steps.guard.outputs.skip == 'false'
+        env:
+          OPA_VERSION: ${{ inputs.opa_version }}
+        run: |
+          set -eo pipefail
+          curl -fsSL --retry 3 -o /usr/local/bin/opa \
+            "https://openpolicyagent.org/downloads/v${OPA_VERSION}/opa_linux_amd64_static"
+          chmod +x /usr/local/bin/opa
+          opa version
+
+      - name: opa fmt / check / test (validate the policy set)
+        if: steps.guard.outputs.skip == 'false'
+        env:
+          POLICY_PATH: ${{ inputs.policy_path }}
+        run: |
+          set -eo pipefail
+          POL="policies/${POLICY_PATH}"
+          rc=0
+          echo "::group::opa fmt --diff"
+          opa fmt --diff "$POL" || { echo "::warning::opa fmt found unformatted policies"; rc=1; }
+          echo "::endgroup::"
+          echo "::group::opa check"
+          opa check "$POL" || { echo "::warning::opa check reported errors"; rc=1; }
+          echo "::endgroup::"
+          echo "::group::opa test"
+          opa test "$POL" -v || { echo "::warning::opa test reported failures"; rc=1; }
+          echo "::endgroup::"
+          echo "policy_validation_rc=$rc" >> "$GITHUB_ENV"
+
+      - name: Download plan JSON (post-plan mode)
+        if: steps.guard.outputs.skip == 'false' && inputs.plan_json_artifact != ''
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ${{ inputs.plan_json_artifact }}
+          path: planjson
+
+      - name: opa eval (advisory)
+        if: steps.guard.outputs.skip == 'false'
+        env:
+          POLICY_PATH: ${{ inputs.policy_path }}
+          PLAN_ARTIFACT: ${{ inputs.plan_json_artifact }}
+          WORKDIR: ${{ inputs.working_directory }}
+          BLOCKING: ${{ inputs.blocking && 'true' || 'false' }}
+        run: |
+          set -eo pipefail
+          POL="policies/${POLICY_PATH}"
+          INPUT=""
+          if [ -n "$PLAN_ARTIFACT" ]; then
+            INPUT="$(find planjson -maxdepth 2 -name '*.json' | head -1 || true)"
+            [ -n "$INPUT" ] && echo "post-plan mode: evaluating ${INPUT}"
+          else
+            # pre-plan/static mode: evaluate any generated *.tf.json in the target tree.
+            INPUT="$(find "target/${WORKDIR}" -maxdepth 3 -name '*.tf.json' 2>/dev/null | head -1 || true)"
+          fi
+          if [ -z "$INPUT" ]; then
+            echo "::notice::org-opa: no JSON input to evaluate (provide plan_json_artifact for post-plan, or *.tf.json for pre-plan). fmt/check/test still ran."
+            exit 0
+          fi
+          # 'deny' is the org convention for violation messages (ADR-0003).
+          DENY="$(opa eval -f raw -I -d "$POL" 'data.terraform.deny' < "$INPUT" 2>/dev/null || echo '[]')"
+          COUNT="$(printf '%s' "$DENY" | opa eval -f raw -I 'count(input)' 2>/dev/null || echo 0)"
+          if [ "${COUNT:-0}" -gt 0 ]; then
+            echo "::warning::org-opa: ${COUNT} policy violation(s):"
+            printf '%s\n' "$DENY"
+            if [ "$BLOCKING" = "true" ]; then
+              echo "::error::org-opa: blocking=true (Tier-2) — failing on ${COUNT} violation(s)."
+              exit 1
+            fi
+          else
+            echo "org-opa: no policy violations."
+          fi
+          # Tier-1: policy-set validation problems never fail the pipeline; surface only.
+          if [ "${policy_validation_rc:-0}" != "0" ] && [ "$BLOCKING" != "true" ]; then
+            echo "::notice::org-opa: policy-set validation had warnings (advisory)."
+          fi
+
+  notify-failure:
+    needs: opa
+    if: failure() && inputs.slack_channel_id != ''
+    uses: ./.github/workflows/org-slack-notify.yml
+    secrets:
+      SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+    with:
+      notification-type: failure
+      channel-id: ${{ inputs.slack_channel_id }}
