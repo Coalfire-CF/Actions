@@ -13,6 +13,10 @@ on:
         required: false
         type: string
         default: ''
+    secrets:
+      SLACK_BOT_TOKEN:
+        description: 'Slack bot token for failure notifications (required if slack_channel_id is set)'
+        required: false
 
   workflow_dispatch:
     inputs:

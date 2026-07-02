@@ -14,6 +14,9 @@ on:
         type: string
         default: ''
     secrets:
+      SLACK_BOT_TOKEN:
+        description: 'Slack bot token for failure notifications (required if slack_channel_id is set)'
+        required: false
       TF_VALIDATE_APP_CLIENT_ID:
         description: 'The GitHub App client ID for Terraform authentication (only needed for private repositories)'
         required: false

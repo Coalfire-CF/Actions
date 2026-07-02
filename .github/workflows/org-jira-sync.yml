@@ -25,6 +25,9 @@ on:
         required: true
         type: string
     secrets:
+      SLACK_BOT_TOKEN:
+        description: 'Slack bot token for failure notifications (required if slack_channel_id is set)'
+        required: false
       JIRA_API_TOKEN:
         required: false
       JIRA_PAT:

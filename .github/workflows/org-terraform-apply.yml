@@ -49,6 +49,9 @@ on:
         default: ''
         type: string
     secrets:
+      SLACK_BOT_TOKEN:
+        description: 'Slack bot token for failure notifications (required if slack_channel_id is set)'
+        required: false
       TF_APPLY_APP_CLIENT_ID:
         description: 'GitHub App client ID for private module access'
         required: false
