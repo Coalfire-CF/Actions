@@ -134,6 +134,9 @@ on:
         default: '30m'
         type: string
 
+# pull-requests: write is required only by the PR-comment step; a reusable-workflow
+# job cannot scope permissions per-step, so it is declared workflow-wide here.
+# id-token: write is required for cloud OIDC; contents: read for checkout.
 permissions:
   contents: read
   pull-requests: write
@@ -143,6 +146,9 @@ jobs:
   terratest:
     name: Terratest
     runs-on: ubuntu-latest
+    # Cap the job so a hung 'terraform apply' cannot burn the 6-hour default while
+    # holding cloud resources (the header's 'prevent runaway resource creation' claim).
+    timeout-minutes: 60
     defaults:
       run:
         working-directory: ${{ inputs.working_directory }}
@@ -217,7 +223,6 @@ jobs:
 
       - name: Resolve Terraform version
         id: tf-version
-        working-directory: .
         env:
           INPUT_TF_VERSION: ${{ inputs.terraform_version }}
           # Hermetic fetch: pin the fallback .terraform-version read to the exact commit of
@@ -250,7 +255,8 @@ jobs:
         uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
           go-version: ${{ inputs.go_version }}
-          cache-dependency-path: ${{ inputs.test_directory }}/go.sum
+          # test_directory is relative to working_directory.
+          cache-dependency-path: ${{ inputs.working_directory }}/${{ inputs.test_directory }}/go.sum
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@5e8dbf3c6d9deaf4193ca7a8fb23f2ac83bb6c85 # v4
