@@ -1,0 +1,94 @@
+name: "Terraform Version Band Check"
+
+# Enforces the org-wide Terraform version band (RFC-0004 / ADR-0013). The band
+# value is authoritative in this repo's `.terraform-version-band` mirror and is
+# read alongside the check script from a checkout of Coalfire-CF/Actions (band +
+# script are co-versioned). The F36 hermetic-resolution pass tightens this to
+# the exact caller-pinned commit. Ships advisory (warn-only) first; flip
+# `strict: true` on the recorded promotion.
+
+on:
+  workflow_call:
+    inputs:
+      scan_root:
+        description: 'Directory (relative to the caller repo root) to scan'
+        required: false
+        type: string
+        default: '.'
+      actions_ref:
+        description: 'Fallback ref of Coalfire-CF/Actions for the band + script when job_workflow_sha is unavailable'
+        required: false
+        type: string
+        default: 'main'
+      slack_channel_id:
+        description: 'Slack channel ID for failure notifications (optional)'
+        required: false
+        type: string
+        default: ''
+      strict:
+        description: 'Fail the job on out-of-band/open-ended versions. Default false (advisory). Flip to true on the recorded promotion (ADR-0013).'
+        required: false
+        type: boolean
+        default: false
+  workflow_dispatch:
+    inputs:
+      scan_root:
+        description: 'Directory to scan'
+        required: false
+        type: string
+        default: '.'
+      strict:
+        description: 'Fail the job on out-of-band/open-ended versions (default false = advisory).'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  version-band:
+    name: Check Terraform version band
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout target repo
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ github.head_ref }} # PR source branch when triggered by pull_request
+          path: target
+
+      - name: Checkout Actions repo (band mirror + check script)
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          repository: Coalfire-CF/Actions
+          # Band + script are co-versioned from this checkout. The F36 hermetic
+          # pass tightens this to the exact caller-pinned commit.
+          ref: ${{ inputs.actions_ref || 'main' }}
+          path: actions-tools
+
+      - name: Resolve band and run version-band check
+        env:
+          SCAN_ROOT: ${{ inputs.scan_root || '.' }}
+          STRICT: ${{ inputs.strict && 'true' || 'false' }}
+        run: |
+          set -eo pipefail
+          BAND="$(tr -d '[:space:]' < actions-tools/.terraform-version-band)"
+          FLOOR="$(printf '%s' "$BAND" | sed -E 's/.*>=([0-9]+\.[0-9]+\.[0-9]+).*/\1/')"
+          CEILING="$(printf '%s' "$BAND" | sed -E 's/.*<([0-9]+\.[0-9]+\.[0-9]+).*/\1/')"
+          if ! echo "$FLOOR" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || ! echo "$CEILING" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Could not parse floor/ceiling from .terraform-version-band ('${BAND}')"
+            exit 1
+          fi
+          echo "Enforcing band [>= ${FLOOR}, < ${CEILING}) (STRICT=${STRICT})"
+          chmod +x actions-tools/scripts/version-band-check.sh
+          actions-tools/scripts/version-band-check.sh "target/${SCAN_ROOT}" "$FLOOR" "$CEILING"
+
+  notify-failure:
+    needs: version-band
+    if: failure() && inputs.slack_channel_id != ''
+    uses: ./.github/workflows/org-slack-notify.yml
+    secrets:
+      SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+    with:
+      notification-type: failure
+      channel-id: ${{ inputs.slack_channel_id }}
