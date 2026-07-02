@@ -19,10 +19,10 @@ on:
         type: string
         default: ''
       strict:
-        description: 'Fail the job on unpinned/unauditable sources. Default false (advisory: warn-only, exit 0). Flip to true on the recorded promotion (RFC-0008).'
+        description: "Override the central gate-config.yml blocking default. '' (default) = defer to central; 'true'/'false' = force. RFC-0010 precedence: caller > central > false."
         required: false
-        type: boolean
-        default: false
+        type: string
+        default: ''
     secrets:
       SLACK_BOT_TOKEN:
         description: 'Slack bot token for failure notifications (required if slack_channel_id is set)'
@@ -35,10 +35,10 @@ on:
         type: string
         default: '.'
       strict:
-        description: 'Fail the job on unpinned/unauditable sources (default false = advisory).'
+        description: "Override central gate-config.yml ('' defer, 'true'/'false' force)."
         required: false
-        type: boolean
-        default: false
+        type: string
+        default: ''
   pull_request:
 
 jobs:
@@ -62,15 +62,22 @@ jobs:
       - name: Run Terraform source-pin check
         env:
           SCAN_ROOT: ${{ inputs.scan_root || '.' }}
-          STRICT: ${{ inputs.strict && 'true' || 'false' }}
+          CALLER_STRICT: ${{ inputs.strict }}
         run: |
-          # Prefer the script from the pinned Actions checkout; fall back to the
-          # target's own copy when self-testing this repo's PR (the script isn't
-          # on Actions main until this PR merges).
+          # Prefer the pinned Actions checkout; fall back to the target's own copy
+          # when self-testing this repo's PR (files aren't on Actions main until
+          # this PR merges).
           SCRIPT=actions-tools/scripts/source-pin-check.sh
           [ -f "$SCRIPT" ] || SCRIPT=target/scripts/source-pin-check.sh
+          RESOLVER=actions-tools/scripts/gate-config-resolve.sh
+          [ -f "$RESOLVER" ] || RESOLVER=target/scripts/gate-config-resolve.sh
+          CFG=actions-tools/gate-config.yml
+          [ -f "$CFG" ] || CFG=target/gate-config.yml
+          # RFC-0010 resolution: caller > central gate-config.yml > false.
+          STRICT="$(bash "$RESOLVER" source-pin "${CALLER_STRICT}" "$CFG")"
+          echo "resolved strict=${STRICT} (gate=source-pin, caller='${CALLER_STRICT}', config=${CFG})"
           chmod +x "$SCRIPT"
-          "$SCRIPT" "target/${SCAN_ROOT}"
+          STRICT="$STRICT" "$SCRIPT" "target/${SCAN_ROOT}"
 
   uses-pin:
     name: "Check workflow uses: pins"
@@ -92,14 +99,21 @@ jobs:
       - name: Run workflow uses-pin check
         env:
           SCAN_ROOT: ${{ inputs.scan_root || '.' }}
-          STRICT: ${{ inputs.strict && 'true' || 'false' }}
+          CALLER_STRICT: ${{ inputs.strict }}
         run: |
           # Prefer the pinned Actions checkout; fall back to the target's copy
-          # when self-testing this repo's PR (script not yet on Actions main).
+          # when self-testing this repo's PR (files not yet on Actions main).
           SCRIPT=actions-tools/scripts/uses-pin-check.sh
           [ -f "$SCRIPT" ] || SCRIPT=target/scripts/uses-pin-check.sh
+          RESOLVER=actions-tools/scripts/gate-config-resolve.sh
+          [ -f "$RESOLVER" ] || RESOLVER=target/scripts/gate-config-resolve.sh
+          CFG=actions-tools/gate-config.yml
+          [ -f "$CFG" ] || CFG=target/gate-config.yml
+          # RFC-0010 resolution: caller > central gate-config.yml > false.
+          STRICT="$(bash "$RESOLVER" uses-pin "${CALLER_STRICT}" "$CFG")"
+          echo "resolved strict=${STRICT} (gate=uses-pin, caller='${CALLER_STRICT}', config=${CFG})"
           chmod +x "$SCRIPT"
-          "$SCRIPT" "target/${SCAN_ROOT}"
+          STRICT="$STRICT" "$SCRIPT" "target/${SCAN_ROOT}"
 
   notify-failure:
     needs: [source-pin, uses-pin]

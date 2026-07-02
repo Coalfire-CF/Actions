@@ -16,7 +16,7 @@ on:
         type: string
         default: '.'
       actions_ref:
-        description: 'Fallback ref of Coalfire-CF/Actions for the band + script when job_workflow_sha is unavailable'
+        description: "Ref of Coalfire-CF/Actions to read the band + gate-config + scripts from (default 'main'; pin to a release SHA for reproducibility)."
         required: false
         type: string
         default: 'main'
@@ -26,10 +26,10 @@ on:
         type: string
         default: ''
       strict:
-        description: 'Fail the job on out-of-band/open-ended versions. Default false (advisory). Flip to true on the recorded promotion (ADR-0013).'
+        description: "Override the central gate-config.yml blocking default. '' (default) = defer to central; 'true'/'false' = force. RFC-0010 precedence: caller > central > false."
         required: false
-        type: boolean
-        default: false
+        type: string
+        default: ''
     secrets:
       SLACK_BOT_TOKEN:
         description: 'Slack bot token for failure notifications (required if slack_channel_id is set)'
@@ -42,10 +42,10 @@ on:
         type: string
         default: '.'
       strict:
-        description: 'Fail the job on out-of-band/open-ended versions (default false = advisory).'
+        description: "Override central gate-config.yml ('' defer, 'true'/'false' force)."
         required: false
-        type: boolean
-        default: false
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -73,9 +73,17 @@ jobs:
       - name: Resolve band and run version-band check
         env:
           SCAN_ROOT: ${{ inputs.scan_root || '.' }}
-          STRICT: ${{ inputs.strict && 'true' || 'false' }}
+          CALLER_STRICT: ${{ inputs.strict }}
         run: |
           set -eo pipefail
+          RESOLVER=actions-tools/scripts/gate-config-resolve.sh
+          [ -f "$RESOLVER" ] || RESOLVER=target/scripts/gate-config-resolve.sh
+          CFG=actions-tools/gate-config.yml
+          [ -f "$CFG" ] || CFG=target/gate-config.yml
+          # RFC-0010 resolution: caller > central gate-config.yml > false.
+          STRICT="$(bash "$RESOLVER" version-band "${CALLER_STRICT}" "$CFG")"
+          echo "resolved strict=${STRICT} (gate=version-band, caller='${CALLER_STRICT}', config=${CFG})"
+          export STRICT
           BAND="$(tr -d '[:space:]' < actions-tools/.terraform-version-band)"
           FLOOR="$(printf '%s' "$BAND" | sed -E 's/.*>=([0-9]+\.[0-9]+\.[0-9]+).*/\1/')"
           CEILING="$(printf '%s' "$BAND" | sed -E 's/.*<([0-9]+\.[0-9]+\.[0-9]+).*/\1/')"
