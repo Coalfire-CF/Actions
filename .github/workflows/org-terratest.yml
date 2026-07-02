@@ -9,12 +9,12 @@ name: Terratest
 #   - OIDC trust configured in target cloud provider(s)
 #
 # Security controls:
-#   - Cloud auth via OIDC only — no long-lived secrets
-#   - Inputs validated against allowlist patterns
-#   - Path traversal rejected in all path inputs
-#   - GitHub App token scoped to repo owner for private module access
-#   - Test timeout enforced to prevent runaway resource creation
-#   - Step summary and artifacts for audit trail
+#   - Cloud auth via OIDC only — no long-lived secrets (IA-2, IA-5)
+#   - Inputs validated against allowlist patterns (SI-10)
+#   - Path traversal rejected in all path inputs (SI-10)
+#   - GitHub App token scoped to repo owner for private module access (AC-6, IA-2)
+#   - Test timeout enforced to prevent runaway resource creation (SC-6)
+#   - Step summary and artifacts for audit trail (AU-3)
 
 on:
   workflow_call:
