@@ -10,7 +10,7 @@ on:
     paths:
       - 'scripts/**'
       - 'tests/**'
-      - '.github/workflows/test-scripts.yml'
+      - '.github/workflows/**'
   workflow_dispatch:
 
 permissions:
@@ -45,4 +45,30 @@ jobs:
             fi
             echo "::endgroup::"
           done
+          exit "$rc"
+
+  no-main-refs:
+    name: Guard — no mutable main refs (F36/N2 regression)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Assert no raw Actions/main fetch and no @main sibling calls
+        run: |
+          set -uo pipefail
+          rc=0
+          # F36: no workflow may resolve a value from a mutable Actions/main raw URL.
+          if grep -rnE 'raw\.githubusercontent\.com/Coalfire-CF/Actions/main' .github/workflows/; then
+            echo "::error::F36 regression — a workflow fetches from Actions/main (use a baked literal / caller .terraform-version)."
+            rc=1
+          fi
+          # N2: no ACTIVE (non-comment) internal sibling call may use @main (use a local ./ ref).
+          if grep -rnE '^[[:space:]]*uses: Coalfire-CF/Actions/\.github/workflows/[A-Za-z0-9._-]+\.yml@main' .github/workflows/; then
+            echo "::error::N2 regression — an internal sibling call uses @main (use uses: ./.github/workflows/<x>.yml)."
+            rc=1
+          fi
+          if [ "$rc" -eq 0 ]; then
+            echo "OK: no Actions/main raw fetches and no active @main sibling refs."
+          fi
           exit "$rc"
