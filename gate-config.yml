@@ -1,0 +1,19 @@
+# Central gate blocking defaults for Coalfire-CF org CI gates (RFC-0010).
+#
+# Each gate reads this file from its own actions/checkout of Coalfire-CF/Actions
+# at `inputs.actions_ref || 'main'` (the .terraform-version-band mechanism — NOT
+# github.job_workflow_sha, which is empty cross-repo). Because the default ref is
+# `main`, flipping a default here takes effect FLEET-WIDE immediately.
+#
+# Resolution precedence for each gate:
+#   caller `strict` input (non-empty 'true'/'false')  >  gates.<key>.strict  >  false
+# A caller leaves `strict` empty ('') to defer to the central default below.
+#
+# PROMOTION (advisory -> blocking) = flip a value here to `true` in a reviewed PR
+# on protected main; that PR body MUST cite the recorded promotion decision
+# (ADR-0011 warn->required mechanism; RFC-0008/RFC-0010).
+gates:
+  source-pin:   { strict: false }
+  uses-pin:     { strict: false }
+  version-band: { strict: false }
+  opa:          { strict: false }  # Tier-2 blocking default only; opa Tier-1 stays advisory (ADR-0003)

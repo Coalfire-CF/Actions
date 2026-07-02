@@ -42,11 +42,16 @@ on:
         required: false
         type: string
         default: '0.69.0'
-      blocking:
-        description: 'Tier-2 opt-in (ADR-0003): fail the pipeline on policy violations. Default false = Tier-1 advisory (warn-only).'
+      actions_ref:
+        description: 'Ref of Coalfire-CF/Actions to read the central gate-config.yml from'
         required: false
-        type: boolean
-        default: false
+        type: string
+        default: 'main'
+      blocking:
+        description: "Tier-2 opt-in (ADR-0003): override the central gate-config.yml opa default. '' (default) = defer to central gates.opa.strict; 'true'/'false' = force. Tier-1 advisory floor is preserved (day-one central default is false)."
+        required: false
+        type: string
+        default: ''
       slack_channel_id:
         description: 'Slack channel ID for failure notifications (optional; only meaningful when blocking is true)'
         required: false
@@ -79,6 +84,13 @@ jobs:
           repository: ${{ inputs.policy_repo }}
           ref: ${{ inputs.policy_ref }}
           path: policies
+
+      - name: Checkout Actions repo (central gate-config)
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          repository: Coalfire-CF/Actions
+          ref: ${{ inputs.actions_ref || 'main' }}
+          path: actions-tools
 
       - name: Guard — policies available?
         id: guard
@@ -140,9 +152,19 @@ jobs:
           POLICY_PATH: ${{ inputs.policy_path }}
           PLAN_ARTIFACT: ${{ inputs.plan_json_artifact }}
           WORKDIR: ${{ inputs.working_directory }}
-          BLOCKING: ${{ inputs.blocking && 'true' || 'false' }}
+          CALLER_BLOCKING: ${{ inputs.blocking }}
         run: |
           set -eo pipefail
+          # RFC-0010: caller `blocking` > central gates.opa.strict > false.
+          # (opa Tier-1 stays advisory; the central default ships false — ADR-0003.)
+          RESOLVER=actions-tools/scripts/gate-config-resolve.sh
+          CFG=actions-tools/gate-config.yml
+          if [ -f "$RESOLVER" ]; then
+            BLOCKING="$(bash "$RESOLVER" opa "${CALLER_BLOCKING}" "$CFG")"
+          else
+            BLOCKING="$([ "${CALLER_BLOCKING}" = "true" ] && echo true || echo false)"
+          fi
+          echo "resolved blocking=${BLOCKING} (gate=opa, caller='${CALLER_BLOCKING}')"
           POL="policies/${POLICY_PATH}"
           INPUT=""
           if [ -n "$PLAN_ARTIFACT" ]; then
