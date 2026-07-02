@@ -64,8 +64,13 @@ jobs:
           SCAN_ROOT: ${{ inputs.scan_root || '.' }}
           STRICT: ${{ inputs.strict && 'true' || 'false' }}
         run: |
-          chmod +x actions-tools/scripts/source-pin-check.sh
-          actions-tools/scripts/source-pin-check.sh "target/${SCAN_ROOT}"
+          # Prefer the script from the pinned Actions checkout; fall back to the
+          # target's own copy when self-testing this repo's PR (the script isn't
+          # on Actions main until this PR merges).
+          SCRIPT=actions-tools/scripts/source-pin-check.sh
+          [ -f "$SCRIPT" ] || SCRIPT=target/scripts/source-pin-check.sh
+          chmod +x "$SCRIPT"
+          "$SCRIPT" "target/${SCAN_ROOT}"
 
   uses-pin:
     name: "Check workflow uses: pins"
@@ -89,8 +94,12 @@ jobs:
           SCAN_ROOT: ${{ inputs.scan_root || '.' }}
           STRICT: ${{ inputs.strict && 'true' || 'false' }}
         run: |
-          chmod +x actions-tools/scripts/uses-pin-check.sh
-          actions-tools/scripts/uses-pin-check.sh "target/${SCAN_ROOT}"
+          # Prefer the pinned Actions checkout; fall back to the target's copy
+          # when self-testing this repo's PR (script not yet on Actions main).
+          SCRIPT=actions-tools/scripts/uses-pin-check.sh
+          [ -f "$SCRIPT" ] || SCRIPT=target/scripts/uses-pin-check.sh
+          chmod +x "$SCRIPT"
+          "$SCRIPT" "target/${SCAN_ROOT}"
 
   notify-failure:
     needs: [source-pin, uses-pin]

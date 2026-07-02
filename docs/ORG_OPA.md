@@ -17,9 +17,9 @@ MTCS finding **F08**.
 ## What it does
 
 1. Checks out the caller repo and the policy repo (pinned by release SHA — RFC-0008).
-2. Installs OPA (pinned `opa_version`).
-3. Validates the policy set: `opa fmt --diff`, `opa check`, `opa test -v`.
-4. Evaluates `data.terraform.deny` (the org convention for violation messages):
+1. Installs OPA (pinned `opa_version`).
+1. Validates the policy set: `opa fmt --diff`, `opa check`, `opa test -v`.
+1. Evaluates `data.terraform.deny` (the org convention for violation messages):
    - **post-plan**: pass `plan_json_artifact` (an uploaded `terraform show -json`).
    - **pre-plan/static**: evaluates any `*.tf.json` found under `working_directory`.
 
