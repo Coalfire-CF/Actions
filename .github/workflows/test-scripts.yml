@@ -1,0 +1,48 @@
+name: "Test Scripts"
+
+# Runs the repository's script meta-tests (tests/*.test.sh) on every PR that
+# touches the gate scripts, their tests/fixtures, or this workflow. These tests
+# exercise scripts/source-pin-check.sh and scripts/uses-pin-check.sh against the
+# fixtures under tests/fixtures/ and assert PASS/WARN/FAIL + strict behavior.
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/**'
+      - 'tests/**'
+      - '.github/workflows/test-scripts.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-scripts:
+    name: Run tests/*.test.sh
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Run all script meta-tests
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          tests=(tests/*.test.sh)
+          if [ ${#tests[@]} -eq 0 ]; then
+            echo "::error::no tests/*.test.sh found"
+            exit 1
+          fi
+          rc=0
+          for t in "${tests[@]}"; do
+            echo "::group::${t}"
+            chmod +x "$t"
+            if bash "$t"; then
+              echo "PASS: ${t}"
+            else
+              echo "::error file=${t}::meta-test failed"
+              rc=1
+            fi
+            echo "::endgroup::"
+          done
+          exit "$rc"

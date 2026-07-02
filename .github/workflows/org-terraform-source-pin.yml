@@ -18,6 +18,11 @@ on:
         required: false
         type: string
         default: ''
+      strict:
+        description: 'Fail the job on unpinned/unauditable sources. Default false (advisory: warn-only, exit 0). Flip to true on the recorded promotion (RFC-0008).'
+        required: false
+        type: boolean
+        default: false
   workflow_dispatch:
     inputs:
       scan_root:
@@ -25,6 +30,11 @@ on:
         required: false
         type: string
         default: '.'
+      strict:
+        description: 'Fail the job on unpinned/unauditable sources (default false = advisory).'
+        required: false
+        type: boolean
+        default: false
   pull_request:
 
 jobs:
@@ -48,6 +58,7 @@ jobs:
       - name: Run Terraform source-pin check
         env:
           SCAN_ROOT: ${{ inputs.scan_root || '.' }}
+          STRICT: ${{ inputs.strict && 'true' || 'false' }}
         run: |
           chmod +x actions-tools/scripts/source-pin-check.sh
           actions-tools/scripts/source-pin-check.sh "target/${SCAN_ROOT}"
