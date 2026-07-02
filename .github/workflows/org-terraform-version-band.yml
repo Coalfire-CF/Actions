@@ -16,7 +16,7 @@ on:
         type: string
         default: '.'
       actions_ref:
-        description: 'Fallback ref of Coalfire-CF/Actions for the band + script when job_workflow_sha is unavailable'
+        description: "Ref of Coalfire-CF/Actions to read the band + gate-config + scripts from (default 'main'; pin to a release SHA for reproducibility)."
         required: false
         type: string
         default: 'main'
