@@ -20,8 +20,8 @@ Each gate resolves its effective blocking flag with this precedence
 
 1. **Caller `strict` input** — if the caller passes `'true'` or `'false'`, it wins
    (a local override, e.g. during a repo's migration).
-2. **Central default** — otherwise `gates.<key>.strict` from this file.
-3. **`false`** — if the key/file is absent.
+1. **Central default** — otherwise `gates.<key>.strict` from this file.
+1. **`false`** — if the key/file is absent.
 
 A caller leaves `strict: ''` (the default) to defer to the central value.
 For `org-opa`, the caller input is named `blocking` and maps to `gates.opa.strict`.
@@ -41,9 +41,9 @@ wants reproducibility can pin `actions_ref` to a release SHA.
 ## Promoting a gate (advisory → blocking)
 
 1. Open a PR that flips the gate's value to `strict: true` here.
-2. The PR body **must cite the recorded promotion decision** (the ADR-0011
+1. The PR body **must cite the recorded promotion decision** (the ADR-0011
    warn→required cycle; RFC-0008/RFC-0010).
-3. Merge on protected `main`. The gate is blocking for every caller on the next
+1. Merge on protected `main`. The gate is blocking for every caller on the next
    run. To roll back, flip it to `false` the same way.
 
 Day-one ships **all `false`** (advisory) — no behavior change on adoption.
