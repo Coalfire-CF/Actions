@@ -1,5 +1,39 @@
 # Changelog
 
+## [0.8.0](https://github.com/Coalfire-CF/Actions/compare/v0.7.0...v0.8.0) (2026-07-02)
+
+
+### Features
+
+* **gates:** central gate-config.yml strict switch (RFC-0010) ([7264470](https://github.com/Coalfire-CF/Actions/commit/72644706053ca2868ff93cff24a12a1bbe3b3571))
+* **gates:** central gate-config.yml strict switch (RFC-0010) ([fe3c1dc](https://github.com/Coalfire-CF/Actions/commit/fe3c1dc4828bf752661db55486b208637b0bee2c))
+
+
+### Bug Fixes
+
+* **ci:** normalize + bump all third-party action pins to latest (pin-latest-at-authoring) ([99e2454](https://github.com/Coalfire-CF/Actions/commit/99e2454ac6e862c671008b9b7758ecdcd5f4f7d8))
+* **ci:** normalize + bump third-party action pins to latest (pin-latest-at-authoring) ([081e7ac](https://github.com/Coalfire-CF/Actions/commit/081e7ac6e4ae1d3401286219a6f913fb67a73c6e))
+
+
+### Miscellaneous
+
+* **deps:** bump actions/checkout from 6.0.2 to 7.0.0 ([85dfcff](https://github.com/Coalfire-CF/Actions/commit/85dfcffef5f1b8deda505433b19a6495a27fd1d5))
+* **deps:** bump actions/checkout from 6.0.2 to 7.0.0 ([7714022](https://github.com/Coalfire-CF/Actions/commit/7714022ee98fb7a6d9f4fd177ae5c59582e580d8))
+* **deps:** bump actions/create-github-app-token from 3.1.1 to 3.2.0 ([b0a251c](https://github.com/Coalfire-CF/Actions/commit/b0a251c1c36829ad4014ca5fb9c99ba237233e65))
+* **deps:** bump actions/create-github-app-token from 3.1.1 to 3.2.0 ([c47bbe7](https://github.com/Coalfire-CF/Actions/commit/c47bbe786861a03c9e0f24b1a6da911d8a078d8b))
+* **deps:** bump actions/setup-go from 5.5.0 to 6.5.0 ([20b5e87](https://github.com/Coalfire-CF/Actions/commit/20b5e871e48ab330fa0393a1c34bce144571a911))
+* **deps:** bump actions/setup-go from 5.5.0 to 6.5.0 ([829fb14](https://github.com/Coalfire-CF/Actions/commit/829fb145c61640291ee64ad2bcc88f3d2035ada0))
+* **deps:** bump aws-actions/configure-aws-credentials ([120dcf9](https://github.com/Coalfire-CF/Actions/commit/120dcf960a2f9de6d0bd2feadfa04a2137e8e386))
+* **deps:** bump aws-actions/configure-aws-credentials from 4.3.1 to 6.2.1 ([3550ab1](https://github.com/Coalfire-CF/Actions/commit/3550ab10c3695818d322ebf6e89095111c0cf221))
+* **deps:** bump azure/login from 2.3.0 to 3.0.0 ([b3977bd](https://github.com/Coalfire-CF/Actions/commit/b3977bdfd7eaaa40ed68110ad78e7a9dac6fb927))
+* **deps:** bump azure/login from 2.3.0 to 3.0.0 ([bc6f67a](https://github.com/Coalfire-CF/Actions/commit/bc6f67a0d5424ec874babd8635851b462400b8e9))
+
+
+### Documentation
+
+* correct version-band actions_ref description (drop stale job_workflow_sha wording) ([06547ab](https://github.com/Coalfire-CF/Actions/commit/06547ab67f2df07d9504d616aa5e1715b027005b))
+* fix MD029 ordered-list style in GATE_CONFIG.md ([dfe97bd](https://github.com/Coalfire-CF/Actions/commit/dfe97bd423711d039531f18bcf9344e321052058))
+
 ## [0.7.0](https://github.com/Coalfire-CF/Actions/compare/v0.6.0...v0.7.0) (2026-07-02)
 
 
