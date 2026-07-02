@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.1](https://github.com/Coalfire-CF/Actions/compare/v0.8.0...v0.8.1) (2026-07-02)
+
+
+### Bug Fixes
+
+* **dependabot:** exempt first-party org refs from the scorecard gate ([#141](https://github.com/Coalfire-CF/Actions/issues/141)) ([a8e33e2](https://github.com/Coalfire-CF/Actions/commit/a8e33e244e22628cf9bec0a1ac17b8457395d974))
+
 ## [0.8.0](https://github.com/Coalfire-CF/Actions/compare/v0.7.0...v0.8.0) (2026-07-02)
 
 
