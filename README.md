@@ -61,7 +61,6 @@ Called on merge to main.
 
 | Workflow | File | Description |
 |----------|------|-------------|
-| Azure Deploy | `org-azure-deploy.yml` | **Deprecated** — Legacy Azure deployment example. Do not use as a template. |
 | Local Release | `release.yml` | Release workflow for the Actions repo itself |
 
 ## Usage
