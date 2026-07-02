@@ -137,9 +137,14 @@ jobs:
     secrets:
       TERRATEST_APP_CLIENT_ID: ${{ secrets.TERRATEST_APP_CLIENT_ID }}
       TERRATEST_APP_PRIVATE_KEY: ${{ secrets.TERRATEST_APP_PRIVATE_KEY }}
+      # Required only if you set slack_channel_id (failure notifications):
+      # SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
 ```
 
 ### PR Testing (Azure Example)
+
+The Azure and GCP callers use the **same top-level `permissions:` block** (including
+`id-token: write`) shown in the AWS example above — only the `terratest` job differs:
 
 ```yaml
   terratest:
@@ -153,6 +158,8 @@ jobs:
     secrets:
       TERRATEST_APP_CLIENT_ID: ${{ secrets.TERRATEST_APP_CLIENT_ID }}
       TERRATEST_APP_PRIVATE_KEY: ${{ secrets.TERRATEST_APP_PRIVATE_KEY }}
+      # Required only if you set slack_channel_id (failure notifications):
+      # SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
 ```
 
 ### PR Testing (GCP Example)
@@ -168,6 +175,8 @@ jobs:
     secrets:
       TERRATEST_APP_CLIENT_ID: ${{ secrets.TERRATEST_APP_CLIENT_ID }}
       TERRATEST_APP_PRIVATE_KEY: ${{ secrets.TERRATEST_APP_PRIVATE_KEY }}
+      # Required only if you set slack_channel_id (failure notifications):
+      # SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
 ```
 
 ### Release Gate
@@ -203,7 +212,10 @@ secrets are stored in GitHub.
 ### AWS
 
 1. Create an IAM OIDC Identity Provider for `token.actions.githubusercontent.com`
-2. Create an IAM role with a trust policy scoping to your org/repo:
+1. Create an IAM role with a trust policy scoping to your org/repo. In **`pr` mode** the
+   caller triggers on `pull_request`, and GitHub sets the OIDC `sub` claim to
+   `repo:<owner>/<repo>:pull_request` — *not* a branch ref — so match it with `StringLike`:
+
    ```json
    {
      "Effect": "Allow",
@@ -212,39 +224,56 @@ secrets are stored in GitHub.
      },
      "Action": "sts:AssumeRoleWithWebIdentity",
      "Condition": {
+       "StringLike": {
+         "token.actions.githubusercontent.com:sub": [
+           "repo:Coalfire-CF/terraform-aws-my-module:pull_request",
+           "repo:Coalfire-CF/terraform-aws-my-module:ref:refs/tags/*"
+         ]
+       },
        "StringEquals": {
-         "token.actions.githubusercontent.com:sub": "repo:Coalfire-CF/terraform-aws-my-module:ref:refs/heads/main"
+         "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
        }
      }
    }
    ```
-   > **Scope the trust policy to specific repos and ref types.** Using a wildcard like
-   > `repo:Coalfire-CF/*:*` trusts every repo in the org on any branch or PR — any contributor
-   > who can open a PR could assume the role. Prefer `StringEquals` with an explicit repo and
-   > ref pattern. If you need org-wide trust, at minimum restrict to `ref:refs/heads/*` to
-   > exclude pull request refs.
-3. Attach only the permissions the module under test needs (least privilege)
-4. Pass the role ARN via the `aws_role_arn` input
+
+   > **Scope the trust policy to the exact repo and claim types you expect.** A wildcard like
+   > `repo:Coalfire-CF/*:*` trusts every repo in the org on any event — any contributor who can
+   > open a PR could assume the role. List the specific claims instead: `:pull_request` for
+   > PR-mode runs and `:ref:refs/tags/*` for release-mode runs. Pinning the `aud` claim to
+   > `sts.amazonaws.com` (the audience `configure-aws-credentials` requests) prevents token
+   > reuse. Do **not** restrict to `ref:refs/heads/*` alone — that omits the `pull_request`
+   > claim, so every PR-mode run would fail with `AccessDenied`.
+1. Attach only the permissions the module under test needs (least privilege)
+1. Pass the role ARN via the `aws_role_arn` input
 
 ### Azure
 
 1. Register an App (or use an existing Service Principal) in Azure AD
-2. Add a Federated Credential:
+1. Add a Federated Credential. For **`pr` mode** the subject must match the `pull_request`
+   claim (add a second credential for release/tag runs):
+
    - Issuer: `https://token.actions.githubusercontent.com`
-   - Subject: `repo:Coalfire-CF/<repo>:ref:refs/heads/*` (or scope to specific branches)
+   - Subject (PR mode): `repo:Coalfire-CF/<repo>:pull_request`
+   - Subject (release mode): `repo:Coalfire-CF/<repo>:ref:refs/tags/*`
    - Audience: `api://AzureADTokenExchange`
-3. Grant the Service Principal RBAC roles on the target subscription (least privilege)
-4. Pass `azure_client_id`, `azure_tenant_id`, and `azure_subscription_id` as inputs
+1. Grant the Service Principal RBAC roles on the target subscription (least privilege)
+1. Pass `azure_client_id`, `azure_tenant_id`, and `azure_subscription_id` as inputs
 
 ### GCP
 
 1. Create a Workload Identity Pool:
+
    ```bash
    gcloud iam workload-identity-pools create "ci-pool" \
      --location="global" \
      --display-name="CI Pool"
    ```
-2. Create a Provider in the pool:
+
+1. Create a Provider in the pool. The `assertion.repository_owner` condition scopes trust to
+   the org and applies to `pull_request` events too — it matches on the repository attribute
+   rather than a branch ref, so no `ref:refs/heads/*` restriction is needed:
+
    ```bash
    gcloud iam workload-identity-pools providers create-oidc "github" \
      --location="global" \
@@ -253,13 +282,16 @@ secrets are stored in GitHub.
      --attribute-mapping="google.subject=assertion.sub,attribute.repository=assertion.repository" \
      --attribute-condition="assertion.repository_owner == 'Coalfire-CF'"
    ```
-3. Bind a service account:
+
+1. Bind a service account:
+
    ```bash
    gcloud iam service-accounts add-iam-policy-binding "terratest@PROJECT.iam.gserviceaccount.com" \
      --role="roles/iam.workloadIdentityUser" \
      --member="principalSet://iam.googleapis.com/projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/ci-pool/attribute.repository/Coalfire-CF/REPO"
    ```
-4. Pass `gcp_workload_identity_provider` and `gcp_service_account` as inputs
+
+1. Pass `gcp_workload_identity_provider` and `gcp_service_account` as inputs
 
 ## Inputs Reference
 
@@ -286,8 +318,24 @@ secrets are stored in GitHub.
 | --- | --- | --- |
 | `TERRATEST_APP_CLIENT_ID` | No | GitHub App client ID for private module access |
 | `TERRATEST_APP_PRIVATE_KEY` | No | GitHub App private key for private module access |
+| `SLACK_BOT_TOKEN` | No | Slack bot token for failure notifications (required if `slack_channel_id` is set) |
 
 ## Important Notes
+
+### Caller Must Grant `id-token: write`
+
+A reusable workflow **cannot** grant itself `id-token: write` — the calling workflow must
+declare it in its own top-level `permissions:` block. If it is omitted, every cloud OIDC
+step fails with `Unable to load credentials` / `Credentials could not be loaded`. This is
+the single most common setup error; the caller examples above all include the required block.
+
+### `workflow_dispatch` Mode Has No Cloud Inputs
+
+The `workflow_dispatch` trigger exposes only `test_mode`, `go_version`, `terraform_version`,
+`test_directory`, and `test_timeout` — it has **no** cloud-credential inputs. A manual
+dispatch therefore runs a **no-cloud smoke test** only: any test that needs AWS/Azure/GCP
+credentials will fail to authenticate. Use the `workflow_call` path (the caller examples
+above) for full multi-cloud runs.
 
 ### Destroy Is Your Responsibility
 
@@ -310,6 +358,7 @@ HashiCorp wrapper injects extra formatting that breaks Terratest's output parsin
 ### Test Accounts Should Be Isolated
 
 OIDC roles should point to dedicated test accounts/subscriptions/projects that are:
+
 - Isolated from production workloads
 - Scoped with least-privilege IAM (only what the module needs)
 - Monitored for cost anomalies (runaway tests can be expensive)
@@ -343,6 +392,7 @@ All three are uploaded as workflow artifacts and retained for 30 days.
 ### PR Comments
 
 In `pr` mode, the workflow posts a comment with:
+
 - A summary table (tests/passed/failed/skipped/duration) parsed from the JUnit XML
 - The full verbose output in a collapsible details block (truncated at 55k chars)
 
@@ -357,7 +407,8 @@ point the report path at the same file and GitLab will render test results in me
 When adding Terratest to a Terraform module repo:
 
 1. **Create the test directory** with `go.mod`, `go.sum`, and test files (see Directory Structure above)
-2. **Add `gomod` to the repo's `dependabot.yml`** so Go dependencies are kept up to date:
+1. **Add `gomod` to the repo's `dependabot.yml`** so Go dependencies are kept up to date:
+
    ```yaml
    - package-ecosystem: "gomod"
      directory: "/test"
@@ -369,10 +420,11 @@ When adding Terratest to a Terraform module repo:
      labels:
        - "dep/gomod"
    ```
+
    If you use the `org-dependabot.yml` refresh workflow, this will be auto-detected from `test/go.mod`.
-3. **Set up OIDC trust** in the target cloud provider (see OIDC Setup by Provider above)
-4. **Add the caller workflow** to `.github/workflows/ci.yml` (see Calling the Workflow above)
-5. **Ensure the caller workflow includes `permissions`** with `id-token: write` — OIDC will fail without it
+1. **Set up OIDC trust** in the target cloud provider (see OIDC Setup by Provider above)
+1. **Add the caller workflow** to `.github/workflows/ci.yml` (see Calling the Workflow above)
+1. **Ensure the caller workflow includes `permissions`** with `id-token: write` — OIDC will fail without it
 
 ## GitHub App for Private Module Access
 
@@ -389,8 +441,10 @@ plan or apply app. This gives you:
 **Setup steps:**
 
 1. Create a GitHub App in the org with **Repository permissions: Contents → Read**
-2. Install the app on the org (all repos, or select repos that contain Terraform modules)
-3. Set the app's client ID and private key as **org-level secrets**:
+1. Install the app on the org (all repos, or select repos that contain Terraform modules)
+1. Set the app's client ID and private key as **org-level secrets**:
+
    - `TERRATEST_APP_CLIENT_ID`
    - `TERRATEST_APP_PRIVATE_KEY`
-4. Calling repos pass these secrets through to the workflow (see examples above)
+
+1. Calling repos pass these secrets through to the workflow (see examples above)
