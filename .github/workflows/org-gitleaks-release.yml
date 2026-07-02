@@ -11,8 +11,7 @@ on:
   workflow_call:
 
 permissions:
-  contents: write # Required to upload to releases
-  actions: read
+  contents: write # Required to upload to releases. (N1: actions:read dropped — no Actions-API access.)
 
 jobs:
   gitleaks_release_scan:
