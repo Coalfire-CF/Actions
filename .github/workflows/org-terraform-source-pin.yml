@@ -47,13 +47,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout target repo
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ github.head_ref }} # PR source branch when triggered by pull_request
           path: target
 
       - name: Checkout Actions repo (source-pin check script)
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           repository: Coalfire-CF/Actions
           ref: ${{ inputs.actions_ref || 'main' }}
@@ -84,13 +84,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout target repo
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ github.head_ref }} # PR source branch when triggered by pull_request
           path: target
 
       - name: Checkout Actions repo (uses-pin check script)
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           repository: Coalfire-CF/Actions
           ref: ${{ inputs.actions_ref || 'main' }}

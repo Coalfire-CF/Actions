@@ -38,7 +38,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout code
-      uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
+      uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
     - name: Resolve Terraform version
       id: tf-version
@@ -65,7 +65,7 @@ jobs:
         echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
     - name: Setup Terraform
-      uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4
+      uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
       with:
         terraform_version: ${{ steps.tf-version.outputs.version }}
 
@@ -84,7 +84,7 @@ jobs:
     - name: Get Checkout Token
       id: checkout-token
       if: steps.check-secrets.outputs.has_secrets == 'true'
-      uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+      uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
       with:
         app-id: ${{ secrets.TF_VALIDATE_APP_CLIENT_ID }}
         private-key: ${{ secrets.TF_VALIDATE_APP_PRIVATE_KEY }}

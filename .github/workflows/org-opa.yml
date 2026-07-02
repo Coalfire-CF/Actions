@@ -71,7 +71,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout target repo
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ github.head_ref }}
           path: target
@@ -79,14 +79,14 @@ jobs:
       - name: Checkout policies
         id: policies
         continue-on-error: true
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           repository: ${{ inputs.policy_repo }}
           ref: ${{ inputs.policy_ref }}
           path: policies
 
       - name: Checkout Actions repo (central gate-config)
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           repository: Coalfire-CF/Actions
           ref: ${{ inputs.actions_ref || 'main' }}
@@ -141,7 +141,7 @@ jobs:
 
       - name: Download plan JSON (post-plan mode)
         if: steps.guard.outputs.skip == 'false' && inputs.plan_json_artifact != ''
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: ${{ inputs.plan_json_artifact }}
           path: planjson

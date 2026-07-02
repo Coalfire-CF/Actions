@@ -228,7 +228,7 @@ jobs:
           echo "Input validation passed"
 
       - name: Checkout code
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Resolve Terraform version
         id: tf-version
@@ -262,7 +262,7 @@ jobs:
           cache-dependency-path: ${{ inputs.working_directory }}/${{ inputs.test_directory }}/go.sum
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@5e8dbf3c6d9deaf4193ca7a8fb23f2ac83bb6c85 # v4
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
           terraform_version: ${{ steps.tf-version.outputs.version }}
           terraform_wrapper: false
@@ -282,7 +282,7 @@ jobs:
       - name: Get GitHub App Token
         id: app-token
         if: steps.check-app-secrets.outputs.has_secrets == 'true'
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           app-id: ${{ secrets.TERRATEST_APP_CLIENT_ID }}
           private-key: ${{ secrets.TERRATEST_APP_PRIVATE_KEY }}
@@ -316,7 +316,7 @@ jobs:
 
       - name: Configure GCP credentials (OIDC)
         if: inputs.gcp_workload_identity_provider != ''
-        uses: google-github-actions/auth@ba79af03959ebeac9769e648f473a284504d9193 # v2.1.10
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
         with:
           workload_identity_provider: ${{ inputs.gcp_workload_identity_provider }}
           service_account: ${{ inputs.gcp_service_account }}
@@ -361,7 +361,7 @@ jobs:
 
       - name: Upload test artifacts
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: terratest-results-${{ github.run_id }}
           path: |
