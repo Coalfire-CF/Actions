@@ -142,6 +142,15 @@ permissions:
   pull-requests: write
   id-token: write
 
+env:
+  # Baked default Terraform version, used only when the caller repo ships no
+  # .terraform-version and passes no terraform_version input. A literal (not a raw fetch of
+  # this repo's .terraform-version) because github.job_workflow_sha is EMPTY for cross-repo
+  # reusable-workflow calls (actions/runner#2417) and github.sha is the CALLER's commit — so
+  # a raw fetch would resolve to the wrong repo/ref and 404. org-terraform-version-check keeps
+  # this literal in sync with .terraform-version across the org workflows.
+  DEFAULT_TF_VERSION: '1.15.7'
+
 jobs:
   terratest:
     name: Terratest
@@ -225,31 +234,25 @@ jobs:
         id: tf-version
         env:
           INPUT_TF_VERSION: ${{ inputs.terraform_version }}
-          # Hermetic fetch: pin the fallback .terraform-version read to the exact commit of
-          # THIS reusable workflow rather than mutable main. github.job_workflow_sha is the SHA
-          # of the called (this) workflow, even when invoked cross-repo. github.sha is the
-          # direct-trigger fallback (only valid inside the Actions repo itself; a cross-repo
-          # caller's github.sha would 404 the raw fetch — fail-closed, never "latest").
-          JOB_WORKFLOW_SHA: ${{ github.job_workflow_sha }}
-          FALLBACK_SHA: ${{ github.sha }}
+          DEFAULT_TF_VERSION: ${{ env.DEFAULT_TF_VERSION }}
         run: |
           set -eo pipefail
+          # Resolution order (fail-closed, no network fetch):
+          #   1. explicit terraform_version input
+          #   2. caller repo's .terraform-version (relative to working_directory)
+          #   3. the baked DEFAULT_TF_VERSION literal
           if [ -n "$INPUT_TF_VERSION" ]; then
-            echo "version=$INPUT_TF_VERSION" >> "$GITHUB_OUTPUT"
+            VERSION="$INPUT_TF_VERSION"
           elif [ -f .terraform-version ]; then
-            echo "version=$(tr -d '[:space:]' < .terraform-version)" >> "$GITHUB_OUTPUT"
+            VERSION="$(tr -d '[:space:]' < .terraform-version)"
           else
-            REF="$JOB_WORKFLOW_SHA"
-            if [ -z "$REF" ]; then REF="$FALLBACK_SHA"; fi
-            VERSION=$(curl -fsSL --retry 3 --retry-delay 2 \
-              "https://raw.githubusercontent.com/Coalfire-CF/Actions/${REF}/.terraform-version" \
-              | tr -d '[:space:]')
-            if ! echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-              echo "::error::Could not resolve a valid Terraform version from ref ${REF}"
-              exit 1
-            fi
-            echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+            VERSION="$DEFAULT_TF_VERSION"
           fi
+          if ! echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Could not resolve a valid Terraform version (got '${VERSION}')"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Setup Go
         uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
