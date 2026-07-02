@@ -50,6 +50,16 @@ on:
         required: false
         type: number
         default: 5
+      first_party_prefix:
+        description: >-
+          Dependency-name prefix treated as first-party (trusted org refs).
+          The Scorecard gate is waived for matches — the Scorecard API has no
+          data for private/small org repos, which would otherwise hard-block
+          every first-party bump (RFC-0010 practice 3: same-major first-party
+          bumps auto-merge on green CI).
+        required: false
+        type: string
+        default: 'Coalfire-CF/'
       auto_merge_method:
         description: 'Merge method: merge, squash, or rebase'
         required: false
@@ -101,6 +111,7 @@ jobs:
       update_type: ${{ steps.metadata.outputs.update-type }}
       is_eligible: ${{ steps.decide-eligibility.outputs.is_eligible }}
       dep_label: ${{ steps.decide-eligibility.outputs.dep_label }}
+      is_first_party: ${{ steps.decide-eligibility.outputs.is_first_party }}
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -130,11 +141,28 @@ jobs:
           ECOSYSTEM: ${{ steps.metadata.outputs.package-ecosystem }}
           DEP_NAMES: ${{ steps.metadata.outputs.dependency-names }}
           PR_TITLE: ${{ github.event.pull_request.title }}
+          FIRST_PARTY_PREFIX: ${{ inputs.first_party_prefix }}
         run: |
           set -euo pipefail
 
           IS_ELIGIBLE="true"
           DEP_LABEL="dep/other"
+
+          # First-party detection: every dependency in the PR must match the
+          # trusted prefix (grouped updates mixing first- and third-party stay
+          # third-party so all gates apply).
+          IS_FIRST_PARTY="false"
+          if [ -n "$FIRST_PARTY_PREFIX" ] && [ -n "$DEP_NAMES" ]; then
+            IS_FIRST_PARTY="true"
+            IFS=',' read -ra NAME_ARR <<< "$DEP_NAMES"
+            for name in "${NAME_ARR[@]}"; do
+              name="$(echo "$name" | xargs)"
+              case "$name" in
+                "$FIRST_PARTY_PREFIX"*) ;;
+                *) IS_FIRST_PARTY="false"; break ;;
+              esac
+            done
+          fi
 
           case "$ECOSYSTEM" in
             github-actions|github_actions) DEP_LABEL="dep/github-actions" ;;
@@ -164,6 +192,7 @@ jobs:
 
           echo "is_eligible=${IS_ELIGIBLE}" >> "$GITHUB_OUTPUT"
           echo "dep_label=${DEP_LABEL}" >> "$GITHUB_OUTPUT"
+          echo "is_first_party=${IS_FIRST_PARTY}" >> "$GITHUB_OUTPUT"
 
       - name: Apply ecosystem label
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
@@ -874,6 +903,7 @@ jobs:
           APPLIES_TO_REPO: ${{ needs.breaking_change_check.outputs.applies_to_repo }}
           DEP_NAME: ${{ needs.classify.outputs.dep_name }}
           TO_VERSION: ${{ needs.classify.outputs.to_version }}
+          IS_FIRST_PARTY: ${{ needs.classify.outputs.is_first_party }}
         run: |
           set -euo pipefail
 
@@ -890,11 +920,21 @@ jobs:
             REASONS="${REASONS}\n- Known vulnerability found in target version"
           fi
 
+          # Scorecard gate is waived for first-party org dependencies: the
+          # Scorecard API has no data for org repos, which would hard-block
+          # every first-party bump (RFC-0010: same-major first-party bumps
+          # auto-merge on green CI). OSV/major/breaking gates still apply.
+          SCORECARD_WAIVED="false"
           if [ "$SCORECARD_PASS" != "true" ]; then
-            DECISION="block"
-            RISK_LEVEL="high"
-            BLOCKED_LABELS="${BLOCKED_LABELS} blocked/low-scorecard"
-            REASONS="${REASONS}\n- OpenSSF Scorecard below threshold (score: ${SCORECARD_SCORE})"
+            if [ "$IS_FIRST_PARTY" = "true" ]; then
+              SCORECARD_WAIVED="true"
+              echo "First-party dependency (${DEP_NAME}) — scorecard gate waived"
+            else
+              DECISION="block"
+              RISK_LEVEL="high"
+              BLOCKED_LABELS="${BLOCKED_LABELS} blocked/low-scorecard"
+              REASONS="${REASONS}\n- OpenSSF Scorecard below threshold (score: ${SCORECARD_SCORE})"
+            fi
           fi
 
           if [ "$SEMVER_TYPE" = "major" ]; then
@@ -932,7 +972,12 @@ jobs:
             echo "| Decision | **${DECISION}** |"
             echo "| Risk | ${RISK_LEVEL} |"
             echo "| OSV Clear | ${OSV_CLEAR} |"
-            echo "| Scorecard Pass | ${SCORECARD_PASS} (${SCORECARD_SCORE}) |"
+            if [ "$SCORECARD_WAIVED" = "true" ]; then
+              echo "| Scorecard Pass | waived — first-party (${SCORECARD_SCORE}) |"
+            else
+              echo "| Scorecard Pass | ${SCORECARD_PASS} (${SCORECARD_SCORE}) |"
+            fi
+            echo "| First Party | ${IS_FIRST_PARTY} |"
             echo "| Semver | ${SEMVER_TYPE} |"
             echo "| Breaking Changes | ${HAS_BREAKING} |"
             echo "| Applies to Repo | ${APPLIES_TO_REPO} |"
