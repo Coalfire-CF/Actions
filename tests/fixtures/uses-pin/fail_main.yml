@@ -1,0 +1,5 @@
+# Fixture: INVALID (FAIL) — reusable workflow pinned to the mutable @main ref.
+# The gate MUST flag it (::error under strict, ::warning under advisory).
+jobs:
+  release:
+    uses: Coalfire-CF/Actions/.github/workflows/org-release-clean.yml@main

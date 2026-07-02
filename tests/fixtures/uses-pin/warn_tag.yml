@@ -1,0 +1,7 @@
+# Fixture: TRANSITIONAL (WARN) — remote action pinned to a version tag. Allowed
+# during the RFC-0008 advisory window but mutable. The gate MUST emit a
+# ::warning and MUST NOT count it as a fail-class finding.
+jobs:
+  build:
+    steps:
+      - uses: actions/setup-python@v5.0.0

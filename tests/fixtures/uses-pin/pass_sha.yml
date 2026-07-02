@@ -1,0 +1,6 @@
+# Fixture: VALID (PASS) — remote action pinned to a 40-hex SHA with an adjacent
+# `# vX` release comment. The uses-pin gate MUST NOT flag this line.
+jobs:
+  build:
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6

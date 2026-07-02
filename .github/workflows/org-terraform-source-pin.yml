@@ -63,8 +63,33 @@ jobs:
           chmod +x actions-tools/scripts/source-pin-check.sh
           actions-tools/scripts/source-pin-check.sh "target/${SCAN_ROOT}"
 
+  uses-pin:
+    name: "Check workflow uses: pins"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout target repo
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ github.head_ref }} # PR source branch when triggered by pull_request
+          path: target
+
+      - name: Checkout Actions repo (uses-pin check script)
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          repository: Coalfire-CF/Actions
+          ref: ${{ inputs.actions_ref || 'main' }}
+          path: actions-tools
+
+      - name: Run workflow uses-pin check
+        env:
+          SCAN_ROOT: ${{ inputs.scan_root || '.' }}
+          STRICT: ${{ inputs.strict && 'true' || 'false' }}
+        run: |
+          chmod +x actions-tools/scripts/uses-pin-check.sh
+          actions-tools/scripts/uses-pin-check.sh "target/${SCAN_ROOT}"
+
   notify-failure:
-    needs: source-pin
+    needs: [source-pin, uses-pin]
     if: failure() && inputs.slack_channel_id != ''
     uses: Coalfire-CF/Actions/.github/workflows/org-slack-notify.yml@main
     secrets:

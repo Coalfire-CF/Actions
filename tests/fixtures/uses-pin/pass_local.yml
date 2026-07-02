@@ -1,0 +1,5 @@
+# Fixture: VALID (PASS) — local sibling reusable-workflow ref. Resolves at the
+# called workflow's own immutable SHA. The uses-pin gate MUST NOT flag it.
+jobs:
+  notify:
+    uses: ./.github/workflows/org-slack-notify.yml
