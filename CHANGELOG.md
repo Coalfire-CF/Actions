@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.2](https://github.com/Coalfire-CF/Actions/compare/v0.8.1...v0.8.2) (2026-07-03)
+
+
+### Bug Fixes
+
+* **ci:** three org-workflow defects surfaced by fleet rollout ([#143](https://github.com/Coalfire-CF/Actions/issues/143)) ([9575d10](https://github.com/Coalfire-CF/Actions/commit/9575d1035ae2fd0346cb8376746f4f3c76fe7e42))
+
 ## [0.8.1](https://github.com/Coalfire-CF/Actions/compare/v0.8.0...v0.8.1) (2026-07-02)
 
 
