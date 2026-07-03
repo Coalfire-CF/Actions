@@ -46,7 +46,9 @@ jobs:
         # Get the latest release tag
         LATEST_TAG=$(gh release list --limit 1 --json tagName --jq '.[0].tagName')
         if [ -n "$LATEST_TAG" ]; then
-          gh release upload "$LATEST_TAG" gitleaks_release_results.json --clobber
+          # Immutable releases reject asset uploads (HTTP 422) — tolerate like
+          # org-trivy-release does; results remain available as a workflow artifact.
+          gh release upload "$LATEST_TAG" gitleaks_release_results.json --clobber || echo "Failed to upload to release"
         else
           echo "No release found to upload results to"
         fi
