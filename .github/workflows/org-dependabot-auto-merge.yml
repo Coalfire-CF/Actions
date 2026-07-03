@@ -109,6 +109,9 @@ jobs:
       from_version: ${{ steps.parse.outputs.from_version }}
       to_version: ${{ steps.parse.outputs.to_version }}
       update_type: ${{ steps.metadata.outputs.update-type }}
+      dependency_group: ${{ steps.metadata.outputs.dependency-group }}
+      deps_b64: ${{ steps.parse.outputs.deps_b64 }}
+      parse_error: ${{ steps.parse.outputs.parse_error }}
       is_eligible: ${{ steps.decide-eligibility.outputs.is_eligible }}
       dep_label: ${{ steps.decide-eligibility.outputs.dep_label }}
       is_first_party: ${{ steps.decide-eligibility.outputs.is_first_party }}
@@ -129,11 +132,37 @@ jobs:
           META_DEP_NAMES: ${{ steps.metadata.outputs.dependency-names }}
           META_PREV_VER: ${{ steps.metadata.outputs.previous-version }}
           META_NEW_VER: ${{ steps.metadata.outputs.new-version }}
+          META_DEPS_JSON: ${{ steps.metadata.outputs.updated-dependencies-json }}
         run: |
           set -euo pipefail
           echo "dep_name=${META_DEP_NAMES}" >> "$GITHUB_OUTPUT"
           echo "from_version=${META_PREV_VER}" >> "$GITHUB_OUTPUT"
           echo "to_version=${META_NEW_VER}" >> "$GITHUB_OUTPUT"
+
+          # Build the authoritative per-dependency list (grouped-PR support).
+          # previous/new-version above are FIRST-dependency-only on grouped
+          # PRs; updated-dependencies-json carries every member. Any parse
+          # ambiguity fails CLOSED via parse_error -> decide routes the PR
+          # to manual review instead of evaluating a partial view.
+          PARSE_ERROR="false"
+          DEPS_TSV=""
+          if [ -n "${META_DEPS_JSON:-}" ] && echo "$META_DEPS_JSON" | jq -e 'type=="array" and length>0' >/dev/null 2>&1; then
+            # Empty fields become "-" placeholders: tab is IFS whitespace, so a
+            # truly empty middle field would silently shift read's columns.
+            DEPS_TSV=$(echo "$META_DEPS_JSON" | jq -r '.[] | [((.dependencyName // "") | if .=="" then "-" else . end), ((.prevVersion // "") | if .=="" then "-" else . end), ((.newVersion // "") | if .=="" then "-" else . end)] | @tsv')
+            if echo "$DEPS_TSV" | awk -F'\t' '$1=="-" || $3=="-"{bad=1} END{exit bad?0:1}'; then
+              echo "::warning::updated-dependencies-json rows missing name/newVersion — failing closed"
+              PARSE_ERROR="true"
+            fi
+          elif [ -n "${META_DEP_NAMES}" ] && [ "${META_DEP_NAMES}" = "${META_DEP_NAMES%%,*}" ]; then
+            # Single dependency, no JSON — classic scalar fallback
+            DEPS_TSV=$(printf '%s\t%s\t%s' "$META_DEP_NAMES" "${META_PREV_VER:--}" "${META_NEW_VER:--}")
+          else
+            echo "::warning::multiple dependency names but no parseable updated-dependencies-json — failing closed"
+            PARSE_ERROR="true"
+          fi
+          echo "deps_b64=$(printf '%s' "$DEPS_TSV" | base64 -w0)" >> "$GITHUB_OUTPUT"
+          echo "parse_error=${PARSE_ERROR}" >> "$GITHUB_OUTPUT"
 
       - name: Determine eligibility and ecosystem label
         id: decide-eligibility
@@ -242,6 +271,7 @@ jobs:
       scorecard_pass: ${{ steps.checks.outputs.scorecard_pass }}
       scorecard_score: ${{ steps.checks.outputs.scorecard_score }}
       cache_hit: ${{ steps.checks.outputs.cache_hit }}
+      check_errors: ${{ steps.checks.outputs.check_errors }}
     steps:
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@254c19bd240aabef8777f48595e9d2d7b972184b # v6.2.1
@@ -255,6 +285,8 @@ jobs:
           DEP_NAME: ${{ needs.classify.outputs.dep_name }}
           TO_VERSION: ${{ needs.classify.outputs.to_version }}
           ECOSYSTEM: ${{ needs.classify.outputs.ecosystem }}
+          DEPS_B64: ${{ needs.classify.outputs.deps_b64 }}
+          PARSE_ERROR: ${{ needs.classify.outputs.parse_error }}
           S3_BUCKET: ${{ inputs.s3_cache_bucket }}
           CACHE_TTL_DAYS: ${{ inputs.cache_ttl_days }}
           SCORECARD_THRESHOLD: ${{ inputs.scorecard_threshold }}
@@ -263,6 +295,19 @@ jobs:
           cat > /tmp/supply_chain_check.sh <<'BASH'
           #!/usr/bin/env bash
           set -euo pipefail
+
+          # Grouped-PR support: every dependency in the PR is checked
+          # individually and folded into AND/OR aggregates. Any per-dep
+          # query ERROR (as opposed to a clean result) increments
+          # CHECK_ERRORS and the decide job fails CLOSED to manual review.
+          CHECK_ERRORS=0
+          AGG_OSV_CLEAR="true"
+          AGG_SC_PASS="true"
+          AGG_SC_SCORE=""
+          AGG_CACHE_HIT="true"
+
+          check_one() {
+          local DEP_NAME="$1" TO_VERSION="$2"
 
           # -----------------------------------------------------------
           # Normalize dependency name for S3 key (replace / with --)
@@ -316,7 +361,9 @@ jobs:
 
             OSV_VULNS="[]"
             if [ -n "$OSV_ECOSYSTEM" ]; then
-              OSV_RESPONSE=$(curl -sf --max-time 30 \
+              # Fail CLOSED on query error: a failed OSV call is NOT a clean
+              # result (the old `|| echo` fail-open let vulns through silently).
+              if ! OSV_RESPONSE=$(curl -sf --max-time 30 \
                 -X POST "https://api.osv.dev/v1/query" \
                 -H "Content-Type: application/json" \
                 -d "$(jq -n \
@@ -324,7 +371,11 @@ jobs:
                   --arg ver "$TO_VERSION" \
                   --arg eco "$OSV_ECOSYSTEM" \
                   '{package: {name: $pkg, ecosystem: $eco}, version: $ver}')" \
-                2>/dev/null || echo '{"vulns":[]}')
+                2>/dev/null); then
+                echo "::warning::OSV query FAILED for ${DEP_NAME}@${TO_VERSION} — failing closed"
+                CHECK_ERRORS=$((CHECK_ERRORS + 1))
+                OSV_RESPONSE='{"vulns":[]}'
+              fi
               OSV_VULNS=$(echo "$OSV_RESPONSE" | jq '.vulns // []')
               VULN_COUNT=$(echo "$OSV_VULNS" | jq 'length')
               if [ "$VULN_COUNT" -gt 0 ]; then
@@ -397,12 +448,43 @@ jobs:
           fi
 
           # -----------------------------------------------------------
-          # Set outputs
+          # Fold this dependency into the aggregates
           # -----------------------------------------------------------
-          echo "osv_clear=${OSV_CLEAR}" >> "$GITHUB_OUTPUT"
-          echo "scorecard_pass=${SCORECARD_PASS}" >> "$GITHUB_OUTPUT"
-          echo "scorecard_score=${SCORECARD_SCORE}" >> "$GITHUB_OUTPUT"
-          echo "cache_hit=${CACHE_HIT}" >> "$GITHUB_OUTPUT"
+          [ "$OSV_CLEAR" = "true" ]      || AGG_OSV_CLEAR="false"
+          [ "$SCORECARD_PASS" = "true" ] || AGG_SC_PASS="false"
+          [ "$CACHE_HIT" = "true" ]      || AGG_CACHE_HIT="false"
+          if [ "$SCORECARD_SCORE" != "N/A" ]; then
+            if [ -z "$AGG_SC_SCORE" ] || [ "$(echo "$SCORECARD_SCORE < $AGG_SC_SCORE" | bc -l)" -eq 1 ]; then
+              AGG_SC_SCORE="$SCORECARD_SCORE"
+            fi
+          fi
+          }
+
+          # -----------------------------------------------------------
+          # Iterate every dependency in the PR (grouped-PR support)
+          # -----------------------------------------------------------
+          DEPS_FILE=/tmp/deps.tsv
+          printf '%s' "${DEPS_B64:-}" | base64 -d > "$DEPS_FILE" 2>/dev/null || : > "$DEPS_FILE"
+          if [ "${PARSE_ERROR:-false}" = "true" ] || [ ! -s "$DEPS_FILE" ]; then
+            echo "::warning::dependency list unavailable — failing closed"
+            CHECK_ERRORS=$((CHECK_ERRORS + 1))
+          else
+            # `|| [ -n "$D_NAME" ]` processes a final line with no trailing
+            # newline; fd 3 keeps loop input safe from stdin-reading commands.
+            while IFS=$'\t' read -r -u3 D_NAME D_FROM D_TO || [ -n "${D_NAME:-}" ]; do
+              [ -n "$D_NAME" ] && [ "$D_NAME" != "-" ] || { D_NAME=""; continue; }
+              echo "=== supply-chain check: ${D_NAME}@${D_TO} ==="
+              check_one "$D_NAME" "$D_TO"
+              D_NAME=""
+            done 3< "$DEPS_FILE"
+          fi
+
+          [ -n "$AGG_SC_SCORE" ] || AGG_SC_SCORE="N/A"
+          echo "osv_clear=${AGG_OSV_CLEAR}" >> "$GITHUB_OUTPUT"
+          echo "scorecard_pass=${AGG_SC_PASS}" >> "$GITHUB_OUTPUT"
+          echo "scorecard_score=${AGG_SC_SCORE}" >> "$GITHUB_OUTPUT"
+          echo "cache_hit=${AGG_CACHE_HIT}" >> "$GITHUB_OUTPUT"
+          echo "check_errors=${CHECK_ERRORS}" >> "$GITHUB_OUTPUT"
           BASH
           chmod +x /tmp/supply_chain_check.sh
           bash /tmp/supply_chain_check.sh
@@ -448,6 +530,7 @@ jobs:
       confidence: ${{ steps.checks.outputs.confidence }}
       risk_summary: ${{ steps.checks.outputs.risk_summary }}
       applies_to_repo: ${{ steps.checks.outputs.applies_to_repo }}
+      check_errors: ${{ steps.checks.outputs.check_errors }}
     steps:
       - name: Checkout default branch (for usage analysis)
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -457,46 +540,47 @@ jobs:
       - name: Gather dependency usage context
         id: usage
         env:
-          DEP_NAME: ${{ needs.classify.outputs.dep_name }}
           ECOSYSTEM: ${{ needs.classify.outputs.ecosystem }}
+          DEPS_B64: ${{ needs.classify.outputs.deps_b64 }}
         run: |
           set -euo pipefail
-          USAGE=""
-          case "$ECOSYSTEM" in
-            github-actions|github_actions)
-              # Find workflow files that reference this action, then extract
-              # the full step (uses + with/env/script blocks) for context.
-              # grep -A 50 captures the step body so the model can see
-              # inline scripts and input parameters, not just the uses: line.
-              USAGE=""
-              for wf in .github/workflows/*.yml .github/workflows/*.yaml; do
-                [ -f "$wf" ] || continue
-                if grep -q "$DEP_NAME" "$wf" 2>/dev/null; then
-                  STEP_CONTEXT=$(grep -n -A 50 "$DEP_NAME" "$wf" 2>/dev/null | head -80)
-                  USAGE="${USAGE}--- ${wf} ---\n${STEP_CONTEXT}\n\n"
-                fi
-              done
-              USAGE=$(echo -e "$USAGE")
-              [ -z "$USAGE" ] && USAGE="No usage found"
-              ;;
-            npm)
-              # Find imports/requires of the package
-              USAGE=$(grep -rn --include='*.js' --include='*.ts' --include='*.mjs' --include='*.cjs' -E "(require|import).*['\"]${DEP_NAME}['\"]" . 2>/dev/null | head -30 || echo "No usage found")
-              ;;
-            pip)
-              USAGE=$(grep -rn --include='*.py' -E "(import|from) ${DEP_NAME}" . 2>/dev/null | head -30 || echo "No usage found")
-              ;;
-            gomod)
-              USAGE=$(grep -rn --include='*.go' "${DEP_NAME}" . 2>/dev/null | head -30 || echo "No usage found")
-              ;;
-            *)
-              USAGE="Usage analysis not supported for ecosystem: ${ECOSYSTEM}"
-              ;;
-          esac
-          # Truncate to 3000 chars to stay within prompt budget
-          USAGE=$(echo "$USAGE" | head -c 3000)
-          # Write to file to avoid GITHUB_OUTPUT escaping issues
-          echo "$USAGE" > /tmp/dep_usage_context.txt
+          # One usage-context file PER dependency (grouped-PR support):
+          # /tmp/dep_usage_<name-with-slashes-as-dashes>.txt
+          printf '%s' "${DEPS_B64:-}" | base64 -d > /tmp/deps.tsv 2>/dev/null || : > /tmp/deps.tsv
+          while IFS=$'\t' read -r -u3 DEP_NAME _FROM _TO || [ -n "${DEP_NAME:-}" ]; do
+            [ -n "$DEP_NAME" ] && [ "$DEP_NAME" != "-" ] || { DEP_NAME=""; continue; }
+            USAGE=""
+            case "$ECOSYSTEM" in
+              github-actions|github_actions)
+                # Extract the full step (uses + with/env/script blocks) for
+                # context so the model sees parameters, not just the uses: line.
+                for wf in .github/workflows/*.yml .github/workflows/*.yaml; do
+                  [ -f "$wf" ] || continue
+                  if grep -q "$DEP_NAME" "$wf" 2>/dev/null; then
+                    STEP_CONTEXT=$(grep -n -A 50 "$DEP_NAME" "$wf" 2>/dev/null | head -80)
+                    USAGE="${USAGE}--- ${wf} ---\n${STEP_CONTEXT}\n\n"
+                  fi
+                done
+                USAGE=$(echo -e "$USAGE")
+                [ -z "$USAGE" ] && USAGE="No usage found"
+                ;;
+              npm)
+                USAGE=$(grep -rn --include='*.js' --include='*.ts' --include='*.mjs' --include='*.cjs' -E "(require|import).*['\"]${DEP_NAME}['\"]" . 2>/dev/null | head -30 || echo "No usage found")
+                ;;
+              pip)
+                USAGE=$(grep -rn --include='*.py' -E "(import|from) ${DEP_NAME}" . 2>/dev/null | head -30 || echo "No usage found")
+                ;;
+              gomod)
+                USAGE=$(grep -rn --include='*.go' "${DEP_NAME}" . 2>/dev/null | head -30 || echo "No usage found")
+                ;;
+              *)
+                USAGE="Usage analysis not supported for ecosystem: ${ECOSYSTEM}"
+                ;;
+            esac
+            USAGE=$(echo "$USAGE" | head -c 3000)
+            echo "$USAGE" > "/tmp/dep_usage_$(echo "$DEP_NAME" | sed 's|/|--|g').txt"
+            DEP_NAME=""
+          done 3< /tmp/deps.tsv
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@254c19bd240aabef8777f48595e9d2d7b972184b # v6.2.1
@@ -511,6 +595,8 @@ jobs:
           FROM_VERSION: ${{ needs.classify.outputs.from_version }}
           TO_VERSION: ${{ needs.classify.outputs.to_version }}
           ECOSYSTEM: ${{ needs.classify.outputs.ecosystem }}
+          DEPS_B64: ${{ needs.classify.outputs.deps_b64 }}
+          PARSE_ERROR: ${{ needs.classify.outputs.parse_error }}
           S3_BUCKET: ${{ inputs.s3_cache_bucket }}
           CACHE_TTL_DAYS: ${{ inputs.cache_ttl_days }}
           BEDROCK_MODEL_ID: ${{ inputs.bedrock_model_id }}
@@ -520,6 +606,24 @@ jobs:
           cat > /tmp/breaking_change_check.sh <<'BASH'
           #!/usr/bin/env bash
           set -euo pipefail
+
+          # Grouped-PR support: each dependency is analyzed individually and
+          # folded into aggregates (semver = max, breaking = OR). Bedrock/API
+          # errors increment CHECK_ERRORS -> decide fails CLOSED to manual
+          # review (replaces the old silent "defaulting to safe" fail-open).
+          CHECK_ERRORS=0
+          AGG_SEMVER="patch"
+          AGG_BREAKING="false"
+          AGG_CONF=""
+          AGG_SUMMARY=""
+          AGG_APPLIES="false"
+
+          semver_rank() {
+            case "$1" in major) echo 3;; minor) echo 2;; patch) echo 1;; *) echo 0;; esac
+          }
+
+          check_one() {
+          local DEP_NAME="$1" FROM_VERSION="$2" TO_VERSION="$3"
 
           SAFE_DEP_NAME=$(echo "$DEP_NAME" | sed 's|/|--|g')
           SAFE_REPO_NAME=$(echo "$GITHUB_REPOSITORY" | sed 's|/|--|g')
@@ -586,6 +690,11 @@ jobs:
             FROM_CLEAN=$(echo "$FROM_VERSION" | sed 's/^v//')
             TO_CLEAN=$(echo "$TO_VERSION" | sed 's/^v//')
 
+            if [ "$FROM_CLEAN" = "-" ] || [ -z "$FROM_CLEAN" ]; then
+              # No previous version available — cannot classify; the
+              # fetch-metadata update-type gate in decide still covers majors.
+              SEMVER_TYPE="unknown"
+            else
             FROM_MAJOR=$(echo "$FROM_CLEAN" | cut -d. -f1)
             TO_MAJOR=$(echo "$TO_CLEAN" | cut -d. -f1)
             FROM_MINOR=$(echo "$FROM_CLEAN" | cut -d. -f2)
@@ -597,6 +706,7 @@ jobs:
               SEMVER_TYPE="minor"
             else
               SEMVER_TYPE="patch"
+            fi
             fi
 
             echo "Semver: ${FROM_VERSION} -> ${TO_VERSION} = ${SEMVER_TYPE}"
@@ -660,8 +770,8 @@ jobs:
             # Bedrock Converse API analysis
             # ---------------------------------------------------------
             USAGE_CONTEXT=""
-            if [ -f /tmp/dep_usage_context.txt ]; then
-              USAGE_CONTEXT=$(cat /tmp/dep_usage_context.txt)
+            if [ -f "/tmp/dep_usage_${SAFE_DEP_NAME}.txt" ]; then
+              USAGE_CONTEXT=$(cat "/tmp/dep_usage_${SAFE_DEP_NAME}.txt")
             fi
 
             PROMPT=$(jq -n \
@@ -684,12 +794,17 @@ jobs:
 
             echo '{"maxTokens":512}' > /tmp/bedrock_config.json
 
-            AI_RESPONSE=$(aws bedrock-runtime converse \
+            # Fail CLOSED on Bedrock error (the old fallback silently
+            # defaulted to breaking=false — an unanalyzed dep is NOT safe).
+            if ! AI_RESPONSE=$(aws bedrock-runtime converse \
               --model-id "$BEDROCK_MODEL_ID" \
               --messages file:///tmp/bedrock_messages.json \
               --inference-config file:///tmp/bedrock_config.json \
-              --output json 2>/tmp/bedrock_err.log \
-              || echo '{"output":{"message":{"content":[{"text":"{\"breaking\":false,\"confidence\":0,\"risks\":[\"API call failed\"],\"summary\":\"Unable to analyze — defaulting to safe\"}"}]}}}')
+              --output json 2>/tmp/bedrock_err.log); then
+              echo "::warning::Bedrock analysis FAILED for ${DEP_NAME} — failing closed"
+              CHECK_ERRORS=$((CHECK_ERRORS + 1))
+              AI_RESPONSE='{"output":{"message":{"content":[{"text":"{\"breaking\":false,\"confidence\":0,\"risks\":[\"API call failed\"],\"summary\":\"Analysis errored — routed to manual review\"}"}]}}}'
+            fi
 
             if [ -s /tmp/bedrock_err.log ]; then
               echo "Bedrock stderr: $(cat /tmp/bedrock_err.log)"
@@ -703,8 +818,9 @@ jobs:
               # Try extracting JSON between first { and last }
               AI_TEXT=$(echo "$AI_TEXT" | sed -n '/^{/,/^}/p' | head -20)
               if ! echo "$AI_TEXT" | jq empty 2>/dev/null; then
-                echo "::warning::Failed to parse AI response as JSON, using safe defaults"
-                AI_TEXT='{"breaking":false,"confidence":0,"risks":["Failed to parse AI response"],"summary":"Unable to parse — defaulting to safe"}'
+                echo "::warning::Failed to parse AI response for ${DEP_NAME} — failing closed"
+                CHECK_ERRORS=$((CHECK_ERRORS + 1))
+                AI_TEXT='{"breaking":false,"confidence":0,"risks":["Failed to parse AI response"],"summary":"Analysis unparseable — routed to manual review"}'
               fi
             fi
             HAS_BREAKING=$(echo "$AI_TEXT" | jq -r '.breaking // false')
@@ -760,8 +876,8 @@ jobs:
           if [ "$SHARED_CACHE_HIT" = "true" ] && [ "$REPO_CACHE_HIT" = "false" ]; then
             echo "Shared cache hit but no repo analysis — running applicability check for ${GITHUB_REPOSITORY}"
             USAGE_CONTEXT=""
-            if [ -f /tmp/dep_usage_context.txt ]; then
-              USAGE_CONTEXT=$(cat /tmp/dep_usage_context.txt)
+            if [ -f "/tmp/dep_usage_${SAFE_DEP_NAME}.txt" ]; then
+              USAGE_CONTEXT=$(cat "/tmp/dep_usage_${SAFE_DEP_NAME}.txt")
             fi
 
             APPLY_PROMPT=$(jq -n \
@@ -783,6 +899,9 @@ jobs:
 
             echo '{"maxTokens":256}' > /tmp/bedrock_apply_config.json
 
+            # Applicability errors stay conservative (assume it applies) but
+            # do NOT count as CHECK_ERRORS: applies_to_repo never gates the
+            # decision, and defaulting to true is already the safe direction.
             APPLY_RESPONSE=$(aws bedrock-runtime converse \
               --model-id "$BEDROCK_MODEL_ID" \
               --messages file:///tmp/bedrock_apply_messages.json \
@@ -827,15 +946,46 @@ jobs:
           fi
 
           # -----------------------------------------------------------
-          # Set outputs
+          # Fold this dependency into the aggregates
           # -----------------------------------------------------------
-          echo "semver_type=${SEMVER_TYPE}" >> "$GITHUB_OUTPUT"
-          echo "has_breaking_changes=${HAS_BREAKING}" >> "$GITHUB_OUTPUT"
-          echo "confidence=${CONFIDENCE}" >> "$GITHUB_OUTPUT"
-          echo "applies_to_repo=${APPLIES_TO_REPO}" >> "$GITHUB_OUTPUT"
+          if [ "$(semver_rank "$SEMVER_TYPE")" -gt "$(semver_rank "$AGG_SEMVER")" ]; then
+            AGG_SEMVER="$SEMVER_TYPE"
+          fi
+          [ "$HAS_BREAKING" = "true" ]    && AGG_BREAKING="true"
+          [ "$APPLIES_TO_REPO" = "true" ] && AGG_APPLIES="true"
+          if [ -z "$AGG_CONF" ] || [ "$(echo "$CONFIDENCE < $AGG_CONF" | bc -l 2>/dev/null || echo 0)" -eq 1 ]; then
+            AGG_CONF="$CONFIDENCE"
+          fi
+          AGG_SUMMARY="${AGG_SUMMARY}${DEP_NAME}: ${RISK_SUMMARY} | "
+          }
 
-          # Escape newlines for GITHUB_OUTPUT
-          SAFE_SUMMARY=$(echo "$RISK_SUMMARY" | tr '\n' ' ')
+          # -----------------------------------------------------------
+          # Iterate every dependency in the PR (grouped-PR support)
+          # -----------------------------------------------------------
+          DEPS_FILE=/tmp/deps.tsv
+          printf '%s' "${DEPS_B64:-}" | base64 -d > "$DEPS_FILE" 2>/dev/null || : > "$DEPS_FILE"
+          if [ "${PARSE_ERROR:-false}" = "true" ] || [ ! -s "$DEPS_FILE" ]; then
+            echo "::warning::dependency list unavailable — failing closed"
+            CHECK_ERRORS=$((CHECK_ERRORS + 1))
+            AGG_SEMVER="unknown"
+          else
+            while IFS=$'\t' read -r -u3 D_NAME D_FROM D_TO || [ -n "${D_NAME:-}" ]; do
+              [ -n "$D_NAME" ] && [ "$D_NAME" != "-" ] || { D_NAME=""; continue; }
+              echo "=== breaking-change check: ${D_NAME} ${D_FROM} -> ${D_TO} ==="
+              check_one "$D_NAME" "$D_FROM" "$D_TO"
+              D_NAME=""
+            done 3< "$DEPS_FILE"
+          fi
+
+          [ -n "$AGG_CONF" ] || AGG_CONF="0"
+          echo "semver_type=${AGG_SEMVER}" >> "$GITHUB_OUTPUT"
+          echo "has_breaking_changes=${AGG_BREAKING}" >> "$GITHUB_OUTPUT"
+          echo "confidence=${AGG_CONF}" >> "$GITHUB_OUTPUT"
+          echo "applies_to_repo=${AGG_APPLIES}" >> "$GITHUB_OUTPUT"
+          echo "check_errors=${CHECK_ERRORS}" >> "$GITHUB_OUTPUT"
+
+          # Escape newlines + truncate for GITHUB_OUTPUT
+          SAFE_SUMMARY=$(echo "$AGG_SUMMARY" | tr '\n' ' ' | head -c 900)
           echo "risk_summary=${SAFE_SUMMARY}" >> "$GITHUB_OUTPUT"
           BASH
           chmod +x /tmp/breaking_change_check.sh
@@ -904,6 +1054,11 @@ jobs:
           DEP_NAME: ${{ needs.classify.outputs.dep_name }}
           TO_VERSION: ${{ needs.classify.outputs.to_version }}
           IS_FIRST_PARTY: ${{ needs.classify.outputs.is_first_party }}
+          UPDATE_TYPE_META: ${{ needs.classify.outputs.update_type }}
+          DEP_GROUP: ${{ needs.classify.outputs.dependency_group }}
+          PARSE_ERROR: ${{ needs.classify.outputs.parse_error }}
+          SC_ERRORS: ${{ needs.supply_chain_check.outputs.check_errors }}
+          BC_ERRORS: ${{ needs.breaking_change_check.outputs.check_errors }}
         run: |
           set -euo pipefail
 
@@ -911,6 +1066,26 @@ jobs:
           RISK_LEVEL="low"
           BLOCKED_LABELS=""
           REASONS=""
+          MANUAL="false"
+
+          # Fail CLOSED: any per-dependency check error or parse ambiguity
+          # means the evaluation is partial — never approve on partial data.
+          if [ "${PARSE_ERROR:-false}" = "true" ] || [ "${SC_ERRORS:-0}" -gt 0 ] || [ "${BC_ERRORS:-0}" -gt 0 ]; then
+            MANUAL="true"
+            RISK_LEVEL="high"
+            REASONS="${REASONS}\n- Per-dependency checks incomplete (parse_error=${PARSE_ERROR:-false}, supply_chain_errors=${SC_ERRORS:-0}, breaking_check_errors=${BC_ERRORS:-0}) — fail-closed to manual review"
+          fi
+
+          # Authoritative group-aware major gate: fetch-metadata's update-type
+          # is the MAX semver across every dependency in the PR. Value format
+          # is "version-update:semver-major" — match the suffix, never a bare
+          # "major" (that comparison would silently never fire).
+          if [[ "${UPDATE_TYPE_META:-}" == *"semver-major"* ]]; then
+            DECISION="block"
+            RISK_LEVEL="high"
+            BLOCKED_LABELS="${BLOCKED_LABELS} blocked/major-bump"
+            REASONS="${REASONS}\n- Major version bump present in this PR (update-type: ${UPDATE_TYPE_META})"
+          fi
 
           # Check for blockers
           if [ "$OSV_CLEAR" != "true" ]; then
@@ -952,6 +1127,12 @@ jobs:
             REASONS="${REASONS}\n- Breaking change detected: ${RISK_SUMMARY}"
           fi
 
+          # Fail-closed precedence: check errors downgrade an approve to
+          # manual review. An already-blocked PR stays blocked (stronger).
+          if [ "$MANUAL" = "true" ] && [ "$DECISION" = "approve" ]; then
+            DECISION="manual"
+          fi
+
           # Determine if medium risk (not blocked but warrants attention)
           if [ "$DECISION" = "approve" ] && [ "$SEMVER_TYPE" = "minor" ]; then
             RISK_LEVEL="medium"
@@ -978,7 +1159,10 @@ jobs:
               echo "| Scorecard Pass | ${SCORECARD_PASS} (${SCORECARD_SCORE}) |"
             fi
             echo "| First Party | ${IS_FIRST_PARTY} |"
-            echo "| Semver | ${SEMVER_TYPE} |"
+            echo "| Semver (aggregate) | ${SEMVER_TYPE} |"
+            echo "| Update Type (max) | ${UPDATE_TYPE_META:-n/a} |"
+            echo "| Dependency Group | ${DEP_GROUP:-—} |"
+            echo "| Check Errors | supply=${SC_ERRORS:-0} breaking=${BC_ERRORS:-0} parse=${PARSE_ERROR:-false} |"
             echo "| Breaking Changes | ${HAS_BREAKING} |"
             echo "| Applies to Repo | ${APPLIES_TO_REPO} |"
             echo "| Analysis | ${RISK_SUMMARY} |"
@@ -1026,6 +1210,11 @@ jobs:
 
             if (decision === 'approve') {
               newLabels.push('merge/approved');
+            } else if (decision === 'manual') {
+              // Fail-closed path: checks errored/partial — needs human eyes,
+              // but nothing affirmatively failed.
+              newLabels.push('merge/manual-review');
+              newLabels.push(...blockedLabels);
             } else {
               newLabels.push('merge/blocked');
               newLabels.push(...blockedLabels);
