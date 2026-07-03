@@ -270,3 +270,28 @@ With ~2,700 Dependabot PRs/month and ~80% cache hit rate at steady state:
 1. Enable on a few repos in dry-run (observe labels, no auto-merge)
 1. Enable auto-merge on those repos, monitor for 1 week
 1. Expand to remaining repos
+
+## Grouped-PR support (v0.9.0)
+
+Dependabot [grouped version updates](https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/optimizing-pr-creation-version-updates) are fully supported: every dependency in the PR is evaluated **individually** (per-dep OSV, Scorecard, release-notes/AI breaking analysis, per-dep S3 cache keys) and folded into aggregates:
+
+| Aggregate | Semantics |
+|---|---|
+| `osv_clear` / `scorecard_pass` | AND across all dependencies |
+| `semver_type` | max across all dependencies (backed by fetch-metadata's `update-type`, whose literal format is `version-update:semver-major` — the decide gate suffix-matches it) |
+| `has_breaking_changes` | OR across all dependencies |
+| first-party waiver | only when **every** dependency matches `first_party_prefix` |
+
+**Fail-closed**: any per-dependency query ERROR (OSV/Bedrock failure, metadata parse ambiguity) routes the PR to `merge/manual-review` — never approved on a partial evaluation. New job outputs: `check_errors` (both check jobs), `dependency_group`, `deps_b64`, `parse_error` (classify). New decision value: `manual`.
+
+The recommended repo config groups **minor+patch only** (majors arrive as individually-reviewable singleton PRs; the group-major gate is defense-in-depth):
+
+```yaml
+groups:
+  actions:
+    applies-to: version-updates
+    patterns: ["*"]
+    update-types: ["minor", "patch"]
+```
+
+`org-dependabot.yml`'s generator emits this block automatically for the github-actions ecosystem.
