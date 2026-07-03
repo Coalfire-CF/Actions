@@ -1053,11 +1053,32 @@ jobs:
             --body "Auto-approved by Dependabot Auto-Merge: all supply chain and breaking change checks passed for ${DEP_NAME}@${TO_VERSION}." \
             --repo "$GITHUB_REPOSITORY"
 
-          # Enable auto-merge
+          # Enable auto-merge. On repos without required status checks GitHub
+          # cannot latch auto-merge on an already-clean PR (the enable silently
+          # no-ops or errors) — so verify, and fall back to a direct merge when
+          # nothing is pending. Observed 2026-07-03: ~60% of first-party bumps
+          # stalled approved-but-unmerged without this fallback.
           gh pr merge "$PR_NUMBER" --auto "--${MERGE_METHOD}" \
-            --repo "$GITHUB_REPOSITORY"
+            --repo "$GITHUB_REPOSITORY" || echo "auto-merge enable failed — will verify and fall back"
 
-          echo "Auto-merge enabled for PR #${PR_NUMBER}"
+          sleep 5
+          PR_STATE=$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json state --jq '.state')
+          AUTO_ON=$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json autoMergeRequest --jq '.autoMergeRequest != null')
+          if [ "$PR_STATE" = "OPEN" ] && [ "$AUTO_ON" != "true" ]; then
+            # Neither merged nor armed: safe to merge directly only if no check
+            # is failing or still pending (mirrors the auto-merge green gate).
+            CHECK_STATE=$(gh pr checks "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" 2>&1 | awk -F'\t' '
+              $2=="fail"{f=1} $2=="pending"{p=1}
+              END{ if(f) print "FAIL"; else if(p) print "PENDING"; else print "GREEN" }')
+            if [ "$CHECK_STATE" = "GREEN" ]; then
+              gh pr merge "$PR_NUMBER" "--${MERGE_METHOD}" --repo "$GITHUB_REPOSITORY"
+              echo "Merged PR #${PR_NUMBER} directly (auto-merge could not latch on clean PR)"
+            else
+              echo "PR #${PR_NUMBER} checks ${CHECK_STATE} — leaving for auto-merge/next event"
+            fi
+          else
+            echo "Auto-merge armed (or PR already merged) for PR #${PR_NUMBER}"
+          fi
 
       - name: Add review comment for blocked PRs
         if: steps.decision.outputs.decision != 'approve'
