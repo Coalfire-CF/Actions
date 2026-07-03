@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.9.0](https://github.com/Coalfire-CF/Actions/compare/v0.8.2...v0.9.0) (2026-07-03)
+
+
+### Features
+
+* **dependabot:** grouped-PR support — per-dep checks, aggregated gates, fail-closed errors ([#151](https://github.com/Coalfire-CF/Actions/issues/151)) ([1022b81](https://github.com/Coalfire-CF/Actions/commit/1022b81b3899896e1abf1ad162c0d058c948e059))
+
+
+### Bug Fixes
+
+* **dependabot:** direct-merge fallback when auto-merge cannot latch ([#145](https://github.com/Coalfire-CF/Actions/issues/145)) ([12b45fb](https://github.com/Coalfire-CF/Actions/commit/12b45fb85d246bf85a7de7efadd934784e240c35))
+* **dependabot:** emit two homogeneous github-actions groups (org vs third-party) ([#152](https://github.com/Coalfire-CF/Actions/issues/152)) ([756ce8d](https://github.com/Coalfire-CF/Actions/commit/756ce8d79082a191432ca7290b8f19f48f617464))
+* **dependabot:** match github_actions (underscore) in OSV/Scorecard/release-notes arms ([#154](https://github.com/Coalfire-CF/Actions/issues/154)) ([82acd5f](https://github.com/Coalfire-CF/Actions/commit/82acd5fb82ea0324a91a22d7aec4c8506006a530))
+
 ## [0.8.2](https://github.com/Coalfire-CF/Actions/compare/v0.8.1...v0.8.2) (2026-07-03)
 
 
