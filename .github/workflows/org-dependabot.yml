@@ -274,16 +274,25 @@ jobs:
               labels:
                 - "${dep_label}"
           YAML
-                # Group github-actions version bumps into ONE PR per cycle
-                # (minor+patch only — majors stay individually-reviewable
-                # singletons; the auto-merge pipeline gates them regardless).
+                # Group github-actions version bumps (minor+patch only —
+                # majors stay individually-reviewable singletons; the pipeline
+                # gates them regardless). TWO homogeneous groups: org callers
+                # score 0 on OpenSSF Scorecard (no data), and the first-party
+                # waiver is all-must-match — a mixed group would chronically
+                # block on low-scorecard. Split groups keep waiver semantics
+                # coherent by construction.
                 # NOTE: keep this block byte-identical to the fleet injector's.
                 if [[ "$ecosystem" == "github-actions" ]]; then
                   cat <<'YAML'
               groups:
-                actions:
+                org-actions:
+                  applies-to: version-updates
+                  patterns: ["Coalfire-CF/*"]
+                  update-types: ["minor", "patch"]
+                third-party:
                   applies-to: version-updates
                   patterns: ["*"]
+                  exclude-patterns: ["Coalfire-CF/*"]
                   update-types: ["minor", "patch"]
           YAML
                 fi
