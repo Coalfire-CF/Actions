@@ -127,7 +127,7 @@ jobs:
             fi
 
             final_tree="## ${CHAPTER}
-          \`\`\`
+          \`\`\`text
           ${tree_output}
           \`\`\`"
 
