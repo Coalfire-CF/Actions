@@ -76,6 +76,11 @@ on:
         required: false
         default: ''
         type: string
+      azure_environment:
+        description: 'Azure cloud environment: azurecloud or azureusgovernment'
+        required: false
+        default: 'azurecloud'
+        type: string
       # GCP OIDC
       gcp_workload_identity_provider:
         description: 'GCP Workload Identity Provider resource name (leave empty to skip GCP auth)'
@@ -175,6 +180,7 @@ jobs:
           AZURE_CLIENT_ID: ${{ inputs.azure_client_id }}
           AZURE_TENANT_ID: ${{ inputs.azure_tenant_id }}
           AZURE_SUBSCRIPTION_ID: ${{ inputs.azure_subscription_id }}
+          AZURE_ENVIRONMENT: ${{ inputs.azure_environment }}
           GCP_WI_PROVIDER: ${{ inputs.gcp_workload_identity_provider }}
           GCP_SA: ${{ inputs.gcp_service_account }}
         run: |
@@ -222,6 +228,7 @@ jobs:
           validate_input "azure_client_id" "$AZURE_CLIENT_ID" '^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$'
           validate_input "azure_tenant_id" "$AZURE_TENANT_ID" '^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$'
           validate_input "azure_subscription_id" "$AZURE_SUBSCRIPTION_ID" '^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$'
+          validate_input "azure_environment" "$AZURE_ENVIRONMENT" '^(azurecloud|azureusgovernment)$'
           validate_input "gcp_workload_identity_provider" "$GCP_WI_PROVIDER" '^projects/[0-9]+/locations/[a-z-]+/workloadIdentityPools/[a-zA-Z0-9._-]+/providers/[a-zA-Z0-9._-]+$'
           validate_input "gcp_service_account" "$GCP_SA" '^[a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.iam\.gserviceaccount\.com$'
 
@@ -313,6 +320,29 @@ jobs:
           client-id: ${{ inputs.azure_client_id }}
           tenant-id: ${{ inputs.azure_tenant_id }}
           subscription-id: ${{ inputs.azure_subscription_id }}
+          environment: ${{ inputs.azure_environment }}
+
+      # The azurerm provider does not read azure/login's CLI session for OIDC auth;
+      # it needs ARM_* env vars. With ARM_USE_OIDC=true the provider auto-detects
+      # GitHub's ACTIONS_ID_TOKEN_REQUEST_URL/TOKEN — no secret material is exported.
+      - name: Export ARM environment for Terraform
+        if: inputs.azure_client_id != ''
+        env:
+          AZURE_CLIENT_ID: ${{ inputs.azure_client_id }}
+          AZURE_TENANT_ID: ${{ inputs.azure_tenant_id }}
+          AZURE_SUBSCRIPTION_ID: ${{ inputs.azure_subscription_id }}
+          AZURE_ENVIRONMENT: ${{ inputs.azure_environment }}
+        run: |
+          set -eo pipefail
+          {
+            echo "ARM_USE_OIDC=true"
+            echo "ARM_CLIENT_ID=${AZURE_CLIENT_ID}"
+            echo "ARM_TENANT_ID=${AZURE_TENANT_ID}"
+            echo "ARM_SUBSCRIPTION_ID=${AZURE_SUBSCRIPTION_ID}"
+          } >> "$GITHUB_ENV"
+          if [ "$AZURE_ENVIRONMENT" = "azureusgovernment" ]; then
+            echo "ARM_ENVIRONMENT=usgovernment" >> "$GITHUB_ENV"
+          fi
 
       - name: Configure GCP credentials (OIDC)
         if: inputs.gcp_workload_identity_provider != ''
