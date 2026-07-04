@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/Coalfire-CF/Actions/compare/v0.9.0...v0.10.0) (2026-07-04)
+
+
+### Features
+
+* **terratest:** Azure Government support (azure_environment input + ARM_* export) ([#155](https://github.com/Coalfire-CF/Actions/issues/155)) ([d5c631a](https://github.com/Coalfire-CF/Actions/commit/d5c631a6ee945f329259e37d43ad750cb0615074))
+
 ## [0.9.0](https://github.com/Coalfire-CF/Actions/compare/v0.8.2...v0.9.0) (2026-07-03)
 
 
