@@ -179,6 +179,33 @@ The Azure and GCP callers use the **same top-level `permissions:` block** (inclu
       # SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
 ```
 
+### Azure Government caller
+
+```yaml
+permissions:
+  contents: read # checkout
+  id-token: write # cloud OIDC
+  pull-requests: write # PR results comment
+
+jobs:
+  terratest:
+    uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@<sha> # vX.Y.Z
+    with:
+      test_mode: pr
+      test_directory: test/azure/src
+      azure_environment: azureusgovernment
+      # Azure identity UUIDs are identifiers, not secrets — and the `secrets`
+      # context is not permitted in a reusable-workflow `with:` block, so pass
+      # them as inline literals.
+      azure_client_id: 00000000-0000-0000-0000-000000000000 # app registration client ID
+      azure_tenant_id: 00000000-0000-0000-0000-000000000000 # Entra tenant ID
+      azure_subscription_id: 00000000-0000-0000-0000-000000000000 # target subscription
+```
+
+`azure_environment` defaults to `azurecloud`. For Azure Government the workflow logs in to
+the Gov cloud and exports `ARM_ENVIRONMENT=usgovernment` (plus `ARM_USE_OIDC` and the three
+IDs) so the azurerm provider authenticates via the same GitHub OIDC token.
+
 ### Release Gate
 
 ```yaml
@@ -308,6 +335,7 @@ secrets are stored in GitHub.
 | `azure_client_id` | No | | Azure App Registration client ID |
 | `azure_tenant_id` | No | | Azure AD tenant ID |
 | `azure_subscription_id` | No | | Azure subscription ID |
+| `azure_environment` | No | `azurecloud` | Azure cloud environment: `azurecloud` or `azureusgovernment` |
 | `gcp_workload_identity_provider` | No | | GCP Workload Identity Provider |
 | `gcp_service_account` | No | | GCP service account email |
 | `slack_channel_id` | No | | Slack channel for failure notifications |
