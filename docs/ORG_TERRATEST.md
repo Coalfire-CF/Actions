@@ -182,6 +182,11 @@ The Azure and GCP callers use the **same top-level `permissions:` block** (inclu
 ### Azure Government caller
 
 ```yaml
+permissions:
+  contents: read # checkout
+  id-token: write # cloud OIDC
+  pull-requests: write # PR results comment
+
 jobs:
   terratest:
     uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@<sha> # vX.Y.Z
@@ -189,9 +194,12 @@ jobs:
       test_mode: pr
       test_directory: test/azure/src
       azure_environment: azureusgovernment
-      azure_client_id: ${{ secrets.AZURE_TERRATEST_CLIENT_ID }}
-      azure_tenant_id: ${{ secrets.AZURE_TERRATEST_TENANT_ID }}
-      azure_subscription_id: ${{ secrets.AZURE_TERRATEST_SUBSCRIPTION_ID }}
+      # Azure identity UUIDs are identifiers, not secrets — and the `secrets`
+      # context is not permitted in a reusable-workflow `with:` block, so pass
+      # them as inline literals.
+      azure_client_id: 00000000-0000-0000-0000-000000000000 # app registration client ID
+      azure_tenant_id: 00000000-0000-0000-0000-000000000000 # Entra tenant ID
+      azure_subscription_id: 00000000-0000-0000-0000-000000000000 # target subscription
 ```
 
 `azure_environment` defaults to `azurecloud`. For Azure Government the workflow logs in to
