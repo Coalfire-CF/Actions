@@ -11,7 +11,9 @@
 #
 # PROMOTION (advisory -> blocking) = flip a value here to `true` in a reviewed PR
 # on protected main; that PR body MUST cite the recorded promotion decision
-# (ADR-0011 warn->required mechanism; RFC-0008/RFC-0010).
+# (ADR-0011 warn->required mechanism; RFC-0008/RFC-0010). Full procedure —
+# telemetry window, rollback owner, one-gate-at-a-time cadence — in
+# docs/GATE_PROMOTION.md. Keep entries INLINE-FLOW ({ strict: ... }).
 gates:
   source-pin:   { strict: false }
   uses-pin:     { strict: false }
