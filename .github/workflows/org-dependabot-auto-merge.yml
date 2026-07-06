@@ -87,6 +87,15 @@ on:
         required: false
         type: number
         default: 30
+      jitter_max_seconds:
+        description: >-
+          Max seconds for a random pre-call delay before the first external API
+          call in each check job (grade-A #13). De-syncs the fleet-wide daily
+          Dependabot burst so OSV/Scorecard/Bedrock/GitHub see a spread-out load.
+          0 disables.
+        required: false
+        type: number
+        default: 30
       actions_ref:
         description: >-
           Git ref of Coalfire-CF/Actions to load the extracted decision scripts
@@ -327,6 +336,7 @@ jobs:
           S3_BUCKET: ${{ inputs.s3_cache_bucket }}
           CACHE_TTL_DAYS: ${{ inputs.cache_ttl_days }}
           SCORECARD_THRESHOLD: ${{ inputs.scorecard_threshold }}
+          JITTER_MAX_SECONDS: ${{ inputs.jitter_max_seconds }}
         run: |
           set -euo pipefail
           bash "${GITHUB_WORKSPACE}/actions-tools/scripts/supply-chain-check.sh"
@@ -451,6 +461,7 @@ jobs:
           CACHE_TTL_DAYS: ${{ inputs.cache_ttl_days }}
           BEDROCK_MODEL_ID: ${{ inputs.bedrock_model_id }}
           GH_TOKEN: ${{ github.token }}
+          JITTER_MAX_SECONDS: ${{ inputs.jitter_max_seconds }}
         run: |
           set -euo pipefail
           bash "${GITHUB_WORKSPACE}/actions-tools/scripts/breaking-change-check.sh"

@@ -82,6 +82,17 @@ jobs:
           REPO_ROOT="${REPO_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
           EXCLUDE_PATHS="${EXCLUDE_PATHS:-}"
 
+          # Deterministic per-repo schedule offset (grade-A #13): spread the
+          # fleet's daily Dependabot fanout across the day instead of a shared
+          # top-of-window herd. Same repo name -> same HH:MM slot (idempotent
+          # re-runs = zero diff; no runtime randomness). This is the identical
+          # algorithm as scripts/stagger-slot.sh — the canonical, unit-tested
+          # reference (tests/stagger-slot.test.sh); the generator runs in the
+          # consumer checkout so it inlines rather than self-checking-out Actions.
+          STAGGER_HEX="$(printf '%s' "${GITHUB_REPOSITORY:-unknown/unknown}" | sha256sum | cut -c1-8)"
+          STAGGER_MIN=$(( 16#$STAGGER_HEX % 1440 ))
+          STAGGER_TIME="$(printf '%02d:%02d' $(( STAGGER_MIN / 60 )) $(( STAGGER_MIN % 60 )))"
+
           log() { printf '%s\n' "$*" >&2; }
           die() { log "ERROR: $*"; exit 1; }
 
@@ -268,6 +279,7 @@ jobs:
               directory: "${d}"
               schedule:
                 interval: "${DEFAULT_INTERVAL}"
+                time: "${STAGGER_TIME}"
               commit-message:
                 prefix: "chore"
                 include: "scope"

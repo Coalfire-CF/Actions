@@ -80,18 +80,21 @@ jobs:
           : "${GH_TOKEN:?missing app token}"
           echo "Reconcile sweep — owner=${OWNER} dry_run=${DRY_RUN} method=${MERGE_METHOD} cap=${MAX_PRS}"
 
-          # Enumerate open org PRs labeled merge/approved (capped). Bounded retry
-          # on a transient search blip (minimal guard, not #13's full backoff).
-          attempt=1
-          until PRS="$(gh search prs --owner "$OWNER" --state open --label 'merge/approved' --limit "$MAX_PRS" --json repository,number 2>/dev/null)"; do
-            if [ "$attempt" -ge 3 ]; then
-              echo "::error::gh search failed after ${attempt} attempts"
-              exit 1
-            fi
-            echo "transient gh search failure (attempt ${attempt}/3); retrying"
-            attempt=$((attempt + 1))
-            sleep "$attempt"
-          done
+          # Shared bounded-retry helper (grade-A #13) — one implementation, not three.
+          # shellcheck source=scripts/retry-lib.sh
+          . "${GITHUB_WORKSPACE}/scripts/retry-lib.sh"
+
+          # Enumerate open org PRs labeled merge/approved (capped). A gh-search
+          # blip is treated as transient (retry with backoff); persistent failure
+          # is a hard error (the sweep can't run blind).
+          _search_prs() {
+            gh search prs --owner "$OWNER" --state open --label 'merge/approved' \
+              --limit "$MAX_PRS" --json repository,number 2>/dev/null || return "$RETRY_TRANSIENT_RC"
+          }
+          if ! PRS="$(with_retry 3 2 20 -- _search_prs)"; then
+            echo "::error::gh search failed after retries"
+            exit 1
+          fi
 
           COUNT="$(printf '%s' "$PRS" | jq 'length')"
           echo "Found ${COUNT} open merge/approved PR(s)."

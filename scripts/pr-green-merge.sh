@@ -45,6 +45,11 @@
 #
 set -euo pipefail
 
+# Shared bounded-retry helper (grade-A #13): gh_read now delegates to with_retry
+# rather than carrying its own retry loop (one implementation, not three).
+# shellcheck source=scripts/retry-lib.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/retry-lib.sh"
+
 PR_NUMBER="${PR_NUMBER:?PR_NUMBER required}"
 REPO="${REPO:?REPO required (owner/name)}"
 MERGE_METHOD="${MERGE_METHOD:-squash}"
@@ -59,30 +64,28 @@ AUTHOR_ALLOWLIST="${AUTHOR_ALLOWLIST:-app/dependabot dependabot[bot]}"
 # log to STDERR so a retry message never contaminates a $(gh_read ...) capture.
 log() { echo "[pr-green-merge] $*" >&2; }
 
-# Bounded-retry wrapper for a transient gh READ failure (rate blips / 5xx). Only
-# used for read calls; a merge is issued at most once. Prints command stdout on
-# success; returns the last non-zero code after RETRY_MAX attempts (surfacing the
-# last stderr line for diagnosability).
-gh_read() {
-  local out rc attempt=1 errf
+# _gh_read_once <gh-args...> : run one gh read. Prints stdout + returns 0 on
+# success; on any failure logs the last stderr line (STDERR only) and returns
+# $RETRY_TRANSIENT_RC so with_retry treats a gh blip as transient (matches the
+# prior retry-any-failure behavior).
+_gh_read_once() {
+  local out errf
   errf="$(mktemp)"
-  while :; do
-    if out="$(gh "$@" 2>"$errf")"; then
-      rm -f "$errf"
-      printf '%s' "$out"
-      return 0
-    else
-      rc=$?
-    fi
-    if [ "$attempt" -ge "$RETRY_MAX" ]; then
-      log "gh $* failed after ${attempt} attempt(s) (rc=${rc}): $(tail -n1 "$errf" 2>/dev/null)"
-      rm -f "$errf"
-      return "$rc"
-    fi
-    log "transient gh read failure (attempt ${attempt}/${RETRY_MAX}); retrying"
-    attempt=$((attempt + 1))
-    sleep "$attempt"
-  done
+  if out="$(gh "$@" 2>"$errf")"; then
+    rm -f "$errf"
+    printf '%s' "$out"
+    return 0
+  fi
+  log "gh $* failed: $(tail -n1 "$errf" 2>/dev/null)"
+  rm -f "$errf"
+  return "$RETRY_TRANSIENT_RC"
+}
+
+# gh_read <gh-args...> : bounded-retry gh READ via the shared helper. rc-on-
+# failure capture + stderr-only logging are guaranteed by with_retry (re-pinned
+# in tests/retry-lib.test.sh). A merge is still issued at most once (never via this).
+gh_read() {
+  with_retry "$RETRY_MAX" 1 8 -- _gh_read_once "$@"
 }
 
 # One combined read: PR state + draft + author + review decision + check rollup.

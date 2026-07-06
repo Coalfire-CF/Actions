@@ -39,6 +39,17 @@ set -euo pipefail
 # schema_version/producer validation.
 # shellcheck source=scripts/cache-lib.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/cache-lib.sh"
+# Shared bounded-retry + jitter helper (grade-A #13).
+# shellcheck source=scripts/retry-lib.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/retry-lib.sh"
+
+# Tunables for external-call retry (transient-only; fail closed on exhaustion).
+RETRY_MAX="${RETRY_MAX:-3}"
+RETRY_BASE="${RETRY_BASE:-2}"
+RETRY_CAP="${RETRY_CAP:-20}"
+# One-time pre-call jitter to de-sync the daily fleet burst (0 disables; the
+# workflow sets JITTER_MAX_SECONDS). Runs once per job, before the first call.
+jitter_delay "${JITTER_MAX_SECONDS:-0}"
 
 # Grouped-PR support: every dependency in the PR is checked
 # individually and folded into AND/OR aggregates. Any per-dep
@@ -111,17 +122,19 @@ if [ "$CACHE_HIT" = "false" ]; then
 
   OSV_VULNS="[]"
   if [ -n "$OSV_ECOSYSTEM" ]; then
-    # Fail CLOSED on query error: a failed OSV call is NOT a clean
-    # result (the old `|| echo` fail-open let vulns through silently).
-    if ! OSV_RESPONSE=$(curl -sf --max-time 30 \
+    # Fail CLOSED on query error: a failed OSV call is NOT a clean result.
+    # Transient (429/5xx/timeout) retries with backoff+jitter (grade-A #13); a
+    # terminal failure still fails closed (CHECK_ERRORS -> decide manual review).
+    OSV_PAYLOAD=$(jq -n \
+      --arg pkg "$DEP_NAME" \
+      --arg ver "$TO_VERSION" \
+      --arg eco "$OSV_ECOSYSTEM" \
+      '{package: {name: $pkg, ecosystem: $eco}, version: $ver}')
+    if ! OSV_RESPONSE=$(with_retry "$RETRY_MAX" "$RETRY_BASE" "$RETRY_CAP" -- \
+      http_retryable --max-time 30 \
       -X POST "https://api.osv.dev/v1/query" \
       -H "Content-Type: application/json" \
-      -d "$(jq -n \
-        --arg pkg "$DEP_NAME" \
-        --arg ver "$TO_VERSION" \
-        --arg eco "$OSV_ECOSYSTEM" \
-        '{package: {name: $pkg, ecosystem: $eco}, version: $ver}')" \
-      2>/dev/null); then
+      -d "$OSV_PAYLOAD"); then
       echo "::warning::OSV query FAILED for ${DEP_NAME}@${TO_VERSION} — failing closed"
       CHECK_ERRORS=$((CHECK_ERRORS + 1))
       OSV_RESPONSE='{"vulns":[]}'
@@ -157,9 +170,13 @@ if [ "$CACHE_HIT" = "false" ]; then
   esac
 
   if [ -n "$SCORECARD_REPO" ]; then
-    SCORECARD_RESPONSE=$(curl -sf --max-time 30 \
+    # Transient retries (grade-A #13); on terminal failure preserve today's
+    # conservative fallback — empty object → score 0 → not-pass (blocks, unless
+    # first-party-waived). Not a CHECK_ERROR (matches prior behavior).
+    SCORECARD_RESPONSE=$(with_retry "$RETRY_MAX" "$RETRY_BASE" "$RETRY_CAP" -- \
+      http_retryable --max-time 30 \
       "https://api.securityscorecards.dev/projects/${SCORECARD_REPO}" \
-      2>/dev/null || echo '{}')
+      || echo '{}')
     SCORECARD_SCORE=$(echo "$SCORECARD_RESPONSE" | jq -r '.score // 0')
 
     if [ "$(echo "$SCORECARD_SCORE < $SCORECARD_THRESHOLD" | bc -l)" -eq 1 ]; then
