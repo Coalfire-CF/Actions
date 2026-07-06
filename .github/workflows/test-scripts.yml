@@ -68,6 +68,12 @@ jobs:
             echo "::error::N2 regression — an internal sibling call uses @main (use uses: ./.github/workflows/<x>.yml)."
             rc=1
           fi
+          # N2 (composite path): no ACTIVE internal composite-action ref may use @main.
+          # Reusable workflows check out the CONSUMER repo, so ./ refs don't resolve here — pin @<sha> # vX.Y.Z.
+          if grep -rnE '^[[:space:]]*uses: Coalfire-CF/Actions/actions/[^@]+@main' .github/workflows/; then
+            echo "::error::N2 regression — an internal composite action ref uses @main (pin to @<release-sha> # vX.Y.Z)."
+            rc=1
+          fi
           if [ "$rc" -eq 0 ]; then
             echo "OK: no Actions/main raw fetches and no active @main sibling refs."
           fi
