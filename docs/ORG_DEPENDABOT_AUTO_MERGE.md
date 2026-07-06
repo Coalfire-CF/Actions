@@ -184,6 +184,31 @@ jobs:
 Requires the org-level setting **"Send secrets to workflows from pull requests
 created by Dependabot"** to be enabled under Org Settings > Actions > General.
 
+### Pinning the decision logic
+
+The supply-chain, breaking-change, and decision steps run committed scripts
+(`scripts/supply-chain-check.sh`, `breaking-change-check.sh`,
+`auto-merge-decide.sh`) rather than inline heredocs. Because this is a reusable
+workflow that runs in **your** repo's checkout, each of those jobs self-checks-out
+`Coalfire-CF/Actions` and invokes the script from there. By default that checkout
+uses `main` — the same central model the gate workflows (`org-opa`,
+`org-terraform-source-pin`, `org-terraform-version-band`) already use for
+`scripts/` and `gate-config.yml`. **Pinning the `uses:` line by SHA does not by
+itself pin the decision scripts** — they resolve at `actions_ref`.
+
+To freeze the decision logic to the same immutable ref you pin the workflow to,
+pass `actions_ref`:
+
+```yaml
+jobs:
+  auto-merge:
+    if: github.actor == 'dependabot[bot]'
+    uses: <YOUR_ORG>/Actions/.github/workflows/org-dependabot-auto-merge.yml@72d0360b99f80252dda40f6dfefc252f5a66edb3 # v0.10.0
+    with:
+      actions_ref: 72d0360b99f80252dda40f6dfefc252f5a66edb3 # v0.10.0
+    secrets: inherit
+```
+
 ## Inputs
 
 | Input | Required | Default | Description |
@@ -195,6 +220,7 @@ created by Dependabot"** to be enabled under Org Settings > Actions > General.
 | `auto_merge_method` | No | `squash` | Merge method: merge, squash, or rebase |
 | `bedrock_model_id` | No | `us.anthropic.claude-haiku-4-5-20251001-v1:0` | Bedrock model ID for changelog analysis |
 | `cache_ttl_days` | No | `30` | Days before cached analysis expires |
+| `actions_ref` | No | `main` | Ref of `Coalfire-CF/Actions` the decision scripts (`scripts/*.sh`) are loaded from. Defaults to `main` (same central model as the gate workflows). Pin to a release SHA to freeze the decision logic — see [Pinning the decision logic](#pinning-the-decision-logic) |
 | `slack_channel_id` | No | - | Slack channel for failure alerts |
 
 ## Secrets

@@ -84,7 +84,10 @@ while IFS= read -r entry; do
   # Ignore commented lines.
   printf '%s' "$content" | grep -Eq '^[[:space:]]*#' && continue
   val="$(printf '%s' "$content" | sed -E "s/.*terraform_version:[[:space:]]*//; s/[\"' ]//g; s/#.*//")"
-  # Skip expression/interpolated pins and empty values.
+  # Skip expression/interpolated pins and empty values. The single-quoted
+  # '${{' is an intentional literal (GitHub Actions expression syntax), not a
+  # variable to expand — SC2016 is a false positive here.
+  # shellcheck disable=SC2016
   [[ -z "$val" || "$val" == *'${{'* ]] && continue
   if [[ ! "$val" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     emit_fail "$file" "$lineno" "terraform_version pin is not a concrete X.Y.Z version: '${val}'"
