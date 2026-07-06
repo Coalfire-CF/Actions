@@ -61,17 +61,38 @@ jobs:
         {
           "ignores": ["CHANGELOG.md", "**/CHANGELOG.md"],
           "config": {
+            // Policy: enforce well-formed markdown that renders correctly;
+            // do NOT enforce cosmetic perfection. Rules that catch real
+            // rendering/structural breakage (malformed heading syntax, broken
+            // list nesting, spaces inside emphasis/code/links, empty links)
+            // stay on via "default": true. Everything below is a deliberate
+            // relaxation for authored + machine-generated docs.
             "default": true,
-            "MD013": false,
-            "MD024": false,
-            "MD033": false,
-            "MD041": false,
-            "MD034": false,
-            "MD060": false,
+            // -- style pins (single style where consistency matters) --
             "MD029": { "style": "one" },
             "MD035": { "style": "---" },
             "MD046": { "style": "fenced" },
-            "MD048": { "style": "backtick" }
+            "MD048": { "style": "backtick" },
+            // -- cosmetic rules relaxed: formatted well, not perfect --
+            "MD001": false,                    // heading levels may skip; renders fine
+            "MD004": false,                    // mixed -/* bullets across generated+authored sections
+            "MD007": false,                    // list indent width varies by generator
+            "MD009": false,                    // trailing spaces are invisible and harmless
+            "MD010": { "code_blocks": false }, // tabs inside code fences are legitimate (Go/Makefile/TF)
+            "MD012": false,                    // multiple blank lines (release-please, authored docs)
+            "MD013": false,                    // line length
+            "MD024": false,                    // duplicate headings (changelogs, per-env sections)
+            "MD025": false,                    // multiple H1 (terraform-docs merged READMEs)
+            "MD026": false,                    // trailing punctuation in headings
+            "MD033": false,                    // inline HTML
+            "MD034": false,                    // bare URLs
+            "MD036": false,                    // bold-line-as-heading (common authored pattern)
+            "MD040": false,                    // fence language tag optional
+            "MD041": false,                    // first line need not be a heading
+            "MD049": false,                    // _em_ vs *em* style
+            "MD050": false,                    // __strong__ vs **strong** style
+            "MD051": false,                    // anchor fragments — lychee owns link checking
+            "MD060": false
           }
         }
         JSONC
