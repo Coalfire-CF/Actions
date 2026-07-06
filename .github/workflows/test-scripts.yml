@@ -47,6 +47,32 @@ jobs:
           done
           exit "$rc"
 
+  actionlint:
+    name: Lint workflows (actionlint)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Install actionlint (pinned + checksum-verified)
+        run: |
+          set -euo pipefail
+          ACTIONLINT_VERSION=1.7.12
+          ACTIONLINT_SHA256=8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+          curl -sSfL -o /tmp/actionlint.tar.gz \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          echo "${ACTIONLINT_SHA256}  /tmp/actionlint.tar.gz" | sha256sum -c -
+          sudo tar -xzf /tmp/actionlint.tar.gz -C /usr/local/bin actionlint
+          actionlint --version
+
+      - name: Run actionlint over all workflows
+        env:
+          # Gate at shellcheck warning+ severity. The style/info nits in the large
+          # inline heredocs are deferred to the scripts/*.sh extraction (grade-A plan
+          # item #10), which runs full shellcheck over the extracted files.
+          SHELLCHECK_OPTS: -S warning
+        run: actionlint -color
+
   no-main-refs:
     name: Guard — no mutable main refs (F36/N2 regression)
     runs-on: ubuntu-latest

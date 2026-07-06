@@ -82,7 +82,8 @@ jobs:
       shell: bash
       run: |
         set -o pipefail
-        npx --yes markdownlint-cli2@0.21.0 $(cat /tmp/md_files.txt | tr '\n' ' ') 2>&1 | tee .github/md_lint_output.txt
+        mapfile -t md_files < /tmp/md_files.txt
+        npx --yes markdownlint-cli2@0.21.0 "${md_files[@]}" 2>&1 | tee .github/md_lint_output.txt
 
     - name: Create Fail Comment
       uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
