@@ -1,5 +1,44 @@
 # Changelog
 
+## [0.11.0](https://github.com/Coalfire-CF/Actions/compare/v0.10.0...v0.11.0) (2026-07-06)
+
+
+### Features
+
+* **auto-merge:** scheduled reconcile sweeper for wedged approved PRs (grade-A [#14](https://github.com/Coalfire-CF/Actions/issues/14)) ([#172](https://github.com/Coalfire-CF/Actions/issues/172)) ([7096d01](https://github.com/Coalfire-CF/Actions/commit/7096d01d6c4975e589fc0bb9178b9b6f255cc0e1))
+* **ci:** concurrency groups on auto-merge and terraform plan/apply/fmt ([#167](https://github.com/Coalfire-CF/Actions/issues/167)) ([c022944](https://github.com/Coalfire-CF/Actions/commit/c0229449b360d224f19a0e56bfff552ccc8a0383))
+* **deps:** Renovate preset auto-bumping Terraform ?ref= SHAs in gate-PASS shape ([#168](https://github.com/Coalfire-CF/Actions/issues/168)) ([bc61315](https://github.com/Coalfire-CF/Actions/commit/bc6131557ad9f12f7f2f42f1845b3e0592dfc73a))
+* **release:** auto-merge patch-only release-please PRs (opt-in, fail-closed) — [#148](https://github.com/Coalfire-CF/Actions/issues/148) ([#182](https://github.com/Coalfire-CF/Actions/issues/182)) ([272f416](https://github.com/Coalfire-CF/Actions/commit/272f4168f3ed832d16864676a9df710e3018553d))
+* **release:** gate release-please behind gitleaks/trivy/actionlint self-scans ([#164](https://github.com/Coalfire-CF/Actions/issues/164)) ([426a901](https://github.com/Coalfire-CF/Actions/commit/426a901eedb1dd771e95d117c5a92648e8c5fb3b))
+* **terraform:** add Azure + GCP OIDC auth to org plan/apply ([#170](https://github.com/Coalfire-CF/Actions/issues/170)) ([6f8a99b](https://github.com/Coalfire-CF/Actions/commit/6f8a99bac20bf0df8fafba3a95d36f0845380d48))
+
+
+### Bug Fixes
+
+* **auto-merge:** fail-safe S3 cache reads + schema/producer validation (grade-A [#9](https://github.com/Coalfire-CF/Actions/issues/9)) ([#173](https://github.com/Coalfire-CF/Actions/issues/173)) ([714f793](https://github.com/Coalfire-CF/Actions/commit/714f793ae13c2bf0bf27e451b54e086363f81bab))
+* **auto-merge:** prompt-injection-resistant AI gate + ai/breaking-suspected audit label (grade-A [#12](https://github.com/Coalfire-CF/Actions/issues/12)) ([#175](https://github.com/Coalfire-CF/Actions/issues/175)) ([56120a7](https://github.com/Coalfire-CF/Actions/commit/56120a7551438025395c5e395d12faef7678bfa1))
+* **auto-merge:** shared retry-lib (jitter+backoff) across all external calls + staggered schedule ([#176](https://github.com/Coalfire-CF/Actions/issues/176)) ([b726d61](https://github.com/Coalfire-CF/Actions/commit/b726d6103036605c48c6e53789ad22a61824a896))
+* **ci:** time-cap infra-mutating jobs and guard against uncapped terraform jobs ([#163](https://github.com/Coalfire-CF/Actions/issues/163)) ([fb94f2c](https://github.com/Coalfire-CF/Actions/commit/fb94f2c542a15aeb3e76445c549e799727499250))
+* **deps:** bump markdownlint-cli2 0.21.0 -&gt; 0.23.0 (clears 3 Dependabot alerts) ([#181](https://github.com/Coalfire-CF/Actions/issues/181)) ([90d1431](https://github.com/Coalfire-CF/Actions/commit/90d14311f791cf8e76577e69a9402272d9d223c9))
+* **docs:** SHA-pin all 25 caller examples and guard docs against [@main](https://github.com/main) ([#161](https://github.com/Coalfire-CF/Actions/issues/161)) ([8ab2763](https://github.com/Coalfire-CF/Actions/commit/8ab27637e9f44a945332d22de2156d4b565fa0b1))
+* **docs:** truth-up label/permission/dependabot drift; dogfood grouped config ([#166](https://github.com/Coalfire-CF/Actions/issues/166)) ([6849768](https://github.com/Coalfire-CF/Actions/commit/684976840e743b58b8cbe6e102101f109c595d38))
+* **gates:** parse block-style gate-config and fail closed on unparseable strict ([#162](https://github.com/Coalfire-CF/Actions/issues/162)) ([5a53ecd](https://github.com/Coalfire-CF/Actions/commit/5a53ecda9a24f73fcaeabb1ca45e344886ccdb72))
+* **mdlint:** relax cosmetic rules — enforce well-formed markdown, not perfection ([#180](https://github.com/Coalfire-CF/Actions/issues/180)) ([b1ebdc6](https://github.com/Coalfire-CF/Actions/commit/b1ebdc6a4b999dca6d6166d47adc353a8ccb8e6a))
+* **security:** declare least-privilege permissions on the 6 implicit workflows ([#165](https://github.com/Coalfire-CF/Actions/issues/165)) ([69ae572](https://github.com/Coalfire-CF/Actions/commit/69ae572cc02bdf7e2c3b0a9b499c2e91c5415df5))
+* **security:** pin gitleaks composite refs and widen N2 guard to composite paths ([#157](https://github.com/Coalfire-CF/Actions/issues/157)) ([ac6fe11](https://github.com/Coalfire-CF/Actions/commit/ac6fe118aea1ecc975896db1240a25b526398fc6))
+* **security:** verify gitleaks and OPA downloads with pinned SHA-256 digests ([#159](https://github.com/Coalfire-CF/Actions/issues/159)) ([958fa63](https://github.com/Coalfire-CF/Actions/commit/958fa630146cd59b2744178fdbae68f4e95619a2))
+
+
+### Miscellaneous
+
+* **ci:** lint own workflows with actionlint in test-scripts.yml ([#160](https://github.com/Coalfire-CF/Actions/issues/160)) ([11f04c2](https://github.com/Coalfire-CF/Actions/commit/11f04c2fa27a6399f8deecd8227abb7b532edbce))
+
+
+### Documentation
+
+* **auto-merge:** link AC-4 bucket-policy tracking issue ([#174](https://github.com/Coalfire-CF/Actions/issues/174)), mark PENDING/owner: ops ([#179](https://github.com/Coalfire-CF/Actions/issues/179)) ([9929225](https://github.com/Coalfire-CF/Actions/commit/9929225a19d3ac6e8bc9078c4f2ecf3b9734f53f))
+* **gates:** promotion runbook — telemetry window, rollback owner, flip cadence ([#169](https://github.com/Coalfire-CF/Actions/issues/169)) ([3c9cb53](https://github.com/Coalfire-CF/Actions/commit/3c9cb5373f4f7e2d76c094d699bbd35182cdd01d))
+
 ## [0.10.0](https://github.com/Coalfire-CF/Actions/compare/v0.9.0...v0.10.0) (2026-07-04)
 
 
