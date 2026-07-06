@@ -43,6 +43,9 @@ set -euo pipefail
 # schema_version/producer validation.
 # shellcheck source=scripts/cache-lib.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/cache-lib.sh"
+# Prompt-injection-resistant Bedrock prompt builders (grade-A #12).
+# shellcheck source=scripts/prompt-lib.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/prompt-lib.sh"
 
 # Grouped-PR support: each dependency is analyzed individually and
 # folded into aggregates (semver = max, breaking = OR). Bedrock/API
@@ -51,6 +54,10 @@ set -euo pipefail
 CHECK_ERRORS=0
 AGG_SEMVER="patch"
 AGG_BREAKING="false"
+# Raw AI verdict (pre major-override) folded across deps — drives the additive
+# ai/breaking-suspected audit label (grade-A #12), distinct from the enforced
+# AGG_BREAKING which decide gates on.
+AGG_AI_BREAKING="false"
 AGG_CONF=""
 AGG_SUMMARY=""
 AGG_APPLIES="false"
@@ -74,6 +81,7 @@ SHARED_CACHE_HIT="false"
 REPO_CACHE_HIT="false"
 SEMVER_TYPE="unknown"
 HAS_BREAKING="false"
+AI_BREAKING="false"   # raw model verdict before the major-override (audit only)
 CONFIDENCE="0"
 RISK_SUMMARY=""
 APPLIES_TO_REPO="true"
@@ -95,6 +103,9 @@ if [ "$CACHED" = "ok" ]; then
           # Fail-SAFE (grade-A #9): a missing/non-boolean changelog.breaking
           # resolves to true (breaking) so a degraded cache blocks, not approves.
           HAS_BREAKING=$(cache_read_bool /tmp/cached_analysis.json '.changelog.breaking' true)
+          # Raw model verdict for the audit label (default to the enforced value
+          # for pre-#12 objects that predate this field).
+          AI_BREAKING=$(cache_read_bool /tmp/cached_analysis.json '.changelog.ai_breaking' "$HAS_BREAKING")
           CONFIDENCE=$(jq -r '.changelog.confidence // "0"' /tmp/cached_analysis.json)
           RISK_SUMMARY=$(jq -r '.changelog.summary // ""' /tmp/cached_analysis.json)
           echo "Shared cache hit for changelog analysis of ${DEP_NAME}@${TO_VERSION}"
@@ -120,7 +131,10 @@ if [ "$REPO_CACHED" = "ok" ]; then
         # applies_to_repo is non-gating (decide never blocks on it); keep its
         # conservative "assume applies" default, but validate presence/type.
         APPLIES_TO_REPO=$(cache_read_bool /tmp/cached_repo_analysis.json '.applies_to_repo' true)
-        RISK_SUMMARY=$(jq -r '.risk_summary // "'"$RISK_SUMMARY"'"' /tmp/cached_repo_analysis.json)
+        # Pass the current summary as a jq --arg (grade-A #12 fold-in): the prior
+        # `// "'"$RISK_SUMMARY"'"'` spliced the value into the jq PROGRAM, so a
+        # summary containing a quote/backslash broke the filter.
+        RISK_SUMMARY=$(jq -r --arg fallback "$RISK_SUMMARY" '.risk_summary // $fallback' /tmp/cached_repo_analysis.json)
         echo "Repo cache hit for applicability of ${DEP_NAME}@${TO_VERSION} in ${GITHUB_REPOSITORY}"
       else
         echo "::warning::Repo cache object for ${DEP_NAME}@${TO_VERSION} failed schema/producer validation — re-analyzing (treated as miss)"
@@ -223,14 +237,10 @@ if [ "$SHARED_CACHE_HIT" = "false" ]; then
     USAGE_CONTEXT=$(cat "/tmp/dep_usage_${SAFE_DEP_NAME}.txt")
   fi
 
-  PROMPT=$(jq -n \
-    --arg dep "$DEP_NAME" \
-    --arg from "$FROM_VERSION" \
-    --arg to "$TO_VERSION" \
-    --arg semver "$SEMVER_TYPE" \
-    --arg notes "$RELEASE_NOTES" \
-    --arg usage "$USAGE_CONTEXT" \
-    '"You are a dependency update analyzer. Analyze this update and determine if it contains breaking changes.\n\nDependency: " + $dep + "\nFrom: " + $from + "\nTo: " + $to + "\nSemver bump type: " + $semver + "\n\nRelease notes:\n" + $notes + "\n\nThis is how the dependency is currently used in the consuming repository:\n" + $usage + "\n\nRespond with ONLY a JSON object (no markdown fencing):\n{\"breaking\": true/false, \"confidence\": 0.0-1.0, \"risks\": [\"list of specific risks if any\"], \"summary\": \"one sentence summary of whether the breaking changes affect this repo based on the actual usage shown above\", \"applies_to_repo\": true/false}"')
+  # Prompt-injection-resistant build (grade-A #12): $notes and $usage are
+  # attacker-controllable and are wrapped in an unpredictable per-invocation fence
+  # with data-only framing (see scripts/prompt-lib.sh).
+  PROMPT=$(build_breaking_prompt "$DEP_NAME" "$FROM_VERSION" "$TO_VERSION" "$SEMVER_TYPE" "$RELEASE_NOTES" "$USAGE_CONTEXT")
 
   jq -n \
     --argjson prompt "$PROMPT" \
@@ -272,11 +282,26 @@ if [ "$SHARED_CACHE_HIT" = "false" ]; then
       AI_TEXT='{"breaking":false,"confidence":0,"risks":["Failed to parse AI response"],"summary":"Analysis unparseable — routed to manual review"}'
     fi
   fi
+  # Fail CLOSED on a valid-JSON response that OMITS or mistypes the `breaking`
+  # verdict (grade-A #12): `.breaking // false` would silently read a missing or
+  # string-typed field as non-breaking — the cheapest injection win (get the
+  # verdict dropped, not flipped). Require a real boolean; otherwise route through
+  # the SAME CHECK_ERRORS + fallback path as an unparseable response (→ manual review).
+  if ! ai_verdict_has_boolean_breaking "$AI_TEXT"; then
+    echo "::warning::AI response for ${DEP_NAME} has a missing/non-boolean 'breaking' verdict — failing closed"
+    CHECK_ERRORS=$((CHECK_ERRORS + 1))
+    AI_TEXT='{"breaking":false,"confidence":0,"risks":["Missing or non-boolean breaking verdict"],"summary":"Analysis verdict malformed — routed to manual review"}'
+  fi
   HAS_BREAKING=$(echo "$AI_TEXT" | jq -r '.breaking // false')
   CONFIDENCE=$(echo "$AI_TEXT" | jq -r '.confidence // 0')
   RISK_SUMMARY=$(echo "$AI_TEXT" | jq -r '.summary // "Analysis unavailable"')
   AI_RISKS=$(echo "$AI_TEXT" | jq -r '.risks // []')
   APPLIES_TO_REPO=$(echo "$AI_TEXT" | jq -r '.applies_to_repo // true')
+
+  # Capture the RAW model verdict BEFORE the deterministic major-override, for the
+  # additive ai/breaking-suspected audit label (grade-A #12): the label reflects
+  # what the model thought; the decide gate still enforces HAS_BREAKING.
+  AI_BREAKING="$HAS_BREAKING"
 
   # Override: major bump is always flagged regardless of AI
   if [ "$SEMVER_TYPE" = "major" ]; then
@@ -303,6 +328,7 @@ if [ "$SHARED_CACHE_HIT" = "false" ]; then
     --arg sv_from "$FROM_VERSION" \
     --arg sv_to "$TO_VERSION" \
     --argjson breaking "$([ "$HAS_BREAKING" = "true" ] && echo true || echo false)" \
+    --argjson ai_breaking "$([ "$AI_BREAKING" = "true" ] && echo true || echo false)" \
     --argjson conf "$CONFIDENCE" \
     --arg summary "$RISK_SUMMARY" \
     --argjson risks "$AI_RISKS" \
@@ -313,7 +339,7 @@ if [ "$SHARED_CACHE_HIT" = "false" ]; then
       version: $ver,
       analyzed_at: $ts,
       semver: { type: $sv_type, from: $sv_from, to: $sv_to },
-      changelog: { breaking: $breaking, confidence: ($conf | tonumber), summary: $summary, risks: $risks }
+      changelog: { breaking: $breaking, ai_breaking: $ai_breaking, confidence: ($conf | tonumber), summary: $summary, risks: $risks }
     }' > /tmp/merged_analysis.json
 
   aws s3 cp /tmp/merged_analysis.json "s3://${S3_BUCKET}/${SHARED_CACHE_KEY}" \
@@ -333,13 +359,9 @@ if [ "$SHARED_CACHE_HIT" = "true" ] && [ "$REPO_CACHE_HIT" = "false" ]; then
     USAGE_CONTEXT=$(cat "/tmp/dep_usage_${SAFE_DEP_NAME}.txt")
   fi
 
-  APPLY_PROMPT=$(jq -n \
-    --arg dep "$DEP_NAME" \
-    --arg from "$FROM_VERSION" \
-    --arg to "$TO_VERSION" \
-    --arg summary "$RISK_SUMMARY" \
-    --arg usage "$USAGE_CONTEXT" \
-    '"You are a dependency update analyzer. A previous analysis found these breaking changes:\n\nDependency: " + $dep + "\nFrom: " + $from + "\nTo: " + $to + "\nBreaking change summary: " + $summary + "\n\nHere is how this dependency is actually used in the consuming repository:\n" + $usage + "\n\nBased on the actual usage shown, do the breaking changes affect this repository?\n\nRespond with ONLY a JSON object (no markdown fencing):\n{\"applies_to_repo\": true/false, \"summary\": \"one sentence explaining whether and why the breaking changes affect this specific usage\"}"')
+  # Prompt-injection-resistant build (grade-A #12): $summary (prior-analysis text)
+  # and $usage are fenced with an unpredictable per-invocation token + framing.
+  APPLY_PROMPT=$(build_applicability_prompt "$DEP_NAME" "$FROM_VERSION" "$TO_VERSION" "$RISK_SUMMARY" "$USAGE_CONTEXT")
 
   jq -n \
     --argjson prompt "$APPLY_PROMPT" \
@@ -371,7 +393,7 @@ if [ "$SHARED_CACHE_HIT" = "true" ] && [ "$REPO_CACHE_HIT" = "false" ]; then
     fi
   fi
   APPLIES_TO_REPO=$(echo "$APPLY_TEXT" | jq -r '.applies_to_repo // true')
-  RISK_SUMMARY=$(echo "$APPLY_TEXT" | jq -r '.summary // "'"$RISK_SUMMARY"'"')
+  RISK_SUMMARY=$(echo "$APPLY_TEXT" | jq -r --arg fallback "$RISK_SUMMARY" '.summary // $fallback')
 fi
 
 # ---------------------------------------------------------
@@ -409,6 +431,7 @@ if [ "$(semver_rank "$SEMVER_TYPE")" -gt "$(semver_rank "$AGG_SEMVER")" ]; then
   AGG_SEMVER="$SEMVER_TYPE"
 fi
 [ "$HAS_BREAKING" = "true" ]    && AGG_BREAKING="true"
+[ "$AI_BREAKING" = "true" ]     && AGG_AI_BREAKING="true"
 [ "$APPLIES_TO_REPO" = "true" ] && AGG_APPLIES="true"
 if [ -z "$AGG_CONF" ] || [ "$(echo "$CONFIDENCE < $AGG_CONF" | bc -l 2>/dev/null || echo 0)" -eq 1 ]; then
   AGG_CONF="$CONFIDENCE"
@@ -437,6 +460,7 @@ fi
 [ -n "$AGG_CONF" ] || AGG_CONF="0"
 echo "semver_type=${AGG_SEMVER}" >> "$GITHUB_OUTPUT"
 echo "has_breaking_changes=${AGG_BREAKING}" >> "$GITHUB_OUTPUT"
+echo "ai_breaking=${AGG_AI_BREAKING}" >> "$GITHUB_OUTPUT"
 echo "confidence=${AGG_CONF}" >> "$GITHUB_OUTPUT"
 echo "applies_to_repo=${AGG_APPLIES}" >> "$GITHUB_OUTPUT"
 echo "check_errors=${CHECK_ERRORS}" >> "$GITHUB_OUTPUT"

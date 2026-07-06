@@ -369,6 +369,7 @@ jobs:
     outputs:
       semver_type: ${{ steps.checks.outputs.semver_type }}
       has_breaking_changes: ${{ steps.checks.outputs.has_breaking_changes }}
+      ai_breaking: ${{ steps.checks.outputs.ai_breaking }}
       confidence: ${{ steps.checks.outputs.confidence }}
       risk_summary: ${{ steps.checks.outputs.risk_summary }}
       applies_to_repo: ${{ steps.checks.outputs.applies_to_repo }}
@@ -459,6 +460,7 @@ jobs:
         env:
           SEMVER_TYPE: ${{ steps.checks.outputs.semver_type }}
           HAS_BREAKING: ${{ steps.checks.outputs.has_breaking_changes }}
+          AI_BREAKING: ${{ steps.checks.outputs.ai_breaking }}
         with:
           script: |
             const prNumber = context.payload.pull_request.number;
@@ -476,6 +478,15 @@ jobs:
               labels.push('check/changelog-breaking');
             } else {
               labels.push('check/changelog-safe');
+            }
+
+            // Additive AUDIT label (grade-A #12): reflects the RAW model verdict
+            // (pre major-override), so it stays meaningful on major bumps where the
+            // deterministic override forces has_breaking_changes=true regardless of
+            // the model. It does NOT gate — the decide job still enforces
+            // has_breaking_changes; this label is model-drift visibility only.
+            if (process.env.AI_BREAKING === 'true') {
+              labels.push('ai/breaking-suspected');
             }
 
             await github.rest.issues.addLabels({
