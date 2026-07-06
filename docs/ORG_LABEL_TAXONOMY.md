@@ -60,6 +60,14 @@ was evaluated and the result.
 | `check/changelog-breaking` | `#d73a49` (red) | AI analysis: confirmed breaking changes |
 | `check/cached` | `#c5def5` (light blue) | Analysis result loaded from cross-repo cache |
 
+### `ai/` - Model Verdict Audit Trail
+
+Additive, **non-gating** — records what the AI model thought, distinct from the enforced decision.
+
+| Label | Color | Meaning |
+|-------|-------|---------|
+| `ai/breaking-suspected` | `#fbca04` (yellow) | Raw AI verdict was "breaking", captured **before** the deterministic major-override. Audit/model-drift visibility only — the decide gate still enforces `check/changelog-breaking`; this label never blocks. |
+
 ### `risk/` - Overall Risk Level
 
 Single summary label per PR. Computed from the combined check results.

@@ -85,6 +85,9 @@ jobs:
               { name: 'check/changelog-breaking',  color: 'd73a49', description: 'AI analysis: confirmed breaking changes' },
               { name: 'check/cached',             color: 'c5def5', description: 'Analysis result loaded from cross-repo cache' },
 
+              // --- ai/ : model verdict audit trail (additive, non-gating) ---
+              { name: 'ai/breaking-suspected',    color: 'fbca04', description: 'Raw AI verdict: breaking (audit only; pre major-override, does not gate)' },
+
               // --- risk/ : Overall Risk Level ---
               { name: 'risk/low',                 color: '0e8a16', description: 'Low risk — patch bump, clean checks' },
               { name: 'risk/medium',              color: 'fbca04', description: 'Medium risk — minor bump or scorecard concerns' },
