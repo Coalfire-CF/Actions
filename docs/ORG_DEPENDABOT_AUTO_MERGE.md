@@ -154,7 +154,7 @@ Run the label sync workflow on each repo before enabling auto-merge:
 ```yaml
 jobs:
   sync-labels:
-    uses: <YOUR_ORG>/Actions/.github/workflows/org-label-sync.yml@main
+    uses: <YOUR_ORG>/Actions/.github/workflows/org-label-sync.yml@72d0360b99f80252dda40f6dfefc252f5a66edb3 # v0.10.0
     secrets: inherit
 ```
 
@@ -173,7 +173,7 @@ on:
 jobs:
   auto-merge:
     if: github.actor == 'dependabot[bot]'
-    uses: <YOUR_ORG>/Actions/.github/workflows/org-dependabot-auto-merge.yml@main
+    uses: <YOUR_ORG>/Actions/.github/workflows/org-dependabot-auto-merge.yml@72d0360b99f80252dda40f6dfefc252f5a66edb3 # v0.10.0
     secrets: inherit
 ```
 

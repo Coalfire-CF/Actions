@@ -104,7 +104,7 @@ simultaneously on a single PR.
 
 **GitHub search queries for common views:**
 
-```
+```text
 # All blocked Dependabot PRs across the org
 org:Coalfire-CF is:pr is:open label:merge/blocked author:app/dependabot
 
@@ -131,7 +131,7 @@ org:Coalfire-CF is:pr is:open label:dep/github-actions author:app/dependabot
 ```yaml
 jobs:
   sync-labels:
-    uses: Coalfire-CF/Actions/.github/workflows/org-label-sync.yml@main
+    uses: Coalfire-CF/Actions/.github/workflows/org-label-sync.yml@72d0360b99f80252dda40f6dfefc252f5a66edb3 # v0.10.0
     secrets: inherit
 ```
 
@@ -145,7 +145,7 @@ on:
 
 jobs:
   sync-labels:
-    uses: Coalfire-CF/Actions/.github/workflows/org-label-sync.yml@main
+    uses: Coalfire-CF/Actions/.github/workflows/org-label-sync.yml@72d0360b99f80252dda40f6dfefc252f5a66edb3 # v0.10.0
     secrets: inherit
 ```
 

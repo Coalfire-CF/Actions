@@ -100,6 +100,12 @@ jobs:
             echo "::error::N2 regression — an internal composite action ref uses @main (pin to @<release-sha> # vX.Y.Z)."
             rc=1
           fi
+          # Docs guard: no caller EXAMPLE in README/docs may show @main (org-agnostic — placeholder
+          # orgs like <YOUR_ORG> count too). New-adopter onboarding copies these lines verbatim.
+          if grep -rnE 'uses:.*[^ ]*/Actions/\.github/workflows/[^@]+@main' README.md docs/; then
+            echo "::error::docs regression — a caller example uses @main (write @<release-sha> # vX.Y.Z; RFC-0008)."
+            rc=1
+          fi
           if [ "$rc" -eq 0 ]; then
             echo "OK: no Actions/main raw fetches and no active @main sibling refs."
           fi
