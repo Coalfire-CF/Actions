@@ -1,0 +1,1 @@
+{"schema_version":"1","producer":"coalfire-org-dependabot-auto-merge","dependency":"actions/checkout","version":"4.2.0","analyzed_at":"2026-07-06T00:00:00Z","osv":{"clear":true,"vulns":[]},"scorecard":{"score":"9","pass":true},"changelog":{"breaking":false,"confidence":0.9,"summary":"no breaking changes"},"applies_to_repo":true}

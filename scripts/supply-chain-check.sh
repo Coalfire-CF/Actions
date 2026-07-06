@@ -35,6 +35,11 @@
 #
 set -euo pipefail
 
+# Shared cache read/validate helpers (grade-A #9): fail-safe field reads +
+# schema_version/producer validation.
+# shellcheck source=scripts/cache-lib.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/cache-lib.sh"
+
 # Grouped-PR support: every dependency in the PR is checked
 # individually and folded into AND/OR aggregates. Any per-dep
 # query ERROR (as opposed to a clean result) increments
@@ -71,11 +76,17 @@ if [ "$CACHED" = "ok" ]; then
     NOW_EPOCH=$(date +%s)
     AGE_DAYS=$(( (NOW_EPOCH - ANALYZED_EPOCH) / 86400 ))
     if [ "$AGE_DAYS" -lt "$CACHE_TTL_DAYS" ]; then
-      CACHE_HIT="true"
-      OSV_CLEAR=$(jq -r '.osv.clear // "true"' /tmp/cached_analysis.json)
-      SCORECARD_PASS=$(jq -r '.scorecard.pass // "true"' /tmp/cached_analysis.json)
-      SCORECARD_SCORE=$(jq -r '.scorecard.score // "0"' /tmp/cached_analysis.json)
-      echo "Cache hit for ${DEP_NAME}@${TO_VERSION} (age: ${AGE_DAYS}d)"
+      if cache_schema_ok /tmp/cached_analysis.json; then
+        CACHE_HIT="true"
+        # Fail-SAFE reads (grade-A #9): a missing/non-boolean field resolves to
+        # the blocking value (not-clear / not-pass), never permissive.
+        OSV_CLEAR=$(cache_read_bool /tmp/cached_analysis.json '.osv.clear' false)
+        SCORECARD_PASS=$(cache_read_bool /tmp/cached_analysis.json '.scorecard.pass' false)
+        SCORECARD_SCORE=$(jq -r '.scorecard.score // "0"' /tmp/cached_analysis.json)
+        echo "Cache hit for ${DEP_NAME}@${TO_VERSION} (age: ${AGE_DAYS}d)"
+      else
+        echo "::warning::Cached object for ${DEP_NAME}@${TO_VERSION} failed schema/producer validation — re-analyzing (treated as miss)"
+      fi
     fi
   fi
 fi
@@ -167,6 +178,8 @@ if [ "$CACHE_HIT" = "false" ]; then
   # Breaking change check will merge its fields in separately
   # ---------------------------------------------------------
   jq -n \
+    --arg schema "$CACHE_SCHEMA_VERSION" \
+    --arg producer "$CACHE_PRODUCER" \
     --arg dep "$DEP_NAME" \
     --arg ver "$TO_VERSION" \
     --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
@@ -175,6 +188,8 @@ if [ "$CACHE_HIT" = "false" ]; then
     --arg sc_score "$SCORECARD_SCORE" \
     --argjson sc_pass "$([ "$SCORECARD_PASS" = "true" ] && echo true || echo false)" \
     '{
+      schema_version: $schema,
+      producer: $producer,
       dependency: $dep,
       version: $ver,
       analyzed_at: $ts,
