@@ -636,17 +636,15 @@ jobs:
           PR_STATE=$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json state --jq '.state')
           AUTO_ON=$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json autoMergeRequest --jq '.autoMergeRequest != null')
           if [ "$PR_STATE" = "OPEN" ] && [ "$AUTO_ON" != "true" ]; then
-            # Neither merged nor armed: safe to merge directly only if no check
-            # is failing or still pending (mirrors the auto-merge green gate).
-            CHECK_STATE=$(gh pr checks "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" 2>&1 | awk -F'\t' '
-              $2=="fail"{f=1} $2=="pending"{p=1}
-              END{ if(f) print "FAIL"; else if(p) print "PENDING"; else print "GREEN" }')
-            if [ "$CHECK_STATE" = "GREEN" ]; then
-              gh pr merge "$PR_NUMBER" "--${MERGE_METHOD}" --repo "$GITHUB_REPOSITORY"
-              echo "Merged PR #${PR_NUMBER} directly (auto-merge could not latch on clean PR)"
-            else
-              echo "PR #${PR_NUMBER} checks ${CHECK_STATE} — leaving for auto-merge/next event"
-            fi
+            # Neither merged nor armed: delegate the green-gate + direct-merge to
+            # the shared helper (grade-A #14 adoption) instead of an inline
+            # gh-pr-checks|awk gate. Same decision — merge iff the PR is a clean,
+            # green, non-draft trusted-author PR — via the canonical
+            # scripts/pr-green-merge.sh (statusCheckRollup gate; a transient
+            # checks-API error can no longer read as GREEN; a review-blocked PR is
+            # skipped cleanly rather than crashing on a rejected merge).
+            PR_NUMBER="$PR_NUMBER" REPO="$GITHUB_REPOSITORY" MERGE_METHOD="$MERGE_METHOD" DRY_RUN=false \
+              bash "${GITHUB_WORKSPACE}/actions-tools/scripts/pr-green-merge.sh"
           else
             echo "Auto-merge armed (or PR already merged) for PR #${PR_NUMBER}"
           fi
