@@ -103,7 +103,9 @@ _run: ${RUN_URL:-n/a}_"
   fi
 }
 summarize() { # <decision-text>
-  [ -n "${GITHUB_STEP_SUMMARY:-}" ] && printf '### org-release auto-patch\n\n%s\n\n%s\n' "$1" "$DECISION_BODY" >> "$GITHUB_STEP_SUMMARY" || true
+  if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+    printf '### org-release auto-patch\n\n%s\n\n%s\n' "$1" "$DECISION_BODY" >> "$GITHUB_STEP_SUMMARY"
+  fi
 }
 finish() { # <decision-line> <comment-text>
   summarize "$2"
@@ -135,7 +137,7 @@ AUTHOR="$(j '.author.login')"; REVIEW="$(j '.reviewDecision // ""')"
 # ================= GATE 3 — open + non-draft =================
 [ "$STATE" = "MERGED" ] && skip "already-merged"
 [ "$STATE" = "OPEN" ] || skip "not-open"
-[ "$IS_DRAFT" = "true" ] && skip "draft" || true
+if [ "$IS_DRAFT" = "true" ]; then skip "draft"; fi
 
 # ================= GATE 4 — not a fork =================
 [ "$IS_FORK" = "false" ] || skip "cross-repository"
