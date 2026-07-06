@@ -46,6 +46,16 @@ set -euo pipefail
 # Prompt-injection-resistant Bedrock prompt builders (grade-A #12).
 # shellcheck source=scripts/prompt-lib.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/prompt-lib.sh"
+# Shared bounded-retry + jitter helper (grade-A #13).
+# shellcheck source=scripts/retry-lib.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/retry-lib.sh"
+
+# Tunables for external-call retry (transient-only; fail closed on exhaustion).
+RETRY_MAX="${RETRY_MAX:-3}"
+RETRY_BASE="${RETRY_BASE:-2}"
+RETRY_CAP="${RETRY_CAP:-20}"
+# One-time pre-call jitter to de-sync the daily fleet burst (0 disables).
+jitter_delay "${JITTER_MAX_SECONDS:-0}"
 
 # Grouped-PR support: each dependency is analyzed individually and
 # folded into aggregates (semver = max, breaking = OR). Bedrock/API
@@ -209,11 +219,17 @@ if [ "$SHARED_CACHE_HIT" = "false" ]; then
     fi
 
     for TAG_FMT in "${CANDIDATE_TAGS[@]}"; do
-      NOTES=$(curl -sf --max-time 15 \
+      # Transient (429/5xx/timeout) retries with backoff (grade-A #13); a 404 is
+      # the EXPECTED "tag not found" case (permanent, no spin) → try the next tag.
+      if BODY=$(with_retry "$RETRY_MAX" "$RETRY_BASE" "$RETRY_CAP" -- \
+        http_retryable --max-time 15 \
         -H "Authorization: token ${GH_TOKEN}" \
         -H "Accept: application/vnd.github+json" \
-        "https://api.github.com/repos/${UPSTREAM_REPO}/releases/tags/${TAG_FMT}" \
-        2>/dev/null | jq -r '.body // ""' || echo "")
+        "https://api.github.com/repos/${UPSTREAM_REPO}/releases/tags/${TAG_FMT}"); then
+        NOTES=$(printf '%s' "$BODY" | jq -r '.body // ""')
+      else
+        NOTES=""
+      fi
       if [ -n "$NOTES" ]; then
         echo "Found release notes at tag: ${TAG_FMT}"
         RELEASE_NOTES="$NOTES"
@@ -253,13 +269,16 @@ if [ "$SHARED_CACHE_HIT" = "false" ]; then
 
   echo '{"maxTokens":512}' > /tmp/bedrock_config.json
 
-  # Fail CLOSED on Bedrock error (the old fallback silently
-  # defaulted to breaking=false — an unanalyzed dep is NOT safe).
-  if ! AI_RESPONSE=$(aws bedrock-runtime converse \
+  # Fail CLOSED on Bedrock error (the old fallback silently defaulted to
+  # breaking=false — an unanalyzed dep is NOT safe). Throttling/5xx/timeout
+  # retries with backoff (grade-A #13); a terminal or non-throttle error still
+  # fails closed (CHECK_ERRORS -> decide manual review).
+  if ! AI_RESPONSE=$(with_retry "$RETRY_MAX" "$RETRY_BASE" "$RETRY_CAP" -- \
+    bedrock_retryable converse \
     --model-id "$BEDROCK_MODEL_ID" \
     --messages file:///tmp/bedrock_messages.json \
     --inference-config file:///tmp/bedrock_config.json \
-    --output json 2>/tmp/bedrock_err.log); then
+    --output json); then
     echo "::warning::Bedrock analysis FAILED for ${DEP_NAME} — failing closed"
     CHECK_ERRORS=$((CHECK_ERRORS + 1))
     AI_RESPONSE='{"output":{"message":{"content":[{"text":"{\"breaking\":false,\"confidence\":0,\"risks\":[\"API call failed\"],\"summary\":\"Analysis errored — routed to manual review\"}"}]}}}'
@@ -377,11 +396,14 @@ if [ "$SHARED_CACHE_HIT" = "true" ] && [ "$REPO_CACHE_HIT" = "false" ]; then
   # Applicability errors stay conservative (assume it applies) but
   # do NOT count as CHECK_ERRORS: applies_to_repo never gates the
   # decision, and defaulting to true is already the safe direction.
-  APPLY_RESPONSE=$(aws bedrock-runtime converse \
+  # Transient retries (grade-A #13); on terminal failure keep the conservative
+  # fallback (assume it applies — non-gating, already the safe direction).
+  APPLY_RESPONSE=$(with_retry "$RETRY_MAX" "$RETRY_BASE" "$RETRY_CAP" -- \
+    bedrock_retryable converse \
     --model-id "$BEDROCK_MODEL_ID" \
     --messages file:///tmp/bedrock_apply_messages.json \
     --inference-config file:///tmp/bedrock_apply_config.json \
-    --output json 2>/tmp/bedrock_apply_err.log \
+    --output json \
     || echo '{"output":{"message":{"content":[{"text":"{\"applies_to_repo\":true,\"summary\":\"Unable to assess applicability — defaulting to assume it applies\"}"}]}}}')
 
   APPLY_TEXT=$(echo "$APPLY_RESPONSE" | jq -r '.output.message.content[0].text // "{}"')
