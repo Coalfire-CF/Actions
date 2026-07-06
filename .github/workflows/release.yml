@@ -2,6 +2,12 @@ name: Local Release
 
 # This workflow is for creating releases in the Actions repo itself.
 # For downstream repos using the reusable workflow, see org-release.yml
+#
+# Self-scan gate (grade-A plan item #6): gitleaks + trivy + actionlint run over
+# this repo's own tree as `needs:` prerequisites of release-please — a secret,
+# a HIGH/CRITICAL finding, or an invalid workflow blocks the release from
+# publishing. Deliberately NOT added: cosign/SLSA on this repo (consumed by
+# commit SHA, not tarball — signing buys nothing here).
 
 on:
   pull_request:
@@ -12,9 +18,94 @@ on:
   workflow_call:
 
 jobs:
+  self-scan-gitleaks:
+    name: Self-scan — gitleaks (full history)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout (full history)
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+
+      # Local ./ ref is correct here: this workflow runs in the Actions repo's
+      # own checkout (unlike the org-gitleaks-* reusable workflows, which check
+      # out the consumer repo and therefore pin by SHA).
+      - name: Run gitleaks scan
+        id: scan
+        uses: ./actions/gitleaks
+        with:
+          scan-mode: full
+          report-path: gitleaks_selfscan.json
+
+      - name: Gate on findings
+        env:
+          PASSED: ${{ steps.scan.outputs.passed }}
+          COUNT: ${{ steps.scan.outputs.finding-count }}
+        run: |
+          set -euo pipefail
+          if [ "$PASSED" != "true" ]; then
+            echo "::error::self-scan gitleaks found ${COUNT} potential secret(s) — release blocked."
+            exit 1
+          fi
+          echo "gitleaks clean"
+
+  self-scan-trivy:
+    name: Self-scan — trivy (secret/misconfig/vuln)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      # Scanners set explicitly so this cannot pass vacuously on a workflow-only
+      # repo: secret + misconfig cover the YAML/config surface; vuln covers any
+      # lockfiles that appear later.
+      - name: Run Trivy over own tree
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret,misconfig
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          ignore-unfixed: true
+
+  self-scan-actionlint:
+    name: Self-scan — actionlint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Install actionlint (pinned + checksum-verified)
+        run: |
+          set -euo pipefail
+          ACTIONLINT_VERSION=1.7.12
+          ACTIONLINT_SHA256=8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+          curl -sSfL -o /tmp/actionlint.tar.gz \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          echo "${ACTIONLINT_SHA256}  /tmp/actionlint.tar.gz" | sha256sum -c -
+          sudo tar -xzf /tmp/actionlint.tar.gz -C /usr/local/bin actionlint
+          actionlint --version
+
+      - name: Run actionlint
+        env:
+          SHELLCHECK_OPTS: -S warning
+        run: actionlint -color
+
   release:
     name: Release
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [self-scan-gitleaks, self-scan-trivy, self-scan-actionlint]
 
     permissions:
       contents: write
