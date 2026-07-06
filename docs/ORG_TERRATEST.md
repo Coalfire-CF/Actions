@@ -115,13 +115,13 @@ permissions:
 
 jobs:
   fmt:
-    uses: Coalfire-CF/Actions/.github/workflows/org-terraform-fmt.yml@main
+    uses: Coalfire-CF/Actions/.github/workflows/org-terraform-fmt.yml@72d0360b99f80252dda40f6dfefc252f5a66edb3 # v0.10.0
 
   validate:
-    uses: Coalfire-CF/Actions/.github/workflows/org-terraform-validate.yml@main
+    uses: Coalfire-CF/Actions/.github/workflows/org-terraform-validate.yml@72d0360b99f80252dda40f6dfefc252f5a66edb3 # v0.10.0
 
   plan:
-    uses: Coalfire-CF/Actions/.github/workflows/org-terraform-plan.yml@main
+    uses: Coalfire-CF/Actions/.github/workflows/org-terraform-plan.yml@72d0360b99f80252dda40f6dfefc252f5a66edb3 # v0.10.0
     with:
       aws_role_arn: arn:aws:iam::123456789012:role/terratest-ci
       aws_region: us-east-1
@@ -129,7 +129,7 @@ jobs:
 
   terratest:
     needs: [fmt, validate, plan]
-    uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@main
+    uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@72d0360b99f80252dda40f6dfefc252f5a66edb3 # v0.10.0
     with:
       test_mode: pr
       aws_role_arn: arn:aws:iam::123456789012:role/terratest-ci
@@ -149,7 +149,7 @@ The Azure and GCP callers use the **same top-level `permissions:` block** (inclu
 ```yaml
   terratest:
     needs: [fmt, validate, plan]
-    uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@main
+    uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@72d0360b99f80252dda40f6dfefc252f5a66edb3 # v0.10.0
     with:
       test_mode: pr
       azure_client_id: 00000000-0000-0000-0000-000000000000
@@ -167,7 +167,7 @@ The Azure and GCP callers use the **same top-level `permissions:` block** (inclu
 ```yaml
   terratest:
     needs: [fmt, validate, plan]
-    uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@main
+    uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@72d0360b99f80252dda40f6dfefc252f5a66edb3 # v0.10.0
     with:
       test_mode: pr
       gcp_workload_identity_provider: projects/123456/locations/global/workloadIdentityPools/ci-pool/providers/github
@@ -217,7 +217,7 @@ on:
 
 jobs:
   terratest:
-    uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@main
+    uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@72d0360b99f80252dda40f6dfefc252f5a66edb3 # v0.10.0
     with:
       test_mode: release
       aws_role_arn: arn:aws:iam::123456789012:role/terratest-ci
@@ -225,7 +225,7 @@ jobs:
 
   release-clean:
     needs: terratest
-    uses: Coalfire-CF/Actions/.github/workflows/org-release-clean.yml@main
+    uses: Coalfire-CF/Actions/.github/workflows/org-release-clean.yml@72d0360b99f80252dda40f6dfefc252f5a66edb3 # v0.10.0
     with:
       tag_name: ${{ github.event.release.tag_name }}
 ```

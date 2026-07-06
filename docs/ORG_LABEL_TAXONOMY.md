@@ -104,7 +104,7 @@ simultaneously on a single PR.
 
 **GitHub search queries for common views:**
 
-```
+```text
 # All blocked Dependabot PRs across the org
 org:Coalfire-CF is:pr is:open label:merge/blocked author:app/dependabot
 
