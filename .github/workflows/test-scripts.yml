@@ -47,6 +47,31 @@ jobs:
           done
           exit "$rc"
 
+  shellcheck:
+    name: Shellcheck scripts/*.sh
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Run shellcheck over all committed scripts
+        run: |
+          set -euo pipefail
+          # Full shellcheck at DEFAULT severity (catches style/info such as
+          # SC2086) over every committed gate/decision script. The inline-heredoc
+          # nits the actionlint job defers (it runs SHELLCHECK_OPTS=-S warning)
+          # are covered here now that the auto-merge decision logic lives in
+          # scripts/*.sh (grade-A plan item #10). shellcheck is preinstalled on
+          # ubuntu-latest runners.
+          shopt -s nullglob
+          scripts=(scripts/*.sh)
+          if [ ${#scripts[@]} -eq 0 ]; then
+            echo "::error::no scripts/*.sh found"
+            exit 1
+          fi
+          shellcheck "${scripts[@]}"
+          echo "OK: shellcheck clean across ${#scripts[@]} script(s)."
+
   actionlint:
     name: Lint workflows (actionlint)
     runs-on: ubuntu-latest
