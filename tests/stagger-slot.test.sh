@@ -36,4 +36,13 @@ echo "OK: spread — 100 names → ${distinct_slots} distinct slots across ${dis
 [ "$("$S" org/alpha)" != "$("$S" org/omega)" ] || fail "two very different names collided (suspicious hash)"
 echo "OK: distinct names map to distinct slots (org/alpha != org/omega)"
 
+# ---- drift guard: org-dependabot.yml inlines this same algorithm (the generator
+#      runs in the consumer checkout, so it can't source this script). Pin the two
+#      load-bearing lines so the inline copy can't silently diverge. ----
+GEN="${REPO_ROOT}/.github/workflows/org-dependabot.yml"
+[ -f "$GEN" ] || fail "generator workflow not found at $GEN"
+grep -q 'sha256sum | cut -c1-8' "$GEN" || fail "generator drift: missing 'sha256sum | cut -c1-8' (must match ${S})"
+grep -q '% 1440' "$GEN"                || fail "generator drift: missing '% 1440' (must match ${S})"
+echo "OK: org-dependabot.yml inline stagger algorithm matches the canonical script (drift-guarded)"
+
 echo "ALL TESTS PASSED"

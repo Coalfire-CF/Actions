@@ -226,7 +226,9 @@ if [ "$SHARED_CACHE_HIT" = "false" ]; then
         -H "Authorization: token ${GH_TOKEN}" \
         -H "Accept: application/vnd.github+json" \
         "https://api.github.com/repos/${UPSTREAM_REPO}/releases/tags/${TAG_FMT}"); then
-        NOTES=$(printf '%s' "$BODY" | jq -r '.body // ""')
+        # `|| echo ""` guards a 2xx-but-non-JSON body: jq would exit non-zero and,
+        # under set -e, crash the run (near-unreachable, but degrade gracefully).
+        NOTES=$(printf '%s' "$BODY" | jq -r '.body // ""' 2>/dev/null || echo "")
       else
         NOTES=""
       fi
