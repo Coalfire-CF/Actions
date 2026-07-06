@@ -184,9 +184,14 @@ jobs:
     # has nothing to do on a PR that closed without merging. Non-PR events
     # (push/schedule/dispatch) and merged PRs still run; downstream jobs already
     # chain off release_created, so no consumer edit is needed.
+    # Also actor-gate: a Dependabot-actor run (dependabot-native merge or
+    # dependabot-actor push) can't see RELEASE_APP secrets, so release-please
+    # would 403. A skipped release self-heals — release-please scans all commits
+    # since the last tag on the next human/App-actor run, so nothing is lost.
     if: >-
-      github.event_name != 'pull_request' ||
-      github.event.pull_request.merged == true
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.merged == true) &&
+      github.actor != 'dependabot[bot]'
 
     permissions:
       contents: write
