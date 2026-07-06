@@ -154,6 +154,11 @@ Create an S3 bucket for cross-repo analysis caching:
   than trusted, and missing gate fields fail closed (block/manual-review), never
   approve.
 
+  > **Status: PENDING — owner: ops.** This bucket policy is the required control
+  > but is applied out-of-band (CI has no bucket-side access). Tracked in
+  > [Coalfire-CF/Actions#174](https://github.com/Coalfire-CF/Actions/issues/174);
+  > apply before any `strict`/live-critical reliance on the cache.
+
 The cache uses a two-tier layout to share universal data across repos while keeping
 repo-specific analysis scoped:
 
