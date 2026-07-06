@@ -29,6 +29,9 @@ on:
         description: 'Slack bot token for failure notifications (required if slack_channel_id is set)'
         required: false
 
+permissions:
+  contents: write
+
 jobs:
     docs:
         runs-on: ubuntu-latest

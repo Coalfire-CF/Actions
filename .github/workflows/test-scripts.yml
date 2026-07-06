@@ -124,6 +124,13 @@ jobs:
             echo "::error::T1 regression — an infra-mutating job lacks timeout-minutes (grade-A plan item #19)."
             rc=1
           fi
+          # P1: every workflow must declare an explicit permissions: block (least privilege).
+          missing="$(grep -L 'permissions:' .github/workflows/*.yml || true)"
+          if [ -n "$missing" ]; then
+            printf '%s\n' "$missing"
+            echo "::error::P1 regression — a workflow lacks an explicit permissions: block (grade-A plan item #4)."
+            rc=1
+          fi
           if [ "$rc" -eq 0 ]; then
             echo "OK: no Actions/main raw fetches, no active @main sibling refs, all infra jobs time-capped."
           fi

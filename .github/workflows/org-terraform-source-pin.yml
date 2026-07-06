@@ -41,6 +41,9 @@ on:
         default: ''
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   source-pin:
     name: Check Coalfire-CF module source pins

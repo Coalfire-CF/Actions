@@ -92,6 +92,8 @@ on:
       SLACK_BOT_TOKEN:
         required: true
 
+permissions: {}
+
 jobs:
   notify:
     name: Send Slack Notification

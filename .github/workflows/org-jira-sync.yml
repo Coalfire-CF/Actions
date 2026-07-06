@@ -45,6 +45,8 @@ on:
       JIRA_API_VERSION:
         required: false
 
+permissions: {}
+
 jobs:
   create_jira_issue:
     runs-on: ubuntu-latest
