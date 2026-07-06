@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.3](https://github.com/Coalfire-CF/Actions/compare/v0.11.2...v0.11.3) (2026-07-06)
+
+
+### Miscellaneous
+
+* **deps:** bump Coalfire-CF/Actions/actions/gitleaks ([#186](https://github.com/Coalfire-CF/Actions/issues/186)) ([ad7013a](https://github.com/Coalfire-CF/Actions/commit/ad7013a7e05f2cbbb829f3884e99cbc7615af8dc))
+
 ## [0.11.2](https://github.com/Coalfire-CF/Actions/compare/v0.11.1...v0.11.2) (2026-07-06)
 
 
