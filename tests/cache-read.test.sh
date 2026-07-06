@@ -59,5 +59,11 @@ eq "vuln changelog.breaking=true" "$(cache_read_bool "$FIX/vuln.json" '.changelo
 eq "missing osv.clear -> SAFE false"        "$(cache_read_bool "$FIX/missing_fields.json" '.osv.clear' false)"       "false"
 eq "missing scorecard.pass -> SAFE false"   "$(cache_read_bool "$FIX/missing_fields.json" '.scorecard.pass' false)"  "false"
 eq "missing changelog.breaking -> SAFE true" "$(cache_read_bool "$FIX/missing_fields.json" '.changelog.breaking' true)" "true"
+# TYPE STRICTNESS: a quoted "true"/"false" STRING is NOT a boolean → SAFE. `jq -r`
+# renders string "true" and boolean true identically, so without a type check a
+# poisoned {"clear":"true"} string would read as clear. Must route to SAFE.
+eq "string osv.clear='true' -> SAFE false"       "$(cache_read_bool "$FIX/string_booleans.json" '.osv.clear' false)"       "false"
+eq "string scorecard.pass='false' -> SAFE false" "$(cache_read_bool "$FIX/string_booleans.json" '.scorecard.pass' false)"  "false"
+eq "string changelog.breaking='false' -> SAFE true" "$(cache_read_bool "$FIX/string_booleans.json" '.changelog.breaking' true)" "true"
 
 echo "ALL TESTS PASSED"

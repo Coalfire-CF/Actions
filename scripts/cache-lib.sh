@@ -42,11 +42,14 @@ cache_schema_ok() {
 # never approves it (osv.clear→false, scorecard.pass→false, changelog.breaking→true).
 cache_read_bool() {
   local f="$1" path="$2" safe="$3" v
-  # NOTE: do NOT use jq's `// default` here — `//` fires on both null AND false,
-  # so a legitimate `false` would be mistaken for missing. Read the raw value and
-  # accept it only if it is a genuine boolean; anything else (null/missing/string/
-  # unreadable) → the SAFE value.
-  v="$(jq -r "${path}" "$f" 2>/dev/null)" || v="__MISSING__"
+  # Accept the cached value ONLY if it is a genuine JSON boolean. Two traps:
+  #   1. jq's `// default` fires on both null AND false, so `.breaking // true`
+  #      would coerce a real `false` to `true` — never use `//` here.
+  #   2. `jq -r` renders the string "true" and the boolean true identically, so a
+  #      type check is required or a poisoned {"clear":"true"} string reads as
+  #      clear. We emit the value only when (path|type)=="boolean".
+  # Anything else — missing / null / string / number / unreadable — → SAFE value.
+  v="$(jq -r "if ((${path}) | type) == \"boolean\" then (${path} | tostring) else \"__INVALID__\" end" "$f" 2>/dev/null)" || v="__INVALID__"
   case "$v" in
     true | false) printf '%s' "$v" ;;
     *)            printf '%s' "$safe" ;;
