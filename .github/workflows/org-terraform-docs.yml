@@ -32,10 +32,11 @@ on:
 permissions:
   contents: write
 
-# Serialize per PR (or per ref for a post-merge regen); cancel superseded PR runs.
+# Serialize per PR (or per ref for a post-merge regen). Cancel superseded PR runs,
+# but NEVER cancel a post-merge push:main regen mid-flight (it writes to main).
 concurrency:
   group: terraform-docs-${{ github.repository }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
     docs:

@@ -26,10 +26,11 @@ permissions:
   contents: write
   pull-requests: write
 
-# Serialize per PR (or per ref for non-PR events); cancel superseded PR runs.
+# Serialize per PR (or per ref for non-PR events). Cancel superseded PR runs, but
+# NEVER cancel a non-PR (e.g. push:main) run mid-flight — it may be writing to main.
 concurrency:
   group: tree-readme-${{ github.repository }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   update-readme-on-pr:
