@@ -32,24 +32,56 @@ on:
 permissions:
   contents: write
 
+# Serialize per PR (or per ref for a post-merge regen); cancel superseded PR runs.
+concurrency:
+  group: terraform-docs-${{ github.repository }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
     docs:
         runs-on: ubuntu-latest
         steps:
         - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
           with:
-            ref: ${{ github.event.pull_request.head.ref }}
+            # `|| github.ref_name` lets this also run in a post-merge push:main
+            # regen mode (issue #149 re-pin-wave opt-in), not only on PR events.
+            ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
 
         - name: Render terraform docs inside the README.md and push changes back to PR branch
           uses: terraform-docs/gh-actions@6de6da0cefcc6b4b7a5cbea4d79d97060733093c # v1.4.1
           with:
             find-dir: ${{ inputs.find-dir }}
-            git-push: "true"
+            # ACTOR-gate the push (issue #149): a Dependabot-actor run gets a
+            # read-only GITHUB_TOKEN, so git-push would false-red. Render still
+            # runs; only the push is suppressed. String ternary — the action
+            # input is a string. Gated on github.actor (token capability), NOT
+            # pull_request.user.login: a human push to a Dependabot branch gets a
+            # write token and SHOULD push.
+            git-push: ${{ github.actor != 'dependabot[bot]' && 'true' || 'false' }}
             output-file: README.md
             output-method: inject
             recursive: ${{ inputs.recursive }}
             recursive-path: ${{ inputs.recursive-path }}
             working-dir: ${{ inputs.working-dir }}
+
+        # Drift-critical: README version tables DO change on provider bumps, so a
+        # Dependabot run that can't push must still surface the drift. The
+        # read-only token can't comment, so warn + summarize the diffstat.
+        - name: Report terraform-docs drift (Dependabot read-only token)
+          if: ${{ github.actor == 'dependabot[bot]' }}
+          run: |
+            if git diff --quiet; then
+              echo "terraform-docs: no README drift."
+            else
+              echo "::warning::terraform-docs README is out of date on this Dependabot PR and could not be auto-pushed (read-only Dependabot token). A maintainer push — or @dependabot rebase after a human commit — will refresh it (issue #149)."
+              {
+                echo "### terraform-docs README drift (not auto-pushed)"
+                echo ""
+                echo '```'
+                git diff --stat || true
+                echo '```'
+              } >> "$GITHUB_STEP_SUMMARY"
+            fi
 
     notify-failure:
       needs: docs

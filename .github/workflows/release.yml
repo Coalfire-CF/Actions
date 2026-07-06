@@ -22,6 +22,9 @@ jobs:
     name: Self-scan — gitleaks (full history)
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # Merged-gate (issue #149): a closed-unmerged PR has nothing to release —
+    # skip all jobs so a superseded close stops burning 3 self-scan runners.
+    if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
     permissions:
       contents: read
     steps:
@@ -56,6 +59,7 @@ jobs:
     name: Self-scan — trivy (secret/misconfig/vuln)
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
     permissions:
       contents: read
     steps:
@@ -79,6 +83,7 @@ jobs:
     name: Self-scan — actionlint
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
     permissions:
       contents: read
     steps:
@@ -106,6 +111,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     needs: [self-scan-gitleaks, self-scan-trivy, self-scan-actionlint]
+    # Merged-gate + actor-gate (issue #149): a Dependabot-actor run cannot see the
+    # RELEASE_APP secrets (Actions-store only) and its read-only token can't push,
+    # so release-please would 403. A skipped release self-heals — release-please
+    # scans ALL commits since the last tag on the next human/App-actor run, so no
+    # release is lost by skipping here.
+    if: >-
+      (github.event_name != 'pull_request' || github.event.pull_request.merged == true) &&
+      github.actor != 'dependabot[bot]'
 
     permissions:
       contents: write
@@ -113,5 +126,30 @@ jobs:
       issues: write
 
     steps:
+      # App-token wiring mirrored verbatim from org-release.yml: falls back to
+      # github.token when RELEASE_APP_* is absent. Bonus — App-created release PRs
+      # get CI runs (a GITHUB_TOKEN-created PR does not).
+      - name: Check for GitHub App credentials
+        id: check-app
+        env:
+          APP_ID: ${{ secrets.RELEASE_APP_ID }}
+        run: |
+          if [[ -n "${APP_ID}" ]]; then
+            echo "available=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "available=false" >> "${GITHUB_OUTPUT}"
+            echo "::notice::GitHub App credentials not found — falling back to github.token"
+          fi
+
+      - name: Generate GitHub App token
+        id: app-token
+        if: steps.check-app.outputs.available == 'true'
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
       - name: Run Release Please
         uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          token: ${{ steps.app-token.outputs.token || github.token }}

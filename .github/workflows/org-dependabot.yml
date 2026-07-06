@@ -389,8 +389,12 @@ jobs:
           echo "---- changed files ----"
           git diff --name-only -- . ':!**/.git/**' || true
 
+      # ACTOR-gate the push (issue #149): a Dependabot-actor run gets a read-only
+      # GITHUB_TOKEN and would false-red on push. Gated on github.actor (token
+      # capability), not pull_request.user.login — a human push to a Dependabot
+      # branch gets a write token and should push.
       - name: Commit & push (if changed)
-        if: ${{ steps.run.outputs.exit_code == '10' }}
+        if: ${{ steps.run.outputs.exit_code == '10' && github.actor != 'dependabot[bot]' }}
         env:
           HEAD_BRANCH: ${{ inputs.head_branch }}
           COMMIT_MESSAGE: ${{ inputs.commit_message }}
@@ -401,6 +405,18 @@ jobs:
           git add -A
           git commit -m "${COMMIT_MESSAGE}"
           git push origin "HEAD:${HEAD_BRANCH}"
+
+      # Keep the drift visible on Dependabot runs (can't push; read-only token
+      # also can't comment) — annotation + step summary.
+      - name: Report dependabot.yml drift (Dependabot read-only token)
+        if: ${{ steps.run.outputs.exit_code == '10' && github.actor == 'dependabot[bot]' }}
+        run: |
+          echo "::warning::.github/dependabot.yml is out of date on this Dependabot PR and could not be auto-pushed (read-only Dependabot token). A maintainer push — or @dependabot rebase after a human commit — will refresh it (issue #149)."
+          {
+            echo "### dependabot.yml drift (not auto-pushed)"
+            echo ""
+            echo "This PR runs under the read-only Dependabot token; the regenerated dependabot.yml could not be committed. Push as a maintainer to refresh it."
+          } >> "$GITHUB_STEP_SUMMARY"
 
   notify-failure:
     needs: sync

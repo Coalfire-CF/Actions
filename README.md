@@ -24,11 +24,11 @@ Called by downstream repos on pull requests.
 | Gitleaks | `org-gitleaks-pr.yml` | Secret detection on PR commits |
 | Terraform Validate | `org-terraform-validate.yml` | `terraform init` + `terraform validate` with PR comment |
 | Terraform fmt | `org-terraform-fmt.yml` | Format check and auto-fix for Terraform files |
-| Terraform Docs | `org-terraform-docs.yml` | Auto-generate and commit terraform-docs output |
+| Terraform Docs | `org-terraform-docs.yml` | Auto-generate and commit terraform-docs output (check-only on Dependabot PRs — read-only token can't push; drift surfaced as a warning, [#149](https://github.com/Coalfire-CF/Actions/issues/149)) |
 | Terraform Plan | `org-terraform-plan.yml` | Terraform plan with PR comment |
 | Terraform Apply | `org-terraform-apply.yml` | Terraform apply (manual trigger or post-merge) |
 | Markdown Lint | `org-markdown-lint.yml` | Lint changed markdown files with markdownlint-cli2 |
-| Tree README | `org-tree-readme.yml` | Auto-generate and commit directory tree in README |
+| Tree README | `org-tree-readme.yml` | Auto-generate and commit directory tree in README (check-only on Dependabot PRs — read-only token can't push; drift surfaced as a warning, [#149](https://github.com/Coalfire-CF/Actions/issues/149)) |
 | Dependabot Refresh | `org-dependabot.yml` | Auto-detect ecosystems and regenerate dependabot.yml |
 | Dependabot Auto-Merge | `org-dependabot-auto-merge.yml` | Evaluate and auto-merge non-terraform Dependabot PRs ([docs](docs/ORG_DEPENDABOT_AUTO_MERGE.md)) |
 | Label Sync | `org-label-sync.yml` | Sync Dependabot auto-merge label taxonomy to downstream repos ([taxonomy](docs/ORG_LABEL_TAXONOMY.md)) |
