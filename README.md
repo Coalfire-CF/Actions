@@ -87,7 +87,6 @@ permissions:
   contents: write
   pull-requests: write
   issues: write
-  actions: read
 
 jobs:
   create-release:

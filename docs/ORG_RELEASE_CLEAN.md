@@ -86,7 +86,6 @@ permissions:
   contents: write
   pull-requests: write
   issues: write
-  actions: read
 
 jobs:
   create-release:
@@ -156,7 +155,7 @@ When configured as **org-level secrets**, the workflow generates short-lived app
 | GitHub App authentication | IA-2 | Optional app token for consistent permissions across public/private repos; falls back to `github.token` |
 | SHA256 checksum | SI-7 | Integrity verification for the released artifact |
 | Step summary | AU-3 | Audit trail of what was built, excluded, and uploaded |
-| Least privilege | AC-6 | Only requires `contents: write` and `actions: read` |
+| Least privilege | AC-6 | Only requires `contents: write` (+ `pull-requests`/`issues` write for release-please) |
 
 ## Verifying a Download
 
