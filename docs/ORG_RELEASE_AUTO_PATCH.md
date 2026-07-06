@@ -61,11 +61,11 @@ merges or approves, but it does post the legibility comment.
 ## Rollout
 
 1. Land this PR (before the v0.11 cut).
-2. Opt a repo in with `auto_release_patch: true` **in dry-run** (the default) and
+1. Opt a repo in with `auto_release_patch: true` **in dry-run** (the default) and
    watch the marker comments on a few real release PRs.
-3. Configure org secrets `RELEASE_APP_ID` / `RELEASE_APP_PRIVATE_KEY` (the release
+1. Configure org secrets `RELEASE_APP_ID` / `RELEASE_APP_PRIVATE_KEY` (the release
    App). Without them the policy stays `SKIP (no-app-token)`.
-4. Flip `auto_release_patch_dry_run: false` for live auto-merge once the dry-run
+1. Flip `auto_release_patch_dry_run: false` for live auto-merge once the dry-run
    window looks correct.
 
 ## Consumer snippet

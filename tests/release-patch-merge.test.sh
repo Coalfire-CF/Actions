@@ -28,6 +28,7 @@ sub="$1 ${2:-}"
 jf=""; i=1; for a in "$@"; do [ "$prev" = "--json" ] && jf="$a"; prev="$a"; done
 case "$sub" in
   "pr view")
+    if [ "${MOCK_PRVIEW_FAIL:-0}" = "1" ]; then echo "gh: could not resolve to a PullRequest" >&2; exit 1; fi
     if [ "$jf" = "headRefOid,state,labels,reviewDecision" ] && [ -n "${MOCK_RESNAP:-}" ]; then cat "$MOCK_RESNAP"; exit 0; fi
     if [ "$jf" = "statusCheckRollup" ] && [ -n "${MOCK_ROLLUP2:-}" ]; then cat "$MOCK_ROLLUP2"; exit 0; fi
     cat "$MOCK_SNAP"; exit 0 ;;
@@ -253,6 +254,18 @@ E; run TOKEN_IS_APP=true DRY_RUN=false MOCK_COMMENT_ID=555 MOCK_SNAP="$MOCK_SNAP
 assert_rc0; assert_line "MERGED #42"
 echo "$TRACE" | grep -q 'api -X PATCH repos/Coalfire-CF/demo/issues/comments/555' || fail "${CASE}: expected a PATCH edit of comment 555 (not a re-post)"
 echo "$TRACE" | grep -q 'api -X POST repos/Coalfire-CF/demo/issues/42/comments' && fail "${CASE}: must NOT POST a new comment when one exists"
+echo "OK: ${CASE}"
+
+CASE="missing-manifest (404 at base) → SKIP, no merge"
+E; run TOKEN_IS_APP=true DRY_RUN=false RETRY_MAX=1 MOCK_SNAP="$MOCK_SNAP" \
+  MOCK_MANIFEST_BASE="$WORK/does-not-exist.json" MOCK_MANIFEST_HEAD="$MOCK_MANIFEST_HEAD" \
+  MOCK_CL_BASE="$MOCK_CL_BASE" MOCK_CL_HEAD="$MOCK_CL_HEAD"
+assert_rc0; assert_line "SKIP #42 (missing-manifest)"; assert_nomerge
+echo "OK: ${CASE}"
+
+CASE="snapshot-unavailable (persistent pr-view failure) → SKIP rc0, no merge"
+E; run TOKEN_IS_APP=true DRY_RUN=false RETRY_MAX=1 MOCK_PRVIEW_FAIL=1 MOCK_SNAP="$MOCK_SNAP"
+assert_rc0; assert_line "SKIP #42 (snapshot-unavailable)"; assert_nomerge
 echo "OK: ${CASE}"
 
 echo "ALL TESTS PASSED"

@@ -64,7 +64,7 @@ MARKER="<!-- org-release-auto-patch -->"
 log() { echo "[release-patch-merge] $*" >&2; }
 
 # ---- gh read wrappers (transient blip → retry via with_retry) ----
-# shellcheck disable=SC2329  # invoked indirectly via `with_retry -- _gh_once`
+# shellcheck disable=SC2317,SC2329  # invoked indirectly via `with_retry -- _gh_once` (SC2317/SC2329 are the version-dependent codes for the same "unreachable/unused function" false positive)
 _gh_once()      { local o; if o="$(gh "$@" 2>/dev/null)"; then printf '%s' "$o"; return 0; fi; return "$RETRY_TRANSIENT_RC"; }
 gh_read()       { with_retry "$RETRY_MAX" 2 20 -- _gh_once "$@"; }
 # Read a repo file's decoded content at a pinned SHA (empty string if absent).
@@ -167,6 +167,11 @@ while IFS= read -r f; do
 done < <(printf '%s' "$SNAP" | jq -r '.files[].path')
 
 # ================= GATE 9 — manifest patch-only delta (authoritative) =================
+# NOTE (deliberate deviation, #148 review R4): BASE_SHA is the base-branch TIP at
+# read time, not the PR's recorded baseRefOid. This is equal-or-safer: if base
+# advanced since the PR was cut, we compare against the NEWER base manifest — a
+# stale PR then reads as non-patch (or no-change) and SKIPs. Do not "fix" this
+# back to baseRefOid; the tip is the correct thing to gate a merge-into-tip against.
 BASE_SHA="$(gh_read api "repos/${REPO}/commits/${BASE_REF}" --jq '.sha' 2>/dev/null || echo "")"
 [ -n "$BASE_SHA" ] || { DECISION_BODY="Could not resolve base SHA."; skip "snapshot-unavailable"; }
 BASE_MANIFEST="$(read_file_at "$MANIFEST_PATH" "$BASE_SHA")"
