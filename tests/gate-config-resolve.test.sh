@@ -42,4 +42,42 @@ eq "missing key -> false" "$("$R" nonexistent '' "$work/gate-config.yml")" "fals
 # missing file -> false
 eq "missing file -> false" "$("$R" source-pin '' "$work/does-not-exist.yml")" "false"
 
+# --- item #5: block-style parsing + fail-closed on unparseable (grade-A plan) ---
+
+# block-style config: a valid-YAML reformat must resolve correctly, not silently false
+cat > "$work/gate-config-block.yml" <<'EOF'
+gates:
+  source-pin:
+    strict: true
+  uses-pin:
+    strict: false
+  opa:
+    # comment inside the block is fine
+    strict: false
+EOF
+eq "block-style strict:true -> true"   "$("$R" source-pin '' "$work/gate-config-block.yml")" "true"
+eq "block-style strict:false -> false" "$("$R" uses-pin '' "$work/gate-config-block.yml")" "false"
+eq "block-style with comment -> false" "$("$R" opa '' "$work/gate-config-block.yml")" "false"
+eq "block-style missing key -> false"  "$("$R" version-band '' "$work/gate-config-block.yml")" "false"
+
+# present-but-unparseable key -> non-zero exit (fail closed), never "false"
+cat > "$work/gate-config-broken.yml" <<'EOF'
+gates:
+  source-pin:
+    enabled: yes
+  uses-pin: { strict: maybe }
+EOF
+if out="$("$R" source-pin '' "$work/gate-config-broken.yml" 2>/dev/null)"; then
+  fail "present key without parseable strict must exit non-zero (got '$out')"
+else
+  echo "OK: present key without strict -> fail-closed (non-zero exit)"
+fi
+if out="$("$R" uses-pin '' "$work/gate-config-broken.yml" 2>/dev/null)"; then
+  fail "present key with garbage strict must exit non-zero (got '$out')"
+else
+  echo "OK: present key with garbage strict -> fail-closed (non-zero exit)"
+fi
+# caller override still bypasses a broken config (precedence preserved)
+eq "caller=true bypasses broken config" "$("$R" source-pin true "$work/gate-config-broken.yml")" "true"
+
 echo "ALL TESTS PASSED"
