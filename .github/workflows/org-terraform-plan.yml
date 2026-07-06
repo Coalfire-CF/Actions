@@ -1,5 +1,14 @@
 name: Terraform Plan
 
+# Reusable workflow that runs `terraform plan` for a Terraform module/config.
+# Cloud authentication is OIDC-based and multi-cloud: each provider's auth step
+# runs only when its inputs are supplied, so AWS-only callers are unaffected.
+#   - AWS:   set aws_role_arn (+ aws_region)
+#   - Azure: set azure_client_id / azure_tenant_id / azure_subscription_id
+#            (azure_environment=azureusgovernment for Azure-Gov)
+#   - GCP:   set gcp_workload_identity_provider (+ gcp_service_account)
+# Mirrors the proven per-cloud OIDC pattern in org-terratest.yml.
+
 on:
   workflow_call:
     inputs:
@@ -30,6 +39,36 @@ on:
         type: string
       aws_role_arn:
         description: 'AWS IAM role ARN for OIDC authentication (leave empty to skip AWS auth)'
+        required: false
+        default: ''
+        type: string
+      azure_client_id:
+        description: 'Azure App Registration client ID for OIDC (leave empty to skip Azure auth)'
+        required: false
+        default: ''
+        type: string
+      azure_tenant_id:
+        description: 'Azure AD tenant ID for OIDC'
+        required: false
+        default: ''
+        type: string
+      azure_subscription_id:
+        description: 'Azure subscription ID for OIDC'
+        required: false
+        default: ''
+        type: string
+      azure_environment:
+        description: 'Azure cloud environment: azurecloud or azureusgovernment'
+        required: false
+        default: 'azurecloud'
+        type: string
+      gcp_workload_identity_provider:
+        description: 'GCP Workload Identity Provider resource name (leave empty to skip GCP auth)'
+        required: false
+        default: ''
+        type: string
+      gcp_service_account:
+        description: 'GCP service account email for Workload Identity Federation'
         required: false
         default: ''
         type: string
@@ -152,6 +191,44 @@ jobs:
         with:
           role-to-assume: ${{ inputs.aws_role_arn }}
           aws-region: ${{ inputs.aws_region }}
+
+      - name: Configure Azure credentials (OIDC)
+        if: inputs.azure_client_id != ''
+        uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43 # v3.0.0
+        with:
+          client-id: ${{ inputs.azure_client_id }}
+          tenant-id: ${{ inputs.azure_tenant_id }}
+          subscription-id: ${{ inputs.azure_subscription_id }}
+          environment: ${{ inputs.azure_environment }}
+
+      # The azurerm provider does not read azure/login's CLI session for OIDC auth;
+      # it needs ARM_* env vars. With ARM_USE_OIDC=true the provider auto-detects
+      # GitHub's ACTIONS_ID_TOKEN_REQUEST_URL/TOKEN — no secret material is exported.
+      - name: Export ARM environment for Terraform
+        if: inputs.azure_client_id != ''
+        env:
+          AZURE_CLIENT_ID: ${{ inputs.azure_client_id }}
+          AZURE_TENANT_ID: ${{ inputs.azure_tenant_id }}
+          AZURE_SUBSCRIPTION_ID: ${{ inputs.azure_subscription_id }}
+          AZURE_ENVIRONMENT: ${{ inputs.azure_environment }}
+        run: |
+          set -eo pipefail
+          {
+            echo "ARM_USE_OIDC=true"
+            echo "ARM_CLIENT_ID=${AZURE_CLIENT_ID}"
+            echo "ARM_TENANT_ID=${AZURE_TENANT_ID}"
+            echo "ARM_SUBSCRIPTION_ID=${AZURE_SUBSCRIPTION_ID}"
+          } >> "$GITHUB_ENV"
+          if [ "$AZURE_ENVIRONMENT" = "azureusgovernment" ]; then
+            echo "ARM_ENVIRONMENT=usgovernment" >> "$GITHUB_ENV"
+          fi
+
+      - name: Configure GCP credentials (OIDC)
+        if: inputs.gcp_workload_identity_provider != ''
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ inputs.gcp_workload_identity_provider }}
+          service_account: ${{ inputs.gcp_service_account }}
 
       - name: Terraform Init
         env:
