@@ -26,6 +26,11 @@ permissions:
   contents: write
   pull-requests: write
 
+# Serialize per PR (or per ref for non-PR events); cancel superseded PR runs.
+concurrency:
+  group: tree-readme-${{ github.repository }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   update-readme-on-pr:
     runs-on: ubuntu-latest
@@ -158,8 +163,14 @@ jobs:
           echo "exit_code=$code" >> "$GITHUB_OUTPUT"
           exit 0
 
+      # ACTOR-gate the push (issue #149): a Dependabot-actor run gets a READ-ONLY
+      # GITHUB_TOKEN and cannot see the App secrets, so the push is structurally
+      # impossible and would false-red. We gate on github.actor (token capability),
+      # NOT pull_request.user.login — a human pushing to a Dependabot branch gets a
+      # WRITE token and SHOULD push. This is a deliberate divergence from the
+      # auto-merge login gate, whose job is authorship trust, not token capability.
       - name: Commit & push if changed
-        if: ${{ steps.run.outputs.exit_code == '10' }}
+        if: ${{ steps.run.outputs.exit_code == '10' && github.actor != 'dependabot[bot]' }}
         env:
           COMMIT_MSG: ${{ inputs.commit_message }}
         run: |
@@ -170,6 +181,18 @@ jobs:
           fi
           git commit -m "$COMMIT_MSG"
           git push origin HEAD
+
+      # Keep the drift VISIBLE on Dependabot runs (can't push). The read-only token
+      # can't post a PR comment, so an annotation + step summary is the only channel.
+      - name: Report README-tree drift (Dependabot read-only token)
+        if: ${{ steps.run.outputs.exit_code == '10' && github.actor == 'dependabot[bot]' }}
+        run: |
+          echo "::warning::README tree is out of date on this Dependabot PR and could not be auto-pushed (read-only Dependabot token). A maintainer commit/push — or @dependabot rebase after one — will refresh it."
+          {
+            echo "### README tree drift (not auto-pushed)"
+            echo ""
+            echo "This PR runs under the read-only Dependabot token, so the tree README update could not be committed. Push a commit as a maintainer to refresh it (issue #149)."
+          } >> "$GITHUB_STEP_SUMMARY"
 
   notify-failure:
     needs: update-readme-on-pr

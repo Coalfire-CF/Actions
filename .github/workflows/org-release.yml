@@ -180,6 +180,13 @@ jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
+    # Kill the closed-unmerged false-red fleet-wide (issue #149): release-please
+    # has nothing to do on a PR that closed without merging. Non-PR events
+    # (push/schedule/dispatch) and merged PRs still run; downstream jobs already
+    # chain off release_created, so no consumer edit is needed.
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.merged == true
 
     permissions:
       contents: write
