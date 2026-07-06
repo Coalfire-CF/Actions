@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2001,SC2129
+# shellcheck disable=SC2001,SC2129,SC2015
+# SC2015: the `[ ... ] && [ ... ] || { ...; continue; }` guard-continue is the
+# original heredoc idiom, intentional (not if-then-else) — kept byte-identical.
 #
 # breaking-change-check.sh — semver + release-note (Bedrock) breaking-change
 # analysis for the Dependabot auto-merge workflow

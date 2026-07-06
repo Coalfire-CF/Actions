@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2001,SC2034,SC2129
+# shellcheck disable=SC2001,SC2034,SC2129,SC2015
+# SC2015: the `[ ... ] && [ ... ] || { ...; continue; }` guard-continue is the
+# original heredoc idiom, intentional (not if-then-else) — kept byte-identical.
 #
 # supply-chain-check.sh — OSV + OpenSSF Scorecard supply-chain gate for the
 # Dependabot auto-merge workflow (.github/workflows/org-dependabot-auto-merge.yml,
