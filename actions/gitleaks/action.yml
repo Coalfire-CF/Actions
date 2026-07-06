@@ -46,8 +46,21 @@ runs:
         GITLEAKS_VERSION: ${{ inputs.version }}
       run: |
         set -eo pipefail
-        curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
-          | tar -xz -C /usr/local/bin gitleaks
+        # SI-7 integrity: version-keyed SHA-256 map (official gitleaks_<v>_checksums.txt values).
+        # A version without a pinned digest fails CLOSED — add the digest here before bumping.
+        case "${GITLEAKS_VERSION}" in
+          8.30.0) GITLEAKS_SHA256="79a3ab579b53f71efd634f3aaf7e04a0fa0cf206b7ed434638d1547a2470a66e" ;;
+          *)
+            echo "::error::no pinned checksum for gitleaks version ${GITLEAKS_VERSION} — refusing unverified download (add it to the digest map)."
+            exit 1
+            ;;
+        esac
+        TARBALL="$(mktemp -d)/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+        curl -sSfL -o "${TARBALL}" \
+          "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+        echo "${GITLEAKS_SHA256}  ${TARBALL}" | sha256sum -c -
+        tar -xzf "${TARBALL}" -C /usr/local/bin gitleaks
+        rm -f "${TARBALL}"
         echo "Installed gitleaks $(gitleaks version)"
 
     - name: Run gitleaks scan

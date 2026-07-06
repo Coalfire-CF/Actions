@@ -115,8 +115,18 @@ jobs:
           OPA_VERSION: ${{ inputs.opa_version }}
         run: |
           set -eo pipefail
+          # SI-7 integrity: version-keyed SHA-256 map (official opa_linux_amd64_static.sha256 values).
+          # A version without a pinned digest fails CLOSED — add the digest here before bumping.
+          case "${OPA_VERSION}" in
+            0.69.0) OPA_SHA256="c81aa9c1da779d0a8646c837a96d52e1a7040ff562318d9743b8ef51c93b49d6" ;;
+            *)
+              echo "::error::no pinned checksum for OPA version ${OPA_VERSION} — refusing unverified download (add it to the digest map)."
+              exit 1
+              ;;
+          esac
           curl -fsSL --retry 3 -o /usr/local/bin/opa \
             "https://openpolicyagent.org/downloads/v${OPA_VERSION}/opa_linux_amd64_static"
+          echo "${OPA_SHA256}  /usr/local/bin/opa" | sha256sum -c -
           chmod +x /usr/local/bin/opa
           opa version
 
