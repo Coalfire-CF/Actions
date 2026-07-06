@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.1](https://github.com/Coalfire-CF/Actions/compare/v0.11.0...v0.11.1) (2026-07-06)
+
+
+### Bug Fixes
+
+* **ci:** actor-gate push-back workflows for read-only Dependabot token ([#149](https://github.com/Coalfire-CF/Actions/issues/149)) ([#183](https://github.com/Coalfire-CF/Actions/issues/183)) ([dd020d1](https://github.com/Coalfire-CF/Actions/commit/dd020d1205e0acd9ddb738ec4a01559eb76d185d))
+
 ## [0.11.0](https://github.com/Coalfire-CF/Actions/compare/v0.10.0...v0.11.0) (2026-07-06)
 
 
