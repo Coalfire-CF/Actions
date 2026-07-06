@@ -27,6 +27,11 @@ on:
         type: string
   pull_request:
 
+# Serialize fmt per repo+ref (fmt has no working_directory input).
+concurrency:
+  group: terraform-fmt-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: write
   pull-requests: write

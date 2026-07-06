@@ -93,6 +93,11 @@ on:
       SLACK_BOT_TOKEN:
         required: false
 
+# One auto-merge evaluation per PR at a time; never cancel a merge mid-flight.
+concurrency:
+  group: dependabot-auto-merge-${{ github.repository }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
 jobs:
   # ----------------------------------------------------------------
   # Job 1: Classify the dependency and determine auto-merge eligibility

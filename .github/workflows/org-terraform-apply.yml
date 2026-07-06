@@ -77,6 +77,11 @@ on:
         default: false
         type: boolean
 
+# Serialize applies per repo+ref+dir; never cancel an apply mid-flight.
+concurrency:
+  group: terraform-apply-${{ github.repository }}-${{ github.ref }}-${{ inputs.working_directory }}
+  cancel-in-progress: false
+
 permissions:
   contents: read
   id-token: write
