@@ -1,9 +1,9 @@
 {
   "private": true,
   "comments": {
-    "markdownlint-cli2": "Pinned to 0.21.0 instead of 0.22.0 due to moderate DoS vulnerability in smol-toml dependency (GHSA-v3rj-xjv7-4jmq). Upgrade to 0.22.0+ when smol-toml >= 1.6.1 is included."
+    "markdownlint-cli2": "0.23.0 ships smol-toml 1.7.0 (>=1.6.1 fixes GHSA-v3rj-xjv7-4jmq), markdown-it 14.2.0, js-yaml 5.2.0, linkify-it >=5.0.1 \u2014 clears Dependabot alerts #1/#3/#4 and retires the 0.21.0 hold."
   },
   "devDependencies": {
-    "markdownlint-cli2": "0.21.0"
+    "markdownlint-cli2": "0.23.0"
   }
 }
