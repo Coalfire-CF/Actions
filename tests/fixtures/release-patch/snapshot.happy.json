@@ -1,0 +1,13 @@
+{
+  "state": "OPEN",
+  "isDraft": false,
+  "isCrossRepository": false,
+  "headRefName": "release-please--branches--main",
+  "headRefOid": "headsha111",
+  "baseRefName": "main",
+  "author": { "login": "app/coalfire-release" },
+  "labels": [ { "name": "autorelease: pending" } ],
+  "reviewDecision": "",
+  "statusCheckRollup": [ { "status": "COMPLETED", "conclusion": "SUCCESS" } ],
+  "files": [ { "path": "CHANGELOG.md" }, { "path": ".release-please-manifest.json" } ]
+}

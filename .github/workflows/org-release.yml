@@ -120,6 +120,35 @@ on:
         required: false
         type: string
         default: ''
+      auto_release_patch:
+        description: >-
+          Opt in to auto-merging release-please PRs that are UNAMBIGUOUS
+          patch-only releases (Coalfire-CF/Actions#148). Minor/major always keep
+          the human gate. Requires a GitHub App token (RELEASE_APP_ID) — a
+          GITHUB_TOKEN merge fires no push event and the publish run never runs.
+        required: false
+        type: boolean
+        default: false
+      auto_release_patch_dry_run:
+        description: >-
+          When auto_release_patch is on, only LOG the would-merge/skip decision
+          (default true = safe). Set false to actually merge patch releases.
+        required: false
+        type: boolean
+        default: true
+      auto_release_allow_zero_checks:
+        description: 'Permit auto-merging a patch release PR that has no status checks (default false = fail closed).'
+        required: false
+        type: boolean
+        default: false
+      actions_ref:
+        description: >-
+          Git ref of Coalfire-CF/Actions to load scripts/release-patch-merge.sh
+          from. Defaults to 'main' — the same central model the other org
+          workflows use for scripts/. Pin to a release SHA to freeze the logic.
+        required: false
+        type: string
+        default: 'main'
     outputs:
       release_created:
         description: Whether a release was created
@@ -161,6 +190,8 @@ jobs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
       release_body: ${{ steps.release.outputs.body }}
+      prs_created: ${{ steps.release.outputs.prs_created }}
+      pr_number: ${{ steps.release.outputs.prs_created == 'true' && fromJSON(steps.release.outputs.pr).number || '' }}
 
     steps:
       - name: Check for GitHub App credentials
@@ -188,6 +219,68 @@ jobs:
         uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         with:
           token: ${{ steps.app-token.outputs.token || github.token }}
+
+  auto-merge-patch:
+    name: Auto-merge patch-only release PR
+    needs: release
+    # Only when opted in, release-please OPENED a release PR this run, and it did
+    # NOT also create a release (so we're acting on the PR, not a post-merge run).
+    # Post-merge reruns have prs_created=false → inherently loop-safe.
+    if: >-
+      inputs.auto_release_patch &&
+      needs.release.outputs.prs_created == 'true' &&
+      needs.release.outputs.release_created != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Never cancel a merge mid-flight; serialize concurrent release runs per repo.
+    concurrency:
+      group: org-release-auto-patch-${{ github.repository }}
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Check for GitHub App credentials
+        id: check-app
+        env:
+          APP_ID: ${{ secrets.RELEASE_APP_ID }}
+        run: |
+          if [[ -n "${APP_ID}" ]]; then
+            echo "available=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "available=false" >> "${GITHUB_OUTPUT}"
+            echo "::notice::No GitHub App token — auto-merge-patch will refuse (a GITHUB_TOKEN merge fires no push event → unpublished release)."
+          fi
+
+      - name: Generate GitHub App token
+        id: app-token
+        if: steps.check-app.outputs.available == 'true'
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
+      - name: Checkout Actions repo (decision script)
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: Coalfire-CF/Actions
+          ref: ${{ inputs.actions_ref || 'main' }}
+          path: actions-tools
+
+      - name: Evaluate + (maybe) merge the patch release PR
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token || github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ needs.release.outputs.pr_number }}
+          DRY_RUN: ${{ inputs.auto_release_patch_dry_run }}
+          MERGE_METHOD: squash
+          TOKEN_IS_APP: ${{ steps.check-app.outputs.available }}
+          ALLOW_ZERO_CHECKS: ${{ inputs.auto_release_allow_zero_checks }}
+          AUTHOR_ALLOWLIST: app/${{ steps.app-token.outputs.app-slug }} ${{ steps.app-token.outputs.app-slug }}[bot]
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          bash "${GITHUB_WORKSPACE}/actions-tools/scripts/release-patch-merge.sh"
 
   release-clean:
     name: Clean Release Archive
