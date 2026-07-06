@@ -24,6 +24,15 @@
 # Each builder prints a JSON string (the Bedrock message text), consumed via
 # `jq --argjson prompt`.
 
+# ai_verdict_has_boolean_breaking <json-text> : exit 0 iff the parsed model
+# response carries a genuine BOOLEAN `breaking` field. A valid-JSON response that
+# omits `breaking`, or types it as a string/number, must fail closed (route to
+# manual review) rather than default to non-breaking — otherwise an attacker only
+# has to get the verdict dropped, not flipped, to slip a breaking change through.
+ai_verdict_has_boolean_breaking() {
+  [ "$(printf '%s' "$1" | jq -r '.breaking | type' 2>/dev/null)" = "boolean" ]
+}
+
 # _untrusted_fence : echo an unpredictable per-invocation fence token.
 _untrusted_fence() {
   local r

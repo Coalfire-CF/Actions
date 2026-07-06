@@ -95,4 +95,15 @@ echo "$aregion" | grep -q "USAGE_MARKER" || fail "applicability prompt: usage no
 echo "$ap" | grep -q '"applies_to_repo": true/false' || fail "applicability output schema not preserved"
 echo "OK: applicability prompt fences summary + usage inside the real fence, schema preserved"
 
+# ---- Case 5 (fail-closed verdict validation, grade-A #12 review): a genuine
+#      boolean `breaking` is accepted; a valid-JSON response that omits it or
+#      types it as a string/number is rejected → caller fails closed to manual. ----
+ai_verdict_has_boolean_breaking '{"breaking":true,"confidence":1}'  || fail "boolean true breaking must be accepted"
+ai_verdict_has_boolean_breaking '{"breaking":false}'               || fail "boolean false breaking must be accepted"
+! ai_verdict_has_boolean_breaking '{"confidence":1,"summary":"x"}'  || fail "MISSING breaking must be rejected (fail-closed)"
+! ai_verdict_has_boolean_breaking '{"breaking":"false"}'           || fail "STRING breaking must be rejected (fail-closed)"
+! ai_verdict_has_boolean_breaking '{"breaking":0}'                 || fail "NUMBER breaking must be rejected (fail-closed)"
+! ai_verdict_has_boolean_breaking 'not json'                       || fail "non-JSON must be rejected"
+echo "OK: verdict validation — boolean accepted; missing/string/number/non-JSON breaking fail closed"
+
 echo "ALL TESTS PASSED"

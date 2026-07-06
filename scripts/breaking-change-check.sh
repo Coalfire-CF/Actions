@@ -282,6 +282,16 @@ if [ "$SHARED_CACHE_HIT" = "false" ]; then
       AI_TEXT='{"breaking":false,"confidence":0,"risks":["Failed to parse AI response"],"summary":"Analysis unparseable — routed to manual review"}'
     fi
   fi
+  # Fail CLOSED on a valid-JSON response that OMITS or mistypes the `breaking`
+  # verdict (grade-A #12): `.breaking // false` would silently read a missing or
+  # string-typed field as non-breaking — the cheapest injection win (get the
+  # verdict dropped, not flipped). Require a real boolean; otherwise route through
+  # the SAME CHECK_ERRORS + fallback path as an unparseable response (→ manual review).
+  if ! ai_verdict_has_boolean_breaking "$AI_TEXT"; then
+    echo "::warning::AI response for ${DEP_NAME} has a missing/non-boolean 'breaking' verdict — failing closed"
+    CHECK_ERRORS=$((CHECK_ERRORS + 1))
+    AI_TEXT='{"breaking":false,"confidence":0,"risks":["Missing or non-boolean breaking verdict"],"summary":"Analysis verdict malformed — routed to manual review"}'
+  fi
   HAS_BREAKING=$(echo "$AI_TEXT" | jq -r '.breaking // false')
   CONFIDENCE=$(echo "$AI_TEXT" | jq -r '.confidence // 0')
   RISK_SUMMARY=$(echo "$AI_TEXT" | jq -r '.summary // "Analysis unavailable"')
