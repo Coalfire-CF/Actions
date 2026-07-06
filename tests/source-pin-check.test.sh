@@ -29,8 +29,8 @@ fail() { echo "NOT OK: $1"; exit 1; }
 # ---- Case 1: mixed tree, STRICT=true → FAIL, names the 3 fails as errors ----
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
-cp "${FIXTURES}/pass.tf" "${FIXTURES}/warn_tag.tf" "${FIXTURES}/fail_floating.tf" \
-   "${FIXTURES}/fail_branch.tf" "${FIXTURES}/fail_sha.tf" "$work/"
+cp "${FIXTURES}/pass.tf" "${FIXTURES}/pass_renovate.tf" "${FIXTURES}/warn_tag.tf" \
+   "${FIXTURES}/fail_floating.tf" "${FIXTURES}/fail_branch.tf" "${FIXTURES}/fail_sha.tf" "$work/"
 
 out="$(STRICT=true "$CHECK" "$work" 2>&1)"; code=$?
 [ "$code" -eq 1 ] || fail "expected exit 1 on mixed tree (STRICT=true), got $code"
@@ -40,6 +40,7 @@ echo "$out" | grep -q "::error .*fail_sha.tf"      || fail "fail_sha.tf (bare SH
 echo "$out" | grep -q "::warning .*warn_tag.tf"    || fail "warn_tag.tf not emitted as warning"
 echo "$out" | grep -q "::error .*warn_tag.tf"      && fail "warn_tag.tf wrongly emitted as error"
 echo "$out" | grep -q "pass.tf"                    && fail "pass.tf (SHA + comment) was wrongly flagged"
+echo "$out" | grep -q "pass_renovate.tf"           && fail "pass_renovate.tf (Renovate-produced shape) was wrongly flagged"
 echo "OK: strict mixed tree fails, 3 fails as errors, warn_tag as warning, pass spared (exit $code)"
 
 # ---- Case 2: mixed tree, STRICT=false (advisory default) → exit 0, warn-only ----
