@@ -65,6 +65,13 @@ Called on merge to main.
 
 ## Usage
 
+> **Pin by release SHA (RFC-0008).** Always reference these workflows as
+> `@<40-hex-release-sha> # vX.Y.Z` — never `@main` or a bare tag (a moving ref is a
+> supply-chain hole; the SHA makes the reference immutable and auditable). Resolve the
+> SHA from the latest release tag at adoption time
+> (`gh api repos/Coalfire-CF/Actions/git/refs/tags/<tag>`), and bump it deliberately when
+> adopting a new release. All examples below follow this form.
+
 ### Basic Setup
 
 Downstream repos call these workflows via `workflow_call`. Example `.github/workflows/` setup:
@@ -84,7 +91,7 @@ permissions:
 
 jobs:
   create-release:
-    uses: Coalfire-CF/Actions/.github/workflows/org-release.yml@main
+    uses: Coalfire-CF/Actions/.github/workflows/org-release.yml@72d0360b99f80252dda40f6dfefc252f5a66edb3 # v0.10.0
     secrets: inherit
     with:
       slack_channel_id: 'C0123456789'
@@ -98,7 +105,7 @@ Access to private Terraform module repositories is controlled using a GitHub App
 # Private repo — pass app credentials for module access
 jobs:
   validate:
-    uses: Coalfire-CF/Actions/.github/workflows/org-terraform-validate.yml@main
+    uses: Coalfire-CF/Actions/.github/workflows/org-terraform-validate.yml@72d0360b99f80252dda40f6dfefc252f5a66edb3 # v0.10.0
     with:
       terraform_version: '1.15.7' # or omit to use .terraform-version
     secrets:
@@ -108,7 +115,7 @@ jobs:
 # Public repo — no app credentials needed
 jobs:
   validate:
-    uses: Coalfire-CF/Actions/.github/workflows/org-terraform-validate.yml@main
+    uses: Coalfire-CF/Actions/.github/workflows/org-terraform-validate.yml@72d0360b99f80252dda40f6dfefc252f5a66edb3 # v0.10.0
     with:
       terraform_version: '1.15.7' # or omit to use .terraform-version
 ```
@@ -128,7 +135,7 @@ Wrapper around [terraform-docs GitHub Actions](https://github.com/terraform-docs
 # Root module and submodules
 jobs:
   terraform-docs:
-    uses: Coalfire-CF/Actions/.github/workflows/org-terraform-docs.yml@main
+    uses: Coalfire-CF/Actions/.github/workflows/org-terraform-docs.yml@72d0360b99f80252dda40f6dfefc252f5a66edb3 # v0.10.0
     with:
       recursive: true
 ```

@@ -206,7 +206,7 @@ on:
 
 jobs:
   sync_to_jira:
-    uses: Coalfire-CF/Actions/.github/workflows/org-jira-sync.yml@main
+    uses: Coalfire-CF/Actions/.github/workflows/org-jira-sync.yml@72d0360b99f80252dda40f6dfefc252f5a66edb3 # v0.10.0
     with:
       issue_title: ${{ github.event.issue.title }}
       issue_body: ${{ github.event.issue.body }}
@@ -234,7 +234,7 @@ on:
 
 jobs:
   sync_to_jira:
-    uses: Coalfire-CF/Actions/.github/workflows/org-jira-sync.yml@main
+    uses: Coalfire-CF/Actions/.github/workflows/org-jira-sync.yml@72d0360b99f80252dda40f6dfefc252f5a66edb3 # v0.10.0
     with:
       issue_title: ${{ github.event.issue.title }}
       issue_body: ${{ github.event.issue.body }}

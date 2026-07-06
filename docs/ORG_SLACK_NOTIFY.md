@@ -31,7 +31,7 @@ Add `slack_channel_id` to any workflow call. The release workflow requires `secr
 # Release workflow — gets both release and failure notifications
 jobs:
   create-release:
-    uses: Coalfire-CF/Actions/.github/workflows/org-release.yml@main
+    uses: Coalfire-CF/Actions/.github/workflows/org-release.yml@72d0360b99f80252dda40f6dfefc252f5a66edb3 # v0.10.0
     secrets: inherit
     with:
       slack_channel_id: 'CXXXXXXXXX'
@@ -41,7 +41,7 @@ jobs:
 # PR workflows — get failure notifications
 jobs:
   trivy-scan:
-    uses: Coalfire-CF/Actions/.github/workflows/org-trivy-pr.yml@main
+    uses: Coalfire-CF/Actions/.github/workflows/org-trivy-pr.yml@72d0360b99f80252dda40f6dfefc252f5a66edb3 # v0.10.0
     with:
       slack_channel_id: 'CXXXXXXXXX'
 ```
@@ -79,7 +79,7 @@ on:
 
 jobs:
   check:
-    uses: Coalfire-CF/Actions/.github/workflows/org-slack-notify.yml@main
+    uses: Coalfire-CF/Actions/.github/workflows/org-slack-notify.yml@72d0360b99f80252dda40f6dfefc252f5a66edb3 # v0.10.0
     secrets: inherit
     with:
       notification-type: health-check
@@ -95,7 +95,7 @@ The `org-slack-notify.yml` workflow can also be called directly for custom notif
 ```yaml
 jobs:
   notify:
-    uses: Coalfire-CF/Actions/.github/workflows/org-slack-notify.yml@main
+    uses: Coalfire-CF/Actions/.github/workflows/org-slack-notify.yml@72d0360b99f80252dda40f6dfefc252f5a66edb3 # v0.10.0
     secrets: inherit
     with:
       notification-type: release    # release, failure, or health-check
