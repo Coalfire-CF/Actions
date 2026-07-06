@@ -14,7 +14,7 @@ telemetry window before the flip and the equally-instant flip-back after it.
    and exits non-zero on a present-but-unparseable `strict` (plan item #5,
    shipped). Without it, a well-intentioned reformat of `gate-config.yml` during
    promotion silently fails **open**.
-2. **Fail-open telemetry** — the MTCS `fleet_posture.py` `fail_open` signal +
+1. **Fail-open telemetry** — the MTCS `fleet_posture.py` `fail_open` signal +
    N4 detector (plan item #15) is live and aggregating, so "zero fail-open
    findings" is a measurable claim, not a hope.
 
@@ -24,17 +24,17 @@ telemetry window before the flip and the equally-instant flip-back after it.
    days (≥ 1 full release cycle)** in the MTCS fleet-posture telemetry
    (`fleet/FLEET-POSTURE.md` fail-open section). A single standing finding
    disqualifies — fix the repo or record a scoped exception first.
-2. **Open the promotion PR:** flips exactly one value in `gate-config.yml` to
+1. **Open the promotion PR:** flips exactly one value in `gate-config.yml` to
    `{ strict: true }`, **keeping inline-flow shape**. The PR body must contain:
    - the recorded promotion decision citation (RFC-0010 / ADR-0011),
    - the telemetry-window evidence (dates + zero-count source),
    - a named **rollback owner** who can merge the flip-back PR same-day.
-3. **Merge on green** (protected main; the `test-scripts.yml` meta-tests cover
+1. **Merge on green** (protected main; the `test-scripts.yml` meta-tests cover
    the resolver; a block-style reformat is rejected by the parser tests).
-4. **Watch the fleet:** monitor the fleet-posture signal for a breakage spike
+1. **Watch the fleet:** monitor the fleet-posture signal for a breakage spike
    over the next scheduled sweeps. Rollback = the same one-line PR flipping back
    to `false` — also fleet-wide-instant.
-5. **Cool-down:** do not promote the next gate until the previous flip has a
+1. **Cool-down:** do not promote the next gate until the previous flip has a
    clean sweep behind it.
 
 ## Promotion order (recommended)
