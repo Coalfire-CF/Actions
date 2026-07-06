@@ -1,0 +1,38 @@
+{
+  // Shareable org preset (grade-A plan item #18): auto-bump Coalfire-CF
+  // Terraform module `?ref=` commit SHAs — the one dependency class Dependabot
+  // cannot pin — while keeping the adjacent `# vX.Y.Z` release comment in sync,
+  // so every Renovate-produced line is exactly the shape
+  // scripts/source-pin-check.sh grades PASS (RFC-0008):
+  //
+  //   source = "git::https://github.com/Coalfire-CF/<repo>(.git)(//subdir)?ref=<40-hex>" # vX.Y.Z
+  //   source = "github.com/Coalfire-CF/<repo>?ref=<40-hex>" # vX.Y.Z
+  //
+  // Consume from a module repo's renovate.json:
+  //   { "extends": ["github>Coalfire-CF/Actions//renovate/terraform-ref-pins"] }
+  //
+  // NOTE: inert until the Renovate app is installed on the org/repos (a separate
+  // org-admin step — Renovate is a different app from Dependabot).
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Coalfire-CF git-module sources pinned as ?ref=<sha> # vX.Y.Z (source-pin PASS shape)",
+      "fileMatch": ["\\.tf$"],
+      "matchStrings": [
+        "(?<host>git::https://github\\.com/|github\\.com/)(?<depName>Coalfire-CF/[A-Za-z0-9._-]+?)(?<gitsuffix>\\.git)?(?<subdir>//[^\"?]*)?\\?ref=(?<currentDigest>[a-fA-F0-9]{40})\"(?<sp>[ \\t]*)#[ \\t]*(?<currentValue>v[0-9]+\\.[0-9]+\\.[0-9]+)"
+      ],
+      "datasourceTemplate": "github-tags",
+      "autoReplaceStringTemplate": "{{{host}}}{{{depName}}}{{#if gitsuffix}}.git{{/if}}{{#if subdir}}{{{subdir}}}{{/if}}?ref={{{newDigest}}}\"{{{sp}}}# {{{newValue}}}"
+    }
+  ],
+  "packageRules": [
+    {
+      // Majors stay individually reviewable; minors/patches may group.
+      "matchDatasources": ["github-tags"],
+      "matchPackageNames": ["Coalfire-CF/**"],
+      "commitMessagePrefix": "chore(deps):",
+      "separateMajorMinor": true
+    }
+  ]
+}

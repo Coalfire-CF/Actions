@@ -42,5 +42,17 @@ jobs:
 ```
 
 Dependabot's `github-actions` ecosystem natively maintains SHA pins and updates
-the adjacent version comment; Terraform module `?ref=` SHAs are updated by the
-release re-pin procedure.
+the adjacent version comment. Terraform module `?ref=` SHAs are auto-bumped by
+**Renovate** via the shared org preset
+[`renovate/terraform-ref-pins.json5`](../renovate/terraform-ref-pins.json5) —
+its custom manager rewrites both the 40-hex SHA and the adjacent `# vX.Y.Z`
+comment, so every Renovate PR is already in this gate's PASS shape. Consume it
+from a module repo's `renovate.json`:
+
+```json
+{ "extends": ["github>Coalfire-CF/Actions//renovate/terraform-ref-pins"] }
+```
+
+(Requires the Renovate app installed on the repo — a separate app from
+Dependabot. Repos without Renovate fall back to the manual release re-pin
+procedure.)
