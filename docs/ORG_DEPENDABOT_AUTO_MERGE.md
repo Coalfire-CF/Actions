@@ -123,6 +123,36 @@ Create an S3 bucket for cross-repo analysis caching:
 - **Encryption**: SSE-S3
 - **Access**: Private (no public access)
 - **Lifecycle**: Expire objects after 90 days
+- **Write scoping (required)**: `s3:PutObject` on `analyses/*` MUST be restricted to
+  the single CI OIDC role (`AUTOMERGE_DEPENDABOT_ROLE_ARN`). The cache key
+  `analyses/shared/{dep}/{version}.json` is a shared namespace: any other principal
+  with write access could poison it to suppress an OSV / scorecard / breaking-change
+  block for the whole TTL window. Attach a bucket policy such as:
+
+  ```json
+  {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Sid": "AutomergeCacheWriteOnlyFromCIRole",
+        "Effect": "Deny",
+        "Principal": "*",
+        "Action": "s3:PutObject",
+        "Resource": "arn:aws:s3:::<your-cache-bucket>/analyses/*",
+        "Condition": {
+          "StringNotEquals": {
+            "aws:PrincipalArn": "<AUTOMERGE_DEPENDABOT_ROLE_ARN>"
+          }
+        }
+      }
+    ]
+  }
+  ```
+
+  Defence-in-depth pairs with the read-side `schema_version`/`producer` validation
+  (grade-A #9): an object of an unrecognized shape or origin is re-analyzed rather
+  than trusted, and missing gate fields fail closed (block/manual-review), never
+  approve.
 
 The cache uses a two-tier layout to share universal data across repos while keeping
 repo-specific analysis scoped:

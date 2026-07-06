@@ -39,6 +39,11 @@
 #
 set -euo pipefail
 
+# Shared cache read/validate helpers (grade-A #9): fail-safe field reads +
+# schema_version/producer validation.
+# shellcheck source=scripts/cache-lib.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/cache-lib.sh"
+
 # Grouped-PR support: each dependency is analyzed individually and
 # folded into aggregates (semver = max, breaking = OR). Bedrock/API
 # errors increment CHECK_ERRORS -> decide fails CLOSED to manual
@@ -84,12 +89,18 @@ if [ "$CACHED" = "ok" ]; then
       NOW_EPOCH=$(date +%s)
       AGE_DAYS=$(( (NOW_EPOCH - ANALYZED_EPOCH) / 86400 ))
       if [ "$AGE_DAYS" -lt "$CACHE_TTL_DAYS" ]; then
-        SHARED_CACHE_HIT="true"
-        SEMVER_TYPE=$(jq -r '.semver.type // "unknown"' /tmp/cached_analysis.json)
-        HAS_BREAKING=$(jq -r '.changelog.breaking // "false"' /tmp/cached_analysis.json)
-        CONFIDENCE=$(jq -r '.changelog.confidence // "0"' /tmp/cached_analysis.json)
-        RISK_SUMMARY=$(jq -r '.changelog.summary // ""' /tmp/cached_analysis.json)
-        echo "Shared cache hit for changelog analysis of ${DEP_NAME}@${TO_VERSION}"
+        if cache_schema_ok /tmp/cached_analysis.json; then
+          SHARED_CACHE_HIT="true"
+          SEMVER_TYPE=$(jq -r '.semver.type // "unknown"' /tmp/cached_analysis.json)
+          # Fail-SAFE (grade-A #9): a missing/non-boolean changelog.breaking
+          # resolves to true (breaking) so a degraded cache blocks, not approves.
+          HAS_BREAKING=$(cache_read_bool /tmp/cached_analysis.json '.changelog.breaking' true)
+          CONFIDENCE=$(jq -r '.changelog.confidence // "0"' /tmp/cached_analysis.json)
+          RISK_SUMMARY=$(jq -r '.changelog.summary // ""' /tmp/cached_analysis.json)
+          echo "Shared cache hit for changelog analysis of ${DEP_NAME}@${TO_VERSION}"
+        else
+          echo "::warning::Shared cache object for ${DEP_NAME}@${TO_VERSION} failed schema/producer validation — re-analyzing (treated as miss)"
+        fi
       fi
     fi
   fi
@@ -104,10 +115,16 @@ if [ "$REPO_CACHED" = "ok" ]; then
     NOW_EPOCH=$(date +%s)
     REPO_AGE_DAYS=$(( (NOW_EPOCH - REPO_EPOCH) / 86400 ))
     if [ "$REPO_AGE_DAYS" -lt "$CACHE_TTL_DAYS" ]; then
-      REPO_CACHE_HIT="true"
-      APPLIES_TO_REPO=$(jq -r '.applies_to_repo // "true"' /tmp/cached_repo_analysis.json)
-      RISK_SUMMARY=$(jq -r '.risk_summary // "'"$RISK_SUMMARY"'"' /tmp/cached_repo_analysis.json)
-      echo "Repo cache hit for applicability of ${DEP_NAME}@${TO_VERSION} in ${GITHUB_REPOSITORY}"
+      if cache_schema_ok /tmp/cached_repo_analysis.json; then
+        REPO_CACHE_HIT="true"
+        # applies_to_repo is non-gating (decide never blocks on it); keep its
+        # conservative "assume applies" default, but validate presence/type.
+        APPLIES_TO_REPO=$(cache_read_bool /tmp/cached_repo_analysis.json '.applies_to_repo' true)
+        RISK_SUMMARY=$(jq -r '.risk_summary // "'"$RISK_SUMMARY"'"' /tmp/cached_repo_analysis.json)
+        echo "Repo cache hit for applicability of ${DEP_NAME}@${TO_VERSION} in ${GITHUB_REPOSITORY}"
+      else
+        echo "::warning::Repo cache object for ${DEP_NAME}@${TO_VERSION} failed schema/producer validation — re-analyzing (treated as miss)"
+      fi
     fi
   fi
 fi
@@ -277,6 +294,8 @@ if [ "$SHARED_CACHE_HIT" = "false" ]; then
   fi
 
   echo "$EXISTING" | jq \
+    --arg schema "$CACHE_SCHEMA_VERSION" \
+    --arg producer "$CACHE_PRODUCER" \
     --arg dep "$DEP_NAME" \
     --arg ver "$TO_VERSION" \
     --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
@@ -288,6 +307,8 @@ if [ "$SHARED_CACHE_HIT" = "false" ]; then
     --arg summary "$RISK_SUMMARY" \
     --argjson risks "$AI_RISKS" \
     '. + {
+      schema_version: $schema,
+      producer: $producer,
       dependency: $dep,
       version: $ver,
       analyzed_at: $ts,
@@ -358,6 +379,8 @@ fi
 # ---------------------------------------------------------
 if [ "$REPO_CACHE_HIT" = "false" ]; then
   jq -n \
+    --arg schema "$CACHE_SCHEMA_VERSION" \
+    --arg producer "$CACHE_PRODUCER" \
     --arg dep "$DEP_NAME" \
     --arg ver "$TO_VERSION" \
     --arg repo "$GITHUB_REPOSITORY" \
@@ -365,6 +388,8 @@ if [ "$REPO_CACHE_HIT" = "false" ]; then
     --argjson applies "$([ "$APPLIES_TO_REPO" = "true" ] && echo true || echo false)" \
     --arg summary "$RISK_SUMMARY" \
     '{
+      schema_version: $schema,
+      producer: $producer,
       dependency: $dep,
       version: $ver,
       repository: $repo,
