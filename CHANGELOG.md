@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.2](https://github.com/Coalfire-CF/Actions/compare/v0.11.1...v0.11.2) (2026-07-06)
+
+
+### Bug Fixes
+
+* **ci:** [#149](https://github.com/Coalfire-CF/Actions/issues/149) follow-ups — conditional cancel-in-progress + release actor-gate ([#185](https://github.com/Coalfire-CF/Actions/issues/185)) ([04f246e](https://github.com/Coalfire-CF/Actions/commit/04f246e7d858a42276361dcfd370d2221d293de3))
+
 ## [0.11.1](https://github.com/Coalfire-CF/Actions/compare/v0.11.0...v0.11.1) (2026-07-06)
 
 
