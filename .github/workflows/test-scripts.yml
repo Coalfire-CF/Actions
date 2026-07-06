@@ -106,7 +106,25 @@ jobs:
             echo "::error::docs regression — a caller example uses @main (write @<release-sha> # vX.Y.Z; RFC-0008)."
             rc=1
           fi
+          # T1: every runner job that executes terraform apply/destroy/plan must be
+          # time-capped — an uncapped hung apply burns the 6-hour default and can
+          # hold a state lock. (Reusable-call jobs can't take timeout-minutes.)
+          uncapped="$(awk '
+            function flush() { if (job != "" && infra && runner && !capped) print file ": job \x27" job "\x27 runs terraform apply/destroy/plan without timeout-minutes"; infra=0; capped=0; runner=0 }
+            FNR == 1 { flush(); file = FILENAME; injobs = 0; job = "" }
+            /^jobs:/ { injobs = 1; next }
+            injobs && /^  [A-Za-z0-9_-]+:[[:space:]]*$/ { flush(); job = $1; sub(/:$/, "", job); next }
+            injobs && /^    runs-on:/ { runner = 1 }
+            injobs && /^    timeout-minutes:/ { capped = 1 }
+            injobs && /terraform (apply|destroy|plan)([[:space:]]|$)/ { infra = 1 }
+            END { flush() }
+          ' .github/workflows/*.yml)"
+          if [ -n "$uncapped" ]; then
+            printf '%s\n' "$uncapped"
+            echo "::error::T1 regression — an infra-mutating job lacks timeout-minutes (grade-A plan item #19)."
+            rc=1
+          fi
           if [ "$rc" -eq 0 ]; then
-            echo "OK: no Actions/main raw fetches and no active @main sibling refs."
+            echo "OK: no Actions/main raw fetches, no active @main sibling refs, all infra jobs time-capped."
           fi
           exit "$rc"
