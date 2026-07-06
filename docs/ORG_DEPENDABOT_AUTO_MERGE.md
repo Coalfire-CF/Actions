@@ -288,9 +288,14 @@ The recommended repo config groups **minor+patch only** (majors arrive as indivi
 
 ```yaml
 groups:
-  actions:
+  org-actions:
+    applies-to: version-updates
+    patterns: ["Coalfire-CF/*"]
+    update-types: ["minor", "patch"]
+  third-party:
     applies-to: version-updates
     patterns: ["*"]
+    exclude-patterns: ["Coalfire-CF/*"]
     update-types: ["minor", "patch"]
 ```
 
