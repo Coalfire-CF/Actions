@@ -132,11 +132,33 @@ rc="$(run_updater "$APP")"
 assert_section_clean "${APP}/README.md" "append" || exit 1
 echo "OK: append — freshly appended ## Tree section is MD022/MD031-clean"
 
-# ---- 5. IDEMPOTENCE: re-running must not re-introduce debt (the clobber loop) --
-before="$(cat "${REP}/README.md")"
-run_updater "$REP" >/dev/null
+# ---- 4b. LAST-SECTION case (review anchor): tree is the final section, so the
+#      closing fence must be followed by EXACTLY ONE trailing newline — no stray
+#      blank (MD012/MD047) and no eaten newline. The append fixture above ends at
+#      the tree, so it exercises this directly. ----
+python3 - "${APP}/README.md" <<'PY' || exit 1
+import re, sys
+data = open(sys.argv[1], "rb").read()
+n = len(re.search(rb'\n*$', data).group())
+if n != 1:
+    print(f"NOT OK: [last-section] file ends with {n} newlines (expected exactly 1 — MD047/no stray blank)"); sys.exit(1)
+if not data.rstrip(b'\n').endswith(b'```'):
+    print("NOT OK: [last-section] file does not end at the closing fence"); sys.exit(1)
+print("last-section-ok")
+PY
+echo "OK: last-section — tree as final section ends at the closing fence + a single newline (MD047)"
+
+# ---- 5. IDEMPOTENCE (review anchor): re-running on already-compliant output must
+#      be a BYTE-IDENTICAL no-op — otherwise we've merely relocated the clobber
+#      loop. Compare the exact file bytes across a second run. ----
+cp "${REP}/README.md" "${TMPD}/replace.before"
+rc="$(run_updater "$REP")"
+[ "$rc" = "10" ] || fail "rerun: updater exit code was '$rc' (expected 10)"
 assert_section_clean "${REP}/README.md" "rerun" || exit 1
-echo "OK: idempotence — a second regeneration stays MD022/MD031-clean (clobber loop closed)"
+if ! diff -u "${TMPD}/replace.before" "${REP}/README.md"; then
+  fail "idempotence — a second regeneration changed the file (clobber loop NOT closed)"
+fi
+echo "OK: idempotence — second regeneration is byte-identical (clobber loop closed)"
 
 # ---- 6. Authoritative check: real markdownlint-cli2 + the actual org config ----
 CFG="${TMPD}/.markdownlint-cli2.jsonc"
