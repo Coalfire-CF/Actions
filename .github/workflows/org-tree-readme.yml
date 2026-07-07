@@ -132,7 +132,13 @@ jobs:
               continue
             fi
 
+            # Emit an org-markdown-lint-compliant section: a blank line after the
+            # heading (MD022) and around the fenced block (MD031). The trailing
+            # blank BEFORE the next heading is added by the awk below (so the
+            # last-section case ends with a single newline — MD047 — not a stray
+            # blank). Regenerating this section must never re-introduce lint debt.
             final_tree="## ${CHAPTER}
+
           \`\`\`text
           ${tree_output}
           \`\`\`"
@@ -142,7 +148,7 @@ jobs:
               awk -v chapter="$CHAPTER" -v tree="$final_tree" '
                 BEGIN {p=1; found=0}
                 $0 ~ "^## "chapter"$" {print tree; p=0; found=1; next}
-                $0 ~ /^## / && p==0 {p=1}
+                $0 ~ /^## / && p==0 {print ""; p=1}
                 p==1 {print}
                 END {if (found==0) print "\n" tree}
               ' "$file_name" > "$file_name.new"
