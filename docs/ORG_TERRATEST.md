@@ -419,10 +419,18 @@ All three are uploaded as workflow artifacts and retained for 30 days.
 
 ### PR Comments
 
-In `pr` mode, the workflow posts a comment with:
+In `pr` mode, the workflow posts a **sticky** comment (updated in place on every run,
+keyed per `test_directory` so multi-lane repos get one comment per lane) with:
 
-- A summary table (tests/passed/failed/skipped/duration) parsed from the JUnit XML
-- The full verbose output in a collapsible details block (truncated at 55k chars)
+- A header line carrying the tested commit SHA, mode, test directory, TF/Go versions,
+  and a link to the run
+- A summary table (passed/failed/errors/skipped/duration) parsed from the JUnit root
+  `<testsuites>` aggregate — `passed = tests − failures − errors − skipped`
+- A per-test result table (result icon, test name, duration)
+- On failure: the extracted testify/go-test error blocks per failing test, shown
+  expanded — no digging through terraform apply logs to find the assertion
+- The full output in a collapsible block, ANSI/log-prefix stripped and
+  **tail**-truncated at 50k chars (failures live at the end of a test log)
 
 ### GitLab Portability
 

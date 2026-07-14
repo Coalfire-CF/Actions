@@ -405,51 +405,163 @@ jobs:
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           TERRATEST_EXIT_CODE: ${{ steps.terratest.outputs.exitcode }}
+          TEST_MODE: ${{ inputs.test_mode }}
+          TEST_DIR: ${{ inputs.test_directory }}
+          GO_VERSION: ${{ inputs.go_version }}
+          TF_VERSION: ${{ steps.tf-version.outputs.version }}
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const fs = require('fs');
             const exitCode = process.env.TERRATEST_EXIT_CODE || '1';
-            const status = exitCode === '0' ? 'Passed' : 'Failed';
+            const ok = exitCode === '0';
 
-            // Parse JUnit XML for summary counts
-            let summary = '';
+            // ---------- helpers ----------
+            // gotestsum sanitizes raw ESC bytes to U+FFFD when writing XML, so ANSI
+            // sequences can arrive as either \u001b[0m or \ufffd[0m — strip both.
+            const stripAnsi = (s) => s.replace(/[\u001b\ufffd]\[[0-9;]*[A-Za-z]/g, '').replace(/[\u001b\ufffd]/g, '');
+            // Drop terratest's per-line "TestName 2026-...Z logger.go:67: " prefix.
+            const stripLogPrefix = (s) => s.split('\n')
+              .map(l => l.replace(/^\S+ \d{4}-\d{2}-\d{2}T[0-9:.]+Z (?:logger|retry)\.go:\d+: /, ''))
+              .join('\n');
+            const clean = (s) => stripLogPrefix(stripAnsi(s));
+            const unescapeXml = (s) => s
+              .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
+              .replace(/&apos;/g, "'")
+              .replace(/&#x([0-9a-fA-F]+);/g, (_, n) => String.fromCharCode(parseInt(n, 16)))
+              .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(n))
+              .replace(/&amp;/g, '&');
+            // A failure body is the whole captured test log; surface just the error
+            // blocks: 'file.go:NN:' headers with their indented continuation (testify's
+            // Error Trace / Error / Test shape) plus '--- FAIL' lines. After
+            // stripLogPrefix, terratest's own logger lines no longer look like that,
+            // so what's left is genuinely the failing assertions.
+            const extractErrors = (s) => {
+              const blocks = [];
+              for (const m of s.matchAll(/(?:^|\n)([ \t]*\S+\.go:\d+:[^\n]*\n(?:[ \t]+[^\n]*\n?)+)/g)) blocks.push(m[1].trimEnd());
+              const fails = s.match(/^--- FAIL:.*$/gm) || [];
+              return [...blocks, ...fails].join('\n');
+            };
+            const fmtDuration = (sec) => {
+              sec = Math.round(Number(sec) || 0);
+              const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+              return (h ? h + 'h ' : '') + (m ? m + 'm ' : '') + s + 's';
+            };
+            const attr = (tag, name) => {
+              // (?:^|[^\\w]) guard: plain 'name="' would substring-match inside 'classname="'
+              const m = tag.match(new RegExp('(?:^|[^\\w])' + name + '="([^"]*)"'));
+              return m ? m[1] : null;
+            };
+
+            // ---------- parse JUnit ----------
+            // Root <testsuites> carries the tests/failures/errors/time aggregates;
+            // skipped has NO root aggregate, so sum it across <testsuite> elements.
+            let stats = null;
+            const testRows = [];
+            const failures = [];
             try {
               const xml = fs.readFileSync(process.env.GITHUB_WORKSPACE + '/terratest-results.xml', 'utf8');
-              const testsMatch = xml.match(/tests="(\d+)"/);
-              const failuresMatch = xml.match(/failures="(\d+)"/);
-              const skippedMatch = xml.match(/skipped="(\d+)"/);
-              const timeMatch = xml.match(/time="([^"]+)"/);
-              const tests = testsMatch ? parseInt(testsMatch[1], 10) : 0;
-              const failures = failuresMatch ? parseInt(failuresMatch[1], 10) : 0;
-              const skipped = skippedMatch ? parseInt(skippedMatch[1], 10) : 0;
-              const duration = timeMatch ? timeMatch[1] + 's' : '?';
-              const passed = tests - failures - skipped;
-              summary = `| Tests | Passed | Failed | Skipped | Duration |\n| --- | --- | --- | --- | --- |\n| ${tests} | ${passed} | ${failures} | ${skipped} | ${duration} |`;
-            } catch (e) {
-              summary = '_Could not parse test summary._';
-            }
+              const root = xml.match(/<testsuites\b[^>]*>/);
+              let tests = 0, fails = 0, errors = 0, time = 0, skipped = 0;
+              if (root) {
+                tests = +attr(root[0], 'tests') || 0;
+                fails = +attr(root[0], 'failures') || 0;
+                errors = +attr(root[0], 'errors') || 0;
+                time = +attr(root[0], 'time') || 0;
+              }
+              for (const m of xml.matchAll(/<testsuite\b[^>]*>/g)) skipped += (+attr(m[0], 'skipped') || 0);
+              stats = { tests, fails, errors, skipped, time, passed: Math.max(0, tests - fails - errors - skipped) };
 
-            // Read raw output for details
+              for (const m of xml.matchAll(/<testcase\b([^>]*?)(\/>|>([\s\S]*?)<\/testcase>)/g)) {
+                const name = attr(m[1], 'name') || '(unnamed)';
+                const dur = fmtDuration(attr(m[1], 'time'));
+                const body = m[3] || '';
+                let icon = '✅', detail = null;
+                const fm = body.match(/<(failure|error)\b[^>]*>([\s\S]*?)<\/\1>/);
+                if (fm) { icon = fm[1] === 'failure' ? '❌' : '💥'; detail = unescapeXml(fm[2]); }
+                else if (/<(failure|error)\b[^>]*\/>/.test(body)) { icon = '❌'; }
+                else if (/<skipped\b/.test(body)) { icon = '⏭️'; }
+                testRows.push(`| ${icon} | \`${name}\` | ${dur} |`);
+                if (detail) {
+                  const cleaned = clean(detail);
+                  let d = extractErrors(cleaned).trim();
+                  if (!d) d = cleaned.trim().slice(-2000); // fallback: tail of the raw failure body
+                  if (d.length > 4000) d = d.slice(0, 4000) + '\n… (truncated — full log in the artifact)';
+                  failures.push(`<details open><summary>${icon} <code>${name}</code></summary>\n\n\`\`\`text\n${d}\n\`\`\`\n</details>`);
+                }
+              }
+            } catch (e) { /* stats stays null; fall through to raw output */ }
+
+            // ---------- full output: cleaned, TAIL-preserved (failures live at the end) ----------
             let output = '';
             try {
-              output = fs.readFileSync(process.env.GITHUB_WORKSPACE + '/terratest_output.txt', 'utf8');
+              output = clean(fs.readFileSync(process.env.GITHUB_WORKSPACE + '/terratest_output.txt', 'utf8'));
             } catch (e) {
               output = 'No test output captured.';
             }
+            const truncNote = '… (earlier output truncated — the full log is in the workflow artifact)\n';
+            if (output.length > 50000) output = truncNote + output.slice(-50000);
 
-            if (output.length > 55000) {
-              output = output.substring(0, 55000) + '\n... (truncated)';
+            // ---------- compose ----------
+            const icon = ok ? '✅' : '❌';
+            const title = ok ? 'Passed' : `Failed (exit ${exitCode})`;
+            const sha = ((context.payload.pull_request && context.payload.pull_request.head.sha) || context.sha).slice(0, 7);
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const meta = [
+              `\`${sha}\``,
+              `mode \`${process.env.TEST_MODE || 'pr'}\``,
+              `dir \`${process.env.TEST_DIR || 'test'}\``,
+              `TF \`${process.env.TF_VERSION || '?'}\``,
+              `Go \`${process.env.GO_VERSION || '?'}\``,
+              `[run ↗](${runUrl})`
+            ].join(' · ');
+            // Marker is per test-directory so multi-lane repos (e.g. AWS + Azure
+            // callers on one PR) each keep their own sticky comment.
+            const marker = `<!-- org-terratest-results:${process.env.TEST_DIR || 'test'} -->`;
+
+            let body = `${marker}\n## ${icon} Terratest — ${title}\n\n${meta}\n\n`;
+            if (stats) {
+              body += `| ✅ Passed | ❌ Failed | 💥 Errors | ⏭️ Skipped | ⏱️ Duration |\n| ---: | ---: | ---: | ---: | ---: |\n`;
+              body += `| ${stats.passed} | ${stats.fails} | ${stats.errors} | ${stats.skipped} | ${fmtDuration(stats.time)} |\n\n`;
+              if (testRows.length) body += `| | Test | Duration |\n| --- | --- | ---: |\n${testRows.join('\n')}\n\n`;
+            } else {
+              body += `_Could not parse \`terratest-results.xml\` — raw output below; artifacts carry the full logs._\n\n`;
+            }
+            if (failures.length) body += `### Failure details\n\n${failures.join('\n\n')}\n\n`;
+            body += `<details><summary>Full output</summary>\n\n\`\`\`text\n${output}\n\`\`\`\n</details>\n`;
+
+            // GitHub caps comment bodies at 65536 chars — shrink the output section to fit.
+            if (body.length > 65000) {
+              const overflow = body.length - 65000;
+              const keep = Math.max(1000, output.length - overflow - 200);
+              output = truncNote + output.slice(-keep);
+              body = body.replace(/<details><summary>Full output<\/summary>[\s\S]*$/,
+                `<details><summary>Full output</summary>\n\n\`\`\`text\n${output}\n\`\`\`\n</details>\n`);
             }
 
-            const body = `### Terratest Results — ${status}\n\n${summary}\n\n<details><summary>Full Output</summary>\n\n\`\`\`\n${output}\n\`\`\`\n</details>`;
-
-            await github.rest.issues.createComment({
+            // ---------- sticky upsert ----------
+            const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
-              body: body
+              per_page: 100
             });
+            const mine = comments.find(c => c.body && c.body.startsWith(marker));
+            if (mine) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: mine.id,
+                body: body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: body
+              });
+            }
 
       - name: Generate step summary
         if: always()
@@ -480,22 +592,28 @@ jobs:
             echo "| Terraform Version | \`${TF_VERSION}\` |"
           } >> "$GITHUB_STEP_SUMMARY"
 
-          # Append a parsed JUnit summary table (same attributes as the PR comment) rather
-          # than a raw head -5 of the XML, which showed the open tag but no totals.
+          # Parse the root <testsuites> aggregate (tests/failures/errors/time).
+          # 'skipped' has no root aggregate in gotestsum's JUnit, so sum it across
+          # <testsuite> elements. passed subtracts errors too - gotestsum tracks
+          # errored tests separately from failures.
           XML="${GITHUB_WORKSPACE}/terratest-results.xml"
           if [ -f "$XML" ]; then
-            TESTS=$(grep -oE 'tests="[0-9]+"' "$XML" | head -1 | grep -oE '[0-9]+' || true)
-            FAILURES=$(grep -oE 'failures="[0-9]+"' "$XML" | head -1 | grep -oE '[0-9]+' || true)
-            SKIPPED=$(grep -oE 'skipped="[0-9]+"' "$XML" | head -1 | grep -oE '[0-9]+' || true)
-            TESTS=${TESTS:-0}; FAILURES=${FAILURES:-0}; SKIPPED=${SKIPPED:-0}
-            PASSED=$((TESTS - FAILURES - SKIPPED))
+            ROOT=$(grep -m1 -oE '<testsuites[^>]*>' "$XML" || true)
+            TESTS=$(printf '%s' "$ROOT" | grep -oE ' tests="[0-9]+"' | grep -oE '[0-9]+' || true)
+            FAILURES=$(printf '%s' "$ROOT" | grep -oE 'failures="[0-9]+"' | grep -oE '[0-9]+' || true)
+            ERRORS=$(printf '%s' "$ROOT" | grep -oE 'errors="[0-9]+"' | grep -oE '[0-9]+' || true)
+            TIME=$(printf '%s' "$ROOT" | grep -oE 'time="[0-9.]+"' | grep -oE '[0-9.]+' || true)
+            SKIPPED=$(grep -oE '<testsuite [^>]*>' "$XML" | grep -oE 'skipped="[0-9]+"' | grep -oE '[0-9]+' | awk '{s+=$1} END{print s+0}')
+            TESTS=${TESTS:-0}; FAILURES=${FAILURES:-0}; ERRORS=${ERRORS:-0}; SKIPPED=${SKIPPED:-0}; TIME=${TIME:-0}
+            PASSED=$((TESTS - FAILURES - ERRORS - SKIPPED))
+            DURATION=$(awk -v t="$TIME" 'BEGIN{t=int(t+0.5); h=int(t/3600); m=int((t%3600)/60); s=t%60; printf "%s%s%ds", (h?h"h ":""), (m?m"m ":""), s}')
             {
               echo ""
               echo "### Test Report"
               echo ""
-              echo "| Tests | Passed | Failed | Skipped |"
-              echo "| --- | --- | --- | --- |"
-              echo "| ${TESTS} | ${PASSED} | ${FAILURES} | ${SKIPPED} |"
+              echo "| Tests | Passed | Failed | Errors | Skipped | Duration |"
+              echo "| --- | --- | --- | --- | --- | --- |"
+              echo "| ${TESTS} | ${PASSED} | ${FAILURES} | ${ERRORS} | ${SKIPPED} | ${DURATION} |"
             } >> "$GITHUB_STEP_SUMMARY"
           fi
 
