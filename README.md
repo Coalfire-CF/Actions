@@ -192,6 +192,7 @@ Issue labels:
 |   |-- ORG_SLACK_NOTIFY.md
 |   |-- ORG_SOURCE_PIN.md
 |   |-- ORG_TERRATEST.md
+|   |-- ORG_TERRATEST_PROVISIONING.md
 |   |-- ORG_VERSION_BAND.md
 |   |-- superpowers
 |       |-- specs
