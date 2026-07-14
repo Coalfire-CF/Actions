@@ -62,6 +62,7 @@ Called on merge to main.
 | Workflow | File | Description |
 |----------|------|-------------|
 | Local Release | `release.yml` | Release workflow for the Actions repo itself |
+| Sync Auto-Merge Labels | `label-sync.yml` | Self-caller: syncs the auto-merge label taxonomy on this repo (weekly + manual) |
 
 ## Usage
 
