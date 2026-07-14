@@ -64,6 +64,7 @@ Called on merge to main.
 | Local Release | `release.yml` | Release workflow for the Actions repo itself |
 | Sync Auto-Merge Labels | `label-sync.yml` | Self-caller: syncs the auto-merge label taxonomy on this repo (weekly + manual) |
 | README Tree | `tree-readme.yml` | Self-caller: regenerates the README `## Tree` section on this repo's PRs |
+| Dependabot Auto-Merge (self) | `dependabot-auto-merge.yml` | Self-caller: runs auto-merge evaluation on this repo's own Dependabot PRs |
 
 ## Usage
 
