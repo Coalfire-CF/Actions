@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.12.0](https://github.com/Coalfire-CF/Actions/compare/v0.11.3...v0.12.0) (2026-07-14)
+
+
+### Features
+
+* **ci:** dogfood org reusable workflows (auto-merge, label-sync, tree-readme) ([#226](https://github.com/Coalfire-CF/Actions/issues/226)) ([acd5bdd](https://github.com/Coalfire-CF/Actions/commit/acd5bdd76d0b7d8a835b48ba2361dfad9697469a))
+* **terratest:** reviewer-grade PR results comment + accurate summaries ([#229](https://github.com/Coalfire-CF/Actions/issues/229)) ([a8cd4a3](https://github.com/Coalfire-CF/Actions/commit/a8cd4a38f5e2eec8df1d2f2d2b40fcf57b07e9fd))
+
+
+### Miscellaneous
+
+* **deps:** bump actions/setup-node from 6.4.0 to 7.0.0 ([#228](https://github.com/Coalfire-CF/Actions/issues/228)) ([4cf506f](https://github.com/Coalfire-CF/Actions/commit/4cf506fd9498ccb2d031474a1f482107456bf731))
+* **deps:** bump aws-actions/configure-aws-credentials ([#192](https://github.com/Coalfire-CF/Actions/issues/192)) ([d864274](https://github.com/Coalfire-CF/Actions/commit/d86427471c32efb280a1b64165af4d3500df0ca8))
+* **deps:** bump Coalfire-CF/Actions/actions/gitleaks ([#191](https://github.com/Coalfire-CF/Actions/issues/191)) ([cd8d457](https://github.com/Coalfire-CF/Actions/commit/cd8d457ee248e4d73d1979d9908063c088b39fb2))
+
+
+### Documentation
+
+* **terratest:** playbook rewrite from proven callers + OIDC provisioning runbook ([#230](https://github.com/Coalfire-CF/Actions/issues/230)) ([1db1ebe](https://github.com/Coalfire-CF/Actions/commit/1db1ebe42932d997a55b4802f0e40465a00874d9))
+
 ## [0.11.3](https://github.com/Coalfire-CF/Actions/compare/v0.11.2...v0.11.3) (2026-07-06)
 
 
