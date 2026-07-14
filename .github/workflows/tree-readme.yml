@@ -1,0 +1,19 @@
+name: README Tree
+
+# Self-caller: regenerates the README `## Tree` section on this repo's PRs
+# using the on-repo .github/readmetreerc.yml config, so the repo dogfoods
+# the tree generator it publishes. No-op commit when the tree is unchanged.
+# Reusable definition: ./.github/workflows/org-tree-readme.yml
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  tree-readme:
+    uses: ./.github/workflows/org-tree-readme.yml
+    secrets: inherit

@@ -1,0 +1,24 @@
+name: Dependabot Auto-Merge
+
+# Self-caller: evaluates this repo's own Dependabot PRs for auto-merge
+# (classify -> supply-chain + breaking-change + Bedrock changelog checks ->
+# approve+merge or label for review). Fixes the gap where PR #192 got no
+# evaluation. pull_request_target is required so the reusable has write
+# access + org secrets on Dependabot PRs (it only reads PR metadata, never
+# executes PR-branch code). Terraform bumps are always labeled blocked/*.
+# Reusable definition: ./.github/workflows/org-dependabot-auto-merge.yml
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write
+
+jobs:
+  auto-merge:
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    uses: ./.github/workflows/org-dependabot-auto-merge.yml
+    secrets: inherit

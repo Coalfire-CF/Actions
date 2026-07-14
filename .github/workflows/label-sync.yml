@@ -1,0 +1,19 @@
+name: Sync Auto-Merge Labels
+
+# Self-caller: runs the org label-sync reusable on this repo so the
+# merge/*, dep/*, check/*, ai/*, risk/*, blocked/* label taxonomy that
+# org-dependabot-auto-merge.yml writes to always exists here.
+# Reusable definition: ./.github/workflows/org-label-sync.yml
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'   # Mondays 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+jobs:
+  sync-labels:
+    uses: ./.github/workflows/org-label-sync.yml
+    secrets: inherit
