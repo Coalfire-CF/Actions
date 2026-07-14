@@ -12,14 +12,22 @@
 > **Real infrastructure is created and destroyed during each test run.** Ensure your OIDC
 > roles are scoped to dedicated test accounts/subscriptions with appropriate spending limits.
 
+All caller examples in this document are drawn from the two **proven, green** callers in the
+org and are pinned to the current release **v0.11.3**
+(`9451b979c22b3762b3c8a7d4d9493fefaee7edc5`):
+
+- **AWS (GovCloud):** [`terraform-aws-vpc-nfw`](https://github.com/Coalfire-CF/terraform-aws-vpc-nfw)
+  `.github/workflows/org-terratest.yml` — the canonical **module-repo self-test** (PR #198).
+- **Azure Government:** the `cs-terratest-poc` `terratest-azure.yml` pilot — the org's first
+  green Azure Gov lane (now being ported into the module repos it validated).
+
 ## How It Fits Into the Pipeline
 
 ```text
-Pull Request opened (touches *.tf)
+Pull Request opened (touches *.tf under test)
   |
   ├── terraform-fmt       -- Format check (existing)
   ├── terraform-validate  -- Syntax/config validation (existing)
-  ├── terraform-plan      -- Plan against real backend (existing)
   └── terratest           -- Full apply/verify/destroy (THIS WORKFLOW)
 
 Release created
@@ -35,7 +43,7 @@ Release created
 
 All Terratest files **must** use the `terratest` build tag. This prevents accidental
 execution during normal `go test ./...` runs — infrastructure tests only run when
-explicitly requested with `-tags terratest`.
+explicitly requested with `-tags terratest` (the workflow does this for you).
 
 ```go
 //go:build terratest
@@ -51,160 +59,227 @@ import (
 
 func TestMyModule(t *testing.T) {
     terraformOptions := terraform.WithDefaultRetryableErrors(t, &terraform.Options{
-        TerraformDir: "../",
+        // Source a fixture that pins the module at PR HEAD — see the
+        // "Module-repo self-test pattern" section below.
+        TerraformDir: "fixtures/my-module",
         Vars: map[string]interface{}{
-            "name": "terratest-example",
+            "resource_prefix": "myci",
         },
     })
 
-    // Destroy infrastructure at the end of the test
+    // Destroy infrastructure at the end of the test — deferred BEFORE apply so it
+    // runs even when apply or an assertion fails.
     defer terraform.Destroy(t, terraformOptions)
 
     // Apply the Terraform module
     terraform.InitAndApply(t, terraformOptions)
 
-    // Validate outputs
+    // Assert on posture/behavior, not merely that apply succeeded (see below).
     output := terraform.Output(t, terraformOptions, "id")
     assert.NotEmpty(t, output)
 }
 ```
 
-### Directory Structure
+## Module-repo self-test pattern
 
-Calling repositories should follow this layout:
+The canonical layout — proven by
+[`terraform-aws-vpc-nfw`](https://github.com/Coalfire-CF/terraform-aws-vpc-nfw) PR #198 — is
+for a module repo to **test its own working tree at PR HEAD**. Every PR applies, asserts, and
+destroys the code under review in a dedicated cloud test account. This is the pattern all new
+module repos should adopt.
+
+### Layout
 
 ```text
-my-terraform-module/
-  ├── main.tf
-  ├── variables.tf
-  ├── outputs.tf
-  ├── .terraform-version
+terraform-aws-vpc-nfw/            # module root == repo root
+  ├── main.tf ...                 # the module under test
   └── test/
-      ├── go.mod
-      ├── go.sum
-      └── my_module_test.go    # //go:build terratest
+      ├── go.mod                  # module github.com/Coalfire-CF/<repo>/test
+      ├── go.sum                  # complete, committed — CI NEVER mutates it
+      ├── vpc_nfw_test.go         # //go:build terratest
+      └── fixtures/
+          └── vpc-nfw/            # a thin root-module fixture
+              ├── main.tf ...     # module "under_test" { source = "../../.." }
+              └── *.tf
 ```
 
-Initialize the test module:
+### The five rules
 
-```bash
-cd test/
-go mod init github.com/Coalfire-CF/terraform-<provider>-<name>/test
-go get github.com/gruntwork-io/terratest/modules/terraform
-go get github.com/stretchr/testify/assert
-```
+1. **Fixture sources the module at HEAD via a relative path.** The fixture lives at
+   `test/fixtures/<name>/` and calls the module with `source = "../../.."` (up three levels:
+   `<name>` → `fixtures` → `test` → repo root). This means the test exercises the **working
+   tree of the PR**, not a published release — a regression is caught before it ships.
+
+   ```hcl
+   module "mgmt_vpc" {
+     source = "../../.." # the module at PR HEAD — tests the working tree, not a release
+     # ...module inputs...
+   }
+   ```
+
+1. **`test/go.mod` is re-homed to the repo.** The module path is
+   `github.com/Coalfire-CF/<repo>/test` (e.g.
+   `github.com/Coalfire-CF/terraform-aws-vpc-nfw/test`), not a scaffold/borrowed path. This
+   keeps the test module self-describing and lets Dependabot's `gomod` ecosystem track it.
+
+1. **`go.sum` is complete and committed; CI never mutates it.** Run `go mod tidy` locally and
+   commit the full `go.sum`. The workflow does **not** run `go mod tidy` or otherwise write
+   `go.sum` — a missing/partial sum fails the run rather than being silently repaired. This
+   keeps the dependency set reproducible and reviewable.
+
+1. **Unique `resource_prefix` per repo.** Each module's fixture uses a short prefix unique
+   across the fleet (vpc-nfw uses `nfwci`; the storage-account port uses `stci`). Because all
+   module repos share **one** cloud test account, colliding names across two repos' concurrent
+   runs would clash on globally-scoped resources (KMS aliases, IAM role names, S3 buckets,
+   log groups). A per-repo prefix removes the collision.
+
+1. **Assert posture/behavior truth-tables, not apply-success.** A green `terraform apply`
+   proves the config is valid, not that it is *correct*. vpc-nfw asserts the NFW routing
+   truth-table — firewall subnets hold the IGW default route; public subnets egress via the
+   firewall endpoint (**not** directly to an IGW); private subnets have no IGW path — by
+   reading route tables back through the AWS API. Azure asserts security posture
+   (`min_tls_version == TLS1_2`, HTTPS-only enforced, the Gov-cloud blob endpoint) read back
+   through a Terraform data source. Write assertions that would **fail if the module regressed
+   its security or routing contract**, even when apply still succeeds.
+
+See [`terraform-aws-vpc-nfw`](https://github.com/Coalfire-CF/terraform-aws-vpc-nfw)
+(`test/vpc_nfw_test.go`, `test/fixtures/vpc-nfw/`) as the worked example.
 
 ## Calling the Workflow
 
-### PR Testing (AWS Example)
+### AWS (GovCloud) — module self-test
+
+Sourced verbatim from the proven `terraform-aws-vpc-nfw` caller.
 
 ```yaml
-name: CI
+name: Terratest
+
+# Behavioral test of THIS module at PR HEAD. The fixture under
+# test/fixtures/vpc-nfw sources the module via ../../.., so every PR applies,
+# asserts, and destroys the working-tree code in the GovCloud test account.
 
 on:
   pull_request:
+    branches: [main]
+    # Real infra costs real money — only run when the code under test changes.
+    # Without this scoping, a docs-only or unrelated PR would trigger a full
+    # apply/destroy cycle (real spend) for no coverage gain.
     paths:
-      - '**.tf'
-      - 'test/**'
+      - "**.tf"
+      - "**.tfvars"
+      - "test/**"
+      - ".github/workflows/org-terratest.yml"
 
-# Caller must grant id-token: write for OIDC to work in the reusable workflow
-permissions:
-  contents: read
-  pull-requests: write
-  id-token: write
-
-jobs:
-  fmt:
-    uses: Coalfire-CF/Actions/.github/workflows/org-terraform-fmt.yml@72d0360b99f80252dda40f6dfefc252f5a66edb3 # v0.10.0
-
-  validate:
-    uses: Coalfire-CF/Actions/.github/workflows/org-terraform-validate.yml@72d0360b99f80252dda40f6dfefc252f5a66edb3 # v0.10.0
-
-  plan:
-    uses: Coalfire-CF/Actions/.github/workflows/org-terraform-plan.yml@72d0360b99f80252dda40f6dfefc252f5a66edb3 # v0.10.0
-    with:
-      aws_role_arn: arn:aws:iam::123456789012:role/terratest-ci
-      aws_region: us-east-1
-      backend_config: bucket=my-state-bucket,key=my-module/terraform.tfstate
-
-  terratest:
-    needs: [fmt, validate, plan]
-    uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@72d0360b99f80252dda40f6dfefc252f5a66edb3 # v0.10.0
-    with:
-      test_mode: pr
-      aws_role_arn: arn:aws:iam::123456789012:role/terratest-ci
-      aws_region: us-east-1
-    secrets:
-      TERRATEST_APP_CLIENT_ID: ${{ secrets.TERRATEST_APP_CLIENT_ID }}
-      TERRATEST_APP_PRIVATE_KEY: ${{ secrets.TERRATEST_APP_PRIVATE_KEY }}
-      # Required only if you set slack_channel_id (failure notifications):
-      # SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
-```
-
-### PR Testing (Azure Example)
-
-The Azure and GCP callers use the **same top-level `permissions:` block** (including
-`id-token: write`) shown in the AWS example above — only the `terratest` job differs:
-
-```yaml
-  terratest:
-    needs: [fmt, validate, plan]
-    uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@72d0360b99f80252dda40f6dfefc252f5a66edb3 # v0.10.0
-    with:
-      test_mode: pr
-      azure_client_id: 00000000-0000-0000-0000-000000000000
-      azure_tenant_id: 00000000-0000-0000-0000-000000000000
-      azure_subscription_id: 00000000-0000-0000-0000-000000000000
-    secrets:
-      TERRATEST_APP_CLIENT_ID: ${{ secrets.TERRATEST_APP_CLIENT_ID }}
-      TERRATEST_APP_PRIVATE_KEY: ${{ secrets.TERRATEST_APP_PRIVATE_KEY }}
-      # Required only if you set slack_channel_id (failure notifications):
-      # SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
-```
-
-### PR Testing (GCP Example)
-
-```yaml
-  terratest:
-    needs: [fmt, validate, plan]
-    uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@72d0360b99f80252dda40f6dfefc252f5a66edb3 # v0.10.0
-    with:
-      test_mode: pr
-      gcp_workload_identity_provider: projects/123456/locations/global/workloadIdentityPools/ci-pool/providers/github
-      gcp_service_account: terratest@my-project.iam.gserviceaccount.com
-    secrets:
-      TERRATEST_APP_CLIENT_ID: ${{ secrets.TERRATEST_APP_CLIENT_ID }}
-      TERRATEST_APP_PRIVATE_KEY: ${{ secrets.TERRATEST_APP_PRIVATE_KEY }}
-      # Required only if you set slack_channel_id (failure notifications):
-      # SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
-```
-
-### Azure Government caller
-
-```yaml
 permissions:
   contents: read # checkout
-  id-token: write # cloud OIDC
-  pull-requests: write # PR results comment
+  id-token: write # cloud OIDC (a reusable workflow cannot self-grant this)
+  pull-requests: write # post the results comment in pr mode
+
+concurrency:
+  # One in-flight Terratest run per branch. cancel-in-progress MUST be false:
+  # cancelling a run mid-apply/destroy orphans real infrastructure in the test
+  # account (see Operational Notes). Superseded *pending* runs are still
+  # auto-cancelled by GitHub — only a running apply is protected.
+  group: terratest-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   terratest:
-    uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@<sha> # vX.Y.Z
+    uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@9451b979c22b3762b3c8a7d4d9493fefaee7edc5 # v0.11.3
     with:
       test_mode: pr
-      test_directory: test/azure/src
+      go_version: "1.26"
+      terraform_version: "1.15.7" # org default; module requires ~> 1.10
+      test_directory: test
+      test_timeout: 45m
+      aws_role_arn: arn:aws-us-gov:iam::358745275192:role/github-action-test-role
+      aws_region: us-gov-west-1
+    secrets:
+      # Option A (dev-phase secret aliasing): pass the org private-module pull App
+      # through under the TERRATEST_APP_* names org-terratest expects, so the test
+      # can `go mod download` private sibling modules. A dedicated Terratest App
+      # (Option B) is the go-live hardening — see "GitHub App for Private Module Access".
+      TERRATEST_APP_CLIENT_ID: ${{ secrets.CF_TF_PULL_PRIVATE_APP_CLIENTID }}
+      TERRATEST_APP_PRIVATE_KEY: ${{ secrets.CF_TF_PULL_PRIVATE_APP_PRIVATE_KEY }}
+```
+
+### Azure Government — module self-test
+
+Sourced from the proven `cs-terratest-poc` `terratest-azure.yml` pilot.
+
+```yaml
+name: Terratest Azure
+
+# Azure Government behavioral test of THIS module at PR HEAD.
+
+on:
+  pull_request:
+    branches: [main]
+    # Path-scoped so the Azure lane only runs when Azure test surface (or this
+    # caller) changes — unrelated PRs no longer trigger a real Azure Gov apply.
+    paths:
+      - "test/**"
+      - "**.tf"
+      - ".github/workflows/org-terratest.yml"
+
+permissions:
+  contents: read # checkout
+  id-token: write # cloud OIDC (a reusable workflow cannot self-grant this)
+  pull-requests: write # post the results comment in pr mode
+
+concurrency:
+  group: terratest-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false # never cancel a live apply/destroy mid-flight
+
+jobs:
+  terratest-azure:
+    uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@9451b979c22b3762b3c8a7d4d9493fefaee7edc5 # v0.11.3
+    with:
+      test_mode: pr
+      go_version: "1.26"
+      terraform_version: "1.14.9" # match the module's required_version; the org default 1.15.7 may not satisfy ~> 1.14.9
+      test_directory: test
+      test_timeout: 30m
       azure_environment: azureusgovernment
       # Azure identity UUIDs are identifiers, not secrets — and the `secrets`
-      # context is not permitted in a reusable-workflow `with:` block, so pass
-      # them as inline literals.
+      # context is NOT permitted in a reusable-workflow `with:` block, so they are
+      # passed as inline literals here (the stored org secrets remain the record).
       azure_client_id: 00000000-0000-0000-0000-000000000000 # app registration client ID
-      azure_tenant_id: 00000000-0000-0000-0000-000000000000 # Entra tenant ID
+      azure_tenant_id: 00000000-0000-0000-0000-000000000000 # Entra (Gov) tenant ID
       azure_subscription_id: 00000000-0000-0000-0000-000000000000 # target subscription
+    secrets:
+      # Option A secret aliasing (see AWS example above).
+      TERRATEST_APP_CLIENT_ID: ${{ secrets.CF_TF_PULL_PRIVATE_APP_CLIENTID }}
+      TERRATEST_APP_PRIVATE_KEY: ${{ secrets.CF_TF_PULL_PRIVATE_APP_PRIVATE_KEY }}
 ```
 
 `azure_environment` defaults to `azurecloud`. For Azure Government the workflow logs in to
 the Gov cloud and exports `ARM_ENVIRONMENT=usgovernment` (plus `ARM_USE_OIDC` and the three
-IDs) so the azurerm provider authenticates via the same GitHub OIDC token.
+IDs) so the azurerm provider authenticates via the same GitHub OIDC token. The federated
+credential on the Azure AD app must be **subject-scoped to this repo's `pull_request` claim**
+(`repo:Coalfire-CF/<repo>:pull_request`) — see
+[`ORG_TERRATEST_PROVISIONING.md`](./ORG_TERRATEST_PROVISIONING.md).
+
+### GCP Example
+
+```yaml
+concurrency:
+  group: terratest-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  terratest:
+    uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@9451b979c22b3762b3c8a7d4d9493fefaee7edc5 # v0.11.3
+    with:
+      test_mode: pr
+      go_version: "1.26"
+      test_directory: test
+      gcp_workload_identity_provider: projects/123456/locations/global/workloadIdentityPools/ci-pool/providers/github
+      gcp_service_account: terratest@my-project.iam.gserviceaccount.com
+    secrets:
+      TERRATEST_APP_CLIENT_ID: ${{ secrets.CF_TF_PULL_PRIVATE_APP_CLIENTID }}
+      TERRATEST_APP_PRIVATE_KEY: ${{ secrets.CF_TF_PULL_PRIVATE_APP_PRIVATE_KEY }}
+```
 
 ### Release Gate
 
@@ -217,115 +292,103 @@ on:
 
 jobs:
   terratest:
-    uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@72d0360b99f80252dda40f6dfefc252f5a66edb3 # v0.10.0
+    uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@9451b979c22b3762b3c8a7d4d9493fefaee7edc5 # v0.11.3
     with:
       test_mode: release
-      aws_role_arn: arn:aws:iam::123456789012:role/terratest-ci
-      aws_region: us-east-1
+      go_version: "1.26"
+      aws_role_arn: arn:aws-us-gov:iam::358745275192:role/github-action-test-role
+      aws_region: us-gov-west-1
 
   release-clean:
     needs: terratest
-    uses: Coalfire-CF/Actions/.github/workflows/org-release-clean.yml@72d0360b99f80252dda40f6dfefc252f5a66edb3 # v0.10.0
+    uses: Coalfire-CF/Actions/.github/workflows/org-release-clean.yml@9451b979c22b3762b3c8a7d4d9493fefaee7edc5 # v0.11.3
     with:
       tag_name: ${{ github.event.release.tag_name }}
 ```
 
+In `release` mode the OIDC `sub` claim is `repo:<owner>/<repo>:ref:refs/tags/*`, so the trust
+policy / federated credential must include the tag claim in addition to `:pull_request` —
+again, see [`ORG_TERRATEST_PROVISIONING.md`](./ORG_TERRATEST_PROVISIONING.md).
+
+## Operational Notes
+
+Hard-won operational behavior — respect these to avoid orphaned infrastructure and wasted
+spend.
+
+### Never cancel a run mid-apply — it orphans infrastructure
+
+Terratest destroys via `defer terraform.Destroy()`, which only runs if the Go process is
+allowed to finish. **Cancelling a run while `terraform apply` (or `destroy`) is in flight
+kills the process before the deferred destroy**, leaking real resources into the test
+account. This is why every caller sets `concurrency.cancel-in-progress: false`.
+
+If a run *is* cancelled mid-apply (or times out mid-apply), **sweep the test account by
+tag/prefix**. For the AWS GovCloud account, check for leaked:
+
+- VPCs and their dependencies (subnets, NAT gateways, EIPs, route tables)
+- KMS **aliases** (the keys go to `PendingDeletion`, but the alias name blocks re-runs)
+- CloudWatch **log groups** (`*-flowlogs-*`)
+- IAM **flow-log roles/policies** (`*-flowlogs-cloudwatch-*`)
+- Network Firewall resources and S3 buckets
+
+For Azure, sweep the ephemeral resource group (`rg-terratest-*`) — deleting the RG reclaims
+everything in it.
+
+### Pending-run auto-cancel is safe (and desirable)
+
+GitHub's concurrency group auto-cancels *superseded pending* runs — a run that is queued but
+has **not started applying**. That is safe and saves money: only the latest HEAD needs to go
+green. Prune redundant queued applies so you don't pay for several full apply/destroy cycles;
+the goal is exactly one green run on the final PR HEAD.
+
+### `action_required` approval loops on new/bot-touched repos
+
+On a newly-created repo, or one where a bot (`org-dependabot`, tree-readme) just pushed a
+commit, workflow runs stick at `action_required` and must be manually approved:
+
+```bash
+gh api -X POST repos/{owner}/{repo}/actions/runs/{run_id}/approve
+```
+
+A bot push *after* your approval re-triggers the gate — you may need to approve again. Watch
+for a fresh `action_required` run each time the PR head moves.
+
+### `go.sum` is never mutated by CI
+
+The workflow will not run `go mod tidy`. Commit a complete `go.sum` (see the self-test
+pattern). A partial sum fails the run instead of being silently repaired — this is deliberate
+so the reviewed dependency set is exactly what runs.
+
 ## OIDC Setup by Provider
 
-All three providers use the same concept: GitHub mints a short-lived OIDC token for the
-workflow run, and the cloud provider exchanges it for temporary credentials. No long-lived
-secrets are stored in GitHub.
+Per-repo OIDC onboarding — trust-policy shapes, the starter least-privilege permission
+policy, the Azure federated-credential equivalent, and post-first-green tightening — is
+documented in full in the companion runbook:
 
-### AWS
+**➡ [`ORG_TERRATEST_PROVISIONING.md`](./ORG_TERRATEST_PROVISIONING.md)**
 
-1. Create an IAM OIDC Identity Provider for `token.actions.githubusercontent.com`
-1. Create an IAM role with a trust policy scoping to your org/repo. In **`pr` mode** the
-   caller triggers on `pull_request`, and GitHub sets the OIDC `sub` claim to
-   `repo:<owner>/<repo>:pull_request` — *not* a branch ref — so match it with `StringLike`:
+The essentials:
 
-   ```json
-   {
-     "Effect": "Allow",
-     "Principal": {
-       "Federated": "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com"
-     },
-     "Action": "sts:AssumeRoleWithWebIdentity",
-     "Condition": {
-       "StringLike": {
-         "token.actions.githubusercontent.com:sub": [
-           "repo:Coalfire-CF/terraform-aws-my-module:pull_request",
-           "repo:Coalfire-CF/terraform-aws-my-module:ref:refs/tags/*"
-         ]
-       },
-       "StringEquals": {
-         "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
-       }
-     }
-   }
-   ```
-
-   > **Scope the trust policy to the exact repo and claim types you expect.** A wildcard like
-   > `repo:Coalfire-CF/*:*` trusts every repo in the org on any event — any contributor who can
-   > open a PR could assume the role. List the specific claims instead: `:pull_request` for
-   > PR-mode runs and `:ref:refs/tags/*` for release-mode runs. Pinning the `aud` claim to
-   > `sts.amazonaws.com` (the audience `configure-aws-credentials` requests) prevents token
-   > reuse. Do **not** restrict to `ref:refs/heads/*` alone — that omits the `pull_request`
-   > claim, so every PR-mode run would fail with `AccessDenied`.
-1. Attach only the permissions the module under test needs (least privilege)
-1. Pass the role ARN via the `aws_role_arn` input
-
-### Azure
-
-1. Register an App (or use an existing Service Principal) in Azure AD
-1. Add a Federated Credential. For **`pr` mode** the subject must match the `pull_request`
-   claim (add a second credential for release/tag runs):
-
-   - Issuer: `https://token.actions.githubusercontent.com`
-   - Subject (PR mode): `repo:Coalfire-CF/<repo>:pull_request`
-   - Subject (release mode): `repo:Coalfire-CF/<repo>:ref:refs/tags/*`
-   - Audience: `api://AzureADTokenExchange`
-1. Grant the Service Principal RBAC roles on the target subscription (least privilege)
-1. Pass `azure_client_id`, `azure_tenant_id`, and `azure_subscription_id` as inputs
-
-### GCP
-
-1. Create a Workload Identity Pool:
-
-   ```bash
-   gcloud iam workload-identity-pools create "ci-pool" \
-     --location="global" \
-     --display-name="CI Pool"
-   ```
-
-1. Create a Provider in the pool. The `assertion.repository_owner` condition scopes trust to
-   the org and applies to `pull_request` events too — it matches on the repository attribute
-   rather than a branch ref, so no `ref:refs/heads/*` restriction is needed:
-
-   ```bash
-   gcloud iam workload-identity-pools providers create-oidc "github" \
-     --location="global" \
-     --workload-identity-pool="ci-pool" \
-     --issuer-uri="https://token.actions.githubusercontent.com" \
-     --attribute-mapping="google.subject=assertion.sub,attribute.repository=assertion.repository" \
-     --attribute-condition="assertion.repository_owner == 'Coalfire-CF'"
-   ```
-
-1. Bind a service account:
-
-   ```bash
-   gcloud iam service-accounts add-iam-policy-binding "terratest@PROJECT.iam.gserviceaccount.com" \
-     --role="roles/iam.workloadIdentityUser" \
-     --member="principalSet://iam.googleapis.com/projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/ci-pool/attribute.repository/Coalfire-CF/REPO"
-   ```
-
-1. Pass `gcp_workload_identity_provider` and `gcp_service_account` as inputs
+- **AWS:** an IAM OIDC provider for `token.actions.githubusercontent.com` plus a role whose
+  trust policy `StringLike`-matches `repo:Coalfire-CF/<repo>:pull_request` **and**
+  `repo:Coalfire-CF/<repo>:ref:refs/tags/*`, with the `aud` claim pinned to
+  `sts.amazonaws.com`. **No wildcards** (`repo:Coalfire-CF/*:*` trusts every repo on any
+  event). Pass the role ARN via `aws_role_arn`.
+- **Azure:** an App Registration with a **federated credential per claim** — subject
+  `repo:Coalfire-CF/<repo>:pull_request` (and a second for `:ref:refs/tags/*`), issuer
+  `https://token.actions.githubusercontent.com`, audience `api://AzureADTokenExchange`.
+  Pass `azure_client_id` / `azure_tenant_id` / `azure_subscription_id`.
+- **GCP:** a Workload Identity Pool + provider with
+  `attribute-condition="assertion.repository_owner == 'Coalfire-CF'"`, bound to a
+  least-privilege service account. Pass `gcp_workload_identity_provider` /
+  `gcp_service_account`.
 
 ## Inputs Reference
 
 | Input | Required | Default | Description |
 | --- | --- | --- | --- |
 | `test_mode` | No | `pr` | `pr` posts results to PR comment; `release` gates the pipeline |
-| `go_version` | No | `1.23` | Go version for Terratest |
+| `go_version` | No | `1.23` | Go version for Terratest (proven callers pin `1.26`) |
 | `terraform_version` | No | *(auto)* | Terraform version (falls back to `.terraform-version`) |
 | `test_directory` | No | `test` | Directory containing Go test files |
 | `test_timeout` | No | `30m` | Go test timeout |
@@ -395,11 +458,12 @@ OIDC roles should point to dedicated test accounts/subscriptions/projects that a
 ### Timeout Tuning
 
 The default 30-minute timeout works for most modules. If your module creates resources
-that take longer to provision (e.g., RDS clusters, GKE clusters), increase the timeout:
+that take longer to provision (e.g., RDS clusters, GKE clusters, Network Firewall),
+increase the timeout (vpc-nfw uses `45m`):
 
 ```yaml
 with:
-  test_timeout: '1h'
+  test_timeout: '45m'
 ```
 
 ## Test Output and Artifacts
@@ -442,7 +506,11 @@ point the report path at the same file and GitLab will render test results in me
 
 When adding Terratest to a Terraform module repo:
 
-1. **Create the test directory** with `go.mod`, `go.sum`, and test files (see Directory Structure above)
+1. **Create the self-test layout** — `test/go.mod` (re-homed to
+   `github.com/Coalfire-CF/<repo>/test`), a complete committed `go.sum`, a `//go:build
+   terratest` test file, and a `test/fixtures/<name>/` fixture whose module `source` is
+   `../../..` (see "Module-repo self-test pattern")
+1. **Pick a unique `resource_prefix`** not used by any other repo in the fleet
 1. **Add `gomod` to the repo's `dependabot.yml`** so Go dependencies are kept up to date:
 
    ```yaml
@@ -457,18 +525,35 @@ When adding Terratest to a Terraform module repo:
        - "dep/gomod"
    ```
 
-   If you use the `org-dependabot.yml` refresh workflow, this will be auto-detected from `test/go.mod`.
-1. **Set up OIDC trust** in the target cloud provider (see OIDC Setup by Provider above)
-1. **Add the caller workflow** to `.github/workflows/ci.yml` (see Calling the Workflow above)
-1. **Ensure the caller workflow includes `permissions`** with `id-token: write` — OIDC will fail without it
+   If you use the `org-dependabot.yml` refresh workflow, this is auto-detected from
+   `test/go.mod`.
+1. **Provision OIDC trust** in the target cloud (see
+   [`ORG_TERRATEST_PROVISIONING.md`](./ORG_TERRATEST_PROVISIONING.md))
+1. **Add the caller workflow** with `paths` scoping, a `concurrency` block
+   (`cancel-in-progress: false`), and the `permissions` block including `id-token: write`
+1. **Open a PR and shepherd the run to green** — approve any `action_required` gate, prune
+   redundant queued applies, never cancel mid-apply
 
 ## GitHub App for Private Module Access
 
 If your Terraform modules reference other private modules in the org, the workflow needs
 a GitHub App token to authenticate `go mod download` against private repos.
 
-**Recommended setup: create a dedicated GitHub App for Terratest** rather than reusing the
-plan or apply app. This gives you:
+**Option A (dev-phase, in use today):** alias the existing org private-module pull App into
+the names org-terratest expects, right in the caller's `secrets:` block:
+
+```yaml
+    secrets:
+      TERRATEST_APP_CLIENT_ID: ${{ secrets.CF_TF_PULL_PRIVATE_APP_CLIENTID }}
+      TERRATEST_APP_PRIVATE_KEY: ${{ secrets.CF_TF_PULL_PRIVATE_APP_PRIVATE_KEY }}
+```
+
+This reuses an already-provisioned App, so no new registration is needed to get a lane green.
+Note these org secrets are **selected-repos scoped** — a brand-new repo may need to be added
+to each secret's repository list before the pull works.
+
+**Option B (go-live hardening): a dedicated Terratest App.** Create a purpose-built App so the
+Terratest token is minimal, separately audited, and independently revocable:
 
 - **Minimal permissions** — the app only needs `Contents: read` to pull module source
 - **Separate audit trail** — Terratest token usage is logged independently from plan/apply
@@ -478,9 +563,6 @@ plan or apply app. This gives you:
 
 1. Create a GitHub App in the org with **Repository permissions: Contents → Read**
 1. Install the app on the org (all repos, or select repos that contain Terraform modules)
-1. Set the app's client ID and private key as **org-level secrets**:
-
-   - `TERRATEST_APP_CLIENT_ID`
-   - `TERRATEST_APP_PRIVATE_KEY`
-
+1. Set the app's client ID and private key as **org-level secrets**
+   (`TERRATEST_APP_CLIENT_ID`, `TERRATEST_APP_PRIVATE_KEY`)
 1. Calling repos pass these secrets through to the workflow (see examples above)
