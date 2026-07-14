@@ -170,3 +170,96 @@ Issue labels:
 - Enhancement
 - Documentation
 - Code
+
+## Tree
+
+```text
+.
+|-- CHANGELOG.md
+|-- README.md
+|-- actions
+|   |-- gitleaks
+|       |-- action.yml
+|-- docs
+|   |-- GATE_CONFIG.md
+|   |-- GATE_PROMOTION.md
+|   |-- ORG_DEPENDABOT_AUTO_MERGE.md
+|   |-- ORG_JIRA_SYNC_SETUP.md
+|   |-- ORG_LABEL_TAXONOMY.md
+|   |-- ORG_OPA.md
+|   |-- ORG_RELEASE_AUTO_PATCH.md
+|   |-- ORG_RELEASE_CLEAN.md
+|   |-- ORG_SLACK_NOTIFY.md
+|   |-- ORG_SOURCE_PIN.md
+|   |-- ORG_TERRATEST.md
+|   |-- ORG_VERSION_BAND.md
+|   |-- superpowers
+|       |-- specs
+|           |-- 2026-07-14-self-dogfood-reusable-workflows-design.md
+|-- gate-config.yml
+|-- package-lock.json
+|-- package.json
+|-- release-please-config.json
+|-- renovate
+|   |-- terraform-ref-pins.json5
+|-- scripts
+|   |-- auto-merge-decide.sh
+|   |-- breaking-change-check.sh
+|   |-- cache-lib.sh
+|   |-- gate-config-resolve.sh
+|   |-- pr-green-merge.sh
+|   |-- prompt-lib.sh
+|   |-- release-patch-merge.sh
+|   |-- retry-lib.sh
+|   |-- source-pin-check.sh
+|   |-- stagger-slot.sh
+|   |-- supply-chain-check.sh
+|   |-- uses-pin-check.sh
+|   |-- version-band-check.sh
+|-- tests
+    |-- auto-merge-decide.test.sh
+    |-- cache-read.test.sh
+    |-- fixtures
+    |   |-- auto-merge-decide
+    |   |   |-- first_party_waiver.env
+    |   |   |-- major_blocked.env
+    |   |   |-- osv_blocked.env
+    |   |   |-- parse_error_manual.env
+    |   |-- cache-read
+    |   |   |-- complete_clean.json
+    |   |   |-- legacy_no_schema.json
+    |   |   |-- missing_fields.json
+    |   |   |-- string_booleans.json
+    |   |   |-- unknown_schema.json
+    |   |   |-- vuln.json
+    |   |   |-- wrong_producer.json
+    |   |-- release-patch
+    |   |   |-- changelog.base.md
+    |   |   |-- changelog.patch.md
+    |   |   |-- manifest.base.json
+    |   |   |-- manifest.patch.json
+    |   |   |-- snapshot.happy.json
+    |   |-- source-pin
+    |   |   |-- fail_branch.tf
+    |   |   |-- fail_floating.tf
+    |   |   |-- fail_sha.tf
+    |   |   |-- pass.tf
+    |   |   |-- pass_renovate.tf
+    |   |   |-- warn_tag.tf
+    |   |-- uses-pin
+    |       |-- fail_main.yml
+    |       |-- fail_sha_nocomment.yml
+    |       |-- pass_local.yml
+    |       |-- pass_sha.yml
+    |       |-- warn_tag.yml
+    |-- gate-config-resolve.test.sh
+    |-- prompt-build.test.sh
+    |-- reconcile-sweeper.test.sh
+    |-- release-patch-merge.test.sh
+    |-- retry-lib.test.sh
+    |-- source-pin-check.test.sh
+    |-- stagger-slot.test.sh
+    |-- tree-readme-section.test.sh
+    |-- uses-pin-check.test.sh
+    |-- version-band-check.test.sh
+```
