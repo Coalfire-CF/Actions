@@ -25,7 +25,7 @@ jobs:
 
     - name: Run gitleaks scan
       id: gitleaks
-      uses: Coalfire-CF/Actions/actions/gitleaks@8bee649e06269b872a477fe0e536302a0d244872 # v0.11.1
+      uses: Coalfire-CF/Actions/actions/gitleaks@9451b979c22b3762b3c8a7d4d9493fefaee7edc5 # v0.11.3
       with:
         scan-mode: full
         report-path: gitleaks_release_results.json
