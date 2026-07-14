@@ -78,6 +78,7 @@ a regression. The full accounting is in the Gap Analysis below.
 ## The three new files
 
 ### `.github/workflows/dependabot-auto-merge.yml`
+
 ```yaml
 name: Dependabot Auto-Merge
 on:
@@ -89,6 +90,7 @@ jobs:
     uses: ./.github/workflows/org-dependabot-auto-merge.yml
     secrets: inherit
 ```
+
 `pull_request_target` (per the reusable workflow's header) so it gets write access
 plus the org secrets on Dependabot PRs. The reusable workflow owns its own per-PR
 `concurrency` group and re-applies the `dependabot[bot]` guard internally, so the
@@ -96,6 +98,7 @@ caller stays minimal. All reusable-workflow inputs are optional; defaults are
 correct for this repo.
 
 ### `.github/workflows/label-sync.yml`
+
 ```yaml
 name: Sync Auto-Merge Labels
 on:
@@ -107,10 +110,12 @@ jobs:
     uses: ./.github/workflows/org-label-sync.yml
     secrets: inherit
 ```
+
 No required inputs/secrets. Run once via `workflow_dispatch` at rollout so the
 label taxonomy exists before the first auto-merge evaluation.
 
 ### `.github/workflows/tree-readme.yml`
+
 ```yaml
 name: README Tree
 on:
@@ -121,6 +126,7 @@ jobs:
     uses: ./.github/workflows/org-tree-readme.yml
     secrets: inherit
 ```
+
 Idempotent: no-op commit when the tree is unchanged. On Dependabot PRs it is
 push-suppressed by design (read-only token → warn only), so it does not collide
 with the auto-merge caller.
@@ -161,8 +167,8 @@ with the auto-merge caller.
 1. A new Dependabot PR receives the `Dependabot Auto-Merge` check and (for an
    eligible non-Terraform bump) the classification labels + Bedrock changelog
    evaluation, and either auto-merges or is labeled for review.
-2. `label-sync` `workflow_dispatch` run creates/updates the full label taxonomy.
-3. A PR that changes the repo tree gets a `## Tree` README update committed by
+1. `label-sync` `workflow_dispatch` run creates/updates the full label taxonomy.
+1. A PR that changes the repo tree gets a `## Tree` README update committed by
    `tree-readme` (or a clean no-op when unchanged).
-4. All three new workflow files pass the repo's own `test-scripts.yml` lint
+1. All three new workflow files pass the repo's own `test-scripts.yml` lint
    (actionlint + N2 no-mutable-main-refs guard).
