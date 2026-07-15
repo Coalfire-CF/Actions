@@ -69,8 +69,17 @@ stays dry-run by default.
 
 - `gh pr merge` (even `--admin` for non-admins) ≠ REST bypass merge. Use the REST
   endpoint for any bypass-actor merge.
-- A repo with its **own** ruleset requiring status checks (e.g. `MTCS`) is not
-  covered by the org-ruleset bypass list — adopt via PR there.
+- **Repo-level rulesets are NOT covered by the org-ruleset bypass list.** A fleet
+  scan (2026-07-15) found 16 repos with active repo rulesets carrying a
+  `pull_request` rule that 405'd the App's merge ("Waiting on code owner review")
+  despite the org bypass — e.g. `terraform-aws-cloudfront`,
+  `terraform-aws-security-hub`, the 4 `proliance-*` repos. Fixed by adding
+  `ci-automerge-app` (3436395, `bypass_mode: always`) to each repo ruleset's
+  bypass actors, preserving their custom rules (linear-history, copilot-review,
+  creation/update). Any NEW repo-level ruleset with a `pull_request` rule must
+  include the App as a bypass actor or its Dependabot PRs will wedge. (`MTCS` is
+  the other variant: its repo ruleset requires status checks — adopt changes
+  there via PR.)
 - The 0.12.1 caller is a guarded *canonical replace*; any consumer caller with
   custom `with:` inputs is skipped (none existed at rollout).
 - Reconcile returns non-zero if any single PR errors (e.g. a merge conflict → 405,
