@@ -11,6 +11,12 @@ name: Dependabot Reconcile Sweeper
 # ones. It re-checks freshness live and never merges a red/pending/draft/closed
 # or unlabeled PR.
 #
+# It merges with BYPASS_REVIEW=true because it runs as the ci-automerge-app
+# GitHub App — a ruleset bypass actor. On code-owner-required rulesets a bot
+# approval never satisfies the required review, so the merge is issued via the
+# REST endpoint (which honors the App's bypass) past reviewDecision=REVIEW_REQUIRED.
+# An explicit human block (CHANGES_REQUESTED) is still never overridden.
+#
 # SAFETY: dry_run defaults to TRUE everywhere (scheduled runs included) — the
 # sweep logs would-merge decisions and performs ZERO mutating calls. To enable
 # live healing, dispatch manually with dry_run=false (validate first), or flip
@@ -33,6 +39,10 @@ on:
         description: 'Merge method for green PRs: merge | squash | rebase'
         type: string
         default: 'squash'
+      repo:
+        description: 'Optional single repo (owner/name) to scope the sweep to — for canary / targeted runs. Empty = whole org.'
+        type: string
+        default: ''
 
 # Least privilege: checkout only. Cross-repo merges across the org use the
 # GitHub App token generated below, not GITHUB_TOKEN.
@@ -74,21 +84,30 @@ jobs:
           # (unchecked) performs merges. Scheduled runs are always dry-run.
           DRY_RUN: ${{ (github.event_name == 'workflow_dispatch' && inputs.dry_run == false) && 'false' || 'true' }}
           MERGE_METHOD: ${{ inputs.merge_method || 'squash' }}
+          REPO_SCOPE: ${{ inputs.repo || '' }}
           MAX_PRS: '200'
         run: |
           set -euo pipefail
           : "${GH_TOKEN:?missing app token}"
-          echo "Reconcile sweep — owner=${OWNER} dry_run=${DRY_RUN} method=${MERGE_METHOD} cap=${MAX_PRS}"
+          echo "Reconcile sweep — owner=${OWNER} scope=${REPO_SCOPE:-<org>} dry_run=${DRY_RUN} method=${MERGE_METHOD} cap=${MAX_PRS}"
 
           # Shared bounded-retry helper (grade-A #13) — one implementation, not three.
           # shellcheck source=scripts/retry-lib.sh
           . "${GITHUB_WORKSPACE}/scripts/retry-lib.sh"
 
-          # Enumerate open org PRs labeled merge/approved (capped). A gh-search
-          # blip is treated as transient (retry with backoff); persistent failure
-          # is a hard error (the sweep can't run blind).
+          # Search scope: whole org by default, or a single repo for a canary /
+          # targeted run (REPO_SCOPE=owner/name).
+          if [ -n "${REPO_SCOPE}" ]; then
+            SEARCH_SCOPE=(--repo "$REPO_SCOPE")
+          else
+            SEARCH_SCOPE=(--owner "$OWNER")
+          fi
+
+          # Enumerate open PRs labeled merge/approved (capped). A gh-search blip is
+          # treated as transient (retry with backoff); persistent failure is a hard
+          # error (the sweep can't run blind).
           _search_prs() {
-            gh search prs --owner "$OWNER" --state open --label 'merge/approved' \
+            gh search prs "${SEARCH_SCOPE[@]}" --state open --label 'merge/approved' \
               --limit "$MAX_PRS" --json repository,number 2>/dev/null || return "$RETRY_TRANSIENT_RC"
           }
           if ! PRS="$(with_retry 3 2 20 -- _search_prs)"; then
@@ -106,7 +125,7 @@ jobs:
           while IFS=$'\t' read -r repo num; do
             [ -n "$repo" ] && [ -n "$num" ] || continue
             echo "::group::${repo}#${num}"
-            if ! PR_NUMBER="$num" REPO="$repo" MERGE_METHOD="$MERGE_METHOD" DRY_RUN="$DRY_RUN" \
+            if ! PR_NUMBER="$num" REPO="$repo" MERGE_METHOD="$MERGE_METHOD" DRY_RUN="$DRY_RUN" BYPASS_REVIEW=true \
                  bash "${GITHUB_WORKSPACE}/scripts/pr-green-merge.sh"; then
               echo "::warning::pr-green-merge failed for ${repo}#${num}"
               rc=1

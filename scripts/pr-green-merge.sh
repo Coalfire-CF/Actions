@@ -24,7 +24,19 @@
 # A PR is NEVER merged (defence-in-depth beyond the sweeper's label/state search
 # filter) when it is closed/draft, authored by anyone outside AUTHOR_ALLOWLIST
 # (the label alone is not trust — a triager can apply it; they cannot forge the
-# author), or its reviewDecision is REVIEW_REQUIRED / CHANGES_REQUESTED.
+# author), or its reviewDecision is CHANGES_REQUESTED (an explicit human block).
+# reviewDecision == REVIEW_REQUIRED (an unmet *required* review, e.g. a code-owner
+# review a bot can neither give nor be named for) is skipped by default but merged
+# when BYPASS_REVIEW=true — the caller is merging AS a ruleset bypass actor (the
+# ci-automerge-app Integration or the cs-coalforge team), for which the merge is
+# allowed server-side despite the unmet requirement. See MERGE MECHANISM below.
+#
+# MERGE MECHANISM: the merge is issued via the REST endpoint
+# (PUT /repos/{o}/{r}/pulls/{n}/merge, `gh api`), NOT `gh pr merge`. `gh pr merge`
+# (GraphQL) refuses when the PR's mergeStateStatus is BLOCKED and does not exercise
+# ruleset bypass — verified 2026-07-15 (it was rejected even for an admin+bypass
+# user, "base branch policy prohibits the merge"). The REST endpoint honors the
+# authenticated actor's bypass entitlement.
 #
 # Inputs (environment):
 #   PR_NUMBER        required — PR number to evaluate
@@ -32,6 +44,9 @@
 #   MERGE_METHOD     optional — merge|squash|rebase (default: squash)
 #   DRY_RUN          optional — "true" (default) logs the would-merge decision and
 #                    performs ZERO mutating calls; "false" performs the merge
+#   BYPASS_REVIEW    optional — "true" merges a PR whose reviewDecision is
+#                    REVIEW_REQUIRED (caller is a bypass actor); "false" (default)
+#                    skips it. CHANGES_REQUESTED is skipped regardless.
 #   RETRY_MAX        optional — max attempts for a transient gh read (default: 3)
 #   AUTHOR_ALLOWLIST optional — space-separated trusted author logins
 #                    (default: "app/dependabot dependabot[bot]")
@@ -54,6 +69,7 @@ PR_NUMBER="${PR_NUMBER:?PR_NUMBER required}"
 REPO="${REPO:?REPO required (owner/name)}"
 MERGE_METHOD="${MERGE_METHOD:-squash}"
 DRY_RUN="${DRY_RUN:-true}"
+BYPASS_REVIEW="${BYPASS_REVIEW:-false}"
 RETRY_MAX="${RETRY_MAX:-3}"
 # Space-separated allowlist of trusted PR-author logins. NOTE: `gh --json author`
 # reports Dependabot as `app/dependabot` (the GitHub App identity); the webhook
@@ -124,12 +140,22 @@ fi
 
 # Review-decision gate. reviewDecision is null when the repo requires no reviews
 # (the common wedged-PR case — allowed), APPROVED when a required review is
-# satisfied (allowed). REVIEW_REQUIRED means a required review is unmet — GitHub
-# would block the merge server-side anyway, so skip to avoid a noisy failed
-# merge; CHANGES_REQUESTED is an explicit block. Never merge over either.
-if [ "$REVIEW" = "REVIEW_REQUIRED" ] || [ "$REVIEW" = "CHANGES_REQUESTED" ]; then
-  log "SKIP #${PR_NUMBER} (reviewDecision=${REVIEW}) — review unmet/blocked, not sweep-eligible"
-  echo "SKIP #${PR_NUMBER} (review-${REVIEW})"
+# satisfied (allowed).
+#   CHANGES_REQUESTED — an explicit human block. NEVER merged, even in bypass mode:
+#     a bypass actor could technically override it, but "a reviewer said no" is not
+#     something automation may steamroll.
+#   REVIEW_REQUIRED  — a *required* review is unmet (e.g. a code-owner review a bot
+#     can neither give nor be a CODEOWNER for). Skipped by default (a non-bypass
+#     caller would be blocked server-side anyway); merged when BYPASS_REVIEW=true,
+#     because the caller merges AS a ruleset bypass actor and the merge is allowed.
+if [ "$REVIEW" = "CHANGES_REQUESTED" ]; then
+  log "SKIP #${PR_NUMBER} (reviewDecision=CHANGES_REQUESTED) — explicit human block, never overridden"
+  echo "SKIP #${PR_NUMBER} (review-CHANGES_REQUESTED)"
+  exit 0
+fi
+if [ "$REVIEW" = "REVIEW_REQUIRED" ] && [ "$BYPASS_REVIEW" != "true" ]; then
+  log "SKIP #${PR_NUMBER} (reviewDecision=REVIEW_REQUIRED) — required review unmet; set BYPASS_REVIEW=true to merge as a ruleset bypass actor"
+  echo "SKIP #${PR_NUMBER} (review-REVIEW_REQUIRED)"
   exit 0
 fi
 
@@ -147,12 +173,17 @@ if [ "$CHECK_STATE" != "GREEN" ]; then
   exit 0
 fi
 
+BYPASS_NOTE=""
+[ "$REVIEW" = "REVIEW_REQUIRED" ] && BYPASS_NOTE=", bypassing REVIEW_REQUIRED"
+
 if [ "$DRY_RUN" != "false" ]; then
-  log "WOULD-MERGE #${PR_NUMBER} (checks GREEN) — dry-run, no mutation performed"
+  log "WOULD-MERGE #${PR_NUMBER} (checks GREEN${BYPASS_NOTE}) — dry-run, no mutation performed"
   echo "WOULD-MERGE #${PR_NUMBER}"
   exit 0
 fi
 
-log "MERGE #${PR_NUMBER} (checks GREEN) via --${MERGE_METHOD}"
-gh pr merge "$PR_NUMBER" "--${MERGE_METHOD}" --repo "$REPO"
+# Merge via the REST endpoint (see MERGE MECHANISM in the header): `gh pr merge`
+# refuses a BLOCKED PR and does not exercise ruleset bypass; PUT .../merge does.
+log "MERGE #${PR_NUMBER} (checks GREEN${BYPASS_NOTE}) via REST --${MERGE_METHOD}"
+gh api --method PUT "repos/${REPO}/pulls/${PR_NUMBER}/merge" -f "merge_method=${MERGE_METHOD}" >/dev/null
 echo "MERGED #${PR_NUMBER}"

@@ -41,7 +41,16 @@ if [ "$1" = "pr" ] && [ "$2" = "view" ]; then
   fi
   cat "$MOCK_PR_JSON"; exit 0
 fi
-# Any write verb (merge/review/edit/close/comment/ready/...):
+# The REAL merge path: REST endpoint via `gh api --method PUT .../pulls/N/merge`
+# (NOT `gh pr merge`, which cannot exercise ruleset bypass). Treated as a write.
+if [ "$1" = "api" ] && printf '%s' "$*" | grep -qE 'pulls/[0-9]+/merge'; then
+  if [ "${MOCK_REJECT_WRITES:-0}" = "1" ]; then
+    echo "MOCK: REST merge rejected (dry-run must not mutate)" >&2
+    exit 1
+  fi
+  echo '{"merged":true,"message":"Pull Request successfully merged"}'; exit 0
+fi
+# Any pr write verb (review/edit/close/comment/ready/... and legacy merge):
 if [ "$1" = "pr" ] && printf '%s' " merge review edit close comment ready " | grep -q " $2 "; then
   if [ "${MOCK_REJECT_WRITES:-0}" = "1" ]; then
     echo "MOCK: write verb 'gh pr $2' rejected (dry-run must not mutate)" >&2
@@ -53,7 +62,8 @@ exit 0
 MOCK
 chmod +x "$BIN/gh"
 
-WRITE_VERBS_RE='pr (merge|review|edit|close|comment|ready)'
+# A write is either a legacy `gh pr <verb>` OR the REST merge (…/pulls/N/merge).
+WRITE_VERBS_RE='pr (merge|review|edit|close|comment|ready)|pulls/[0-9]+/merge'
 
 # run_helper <json> <dry_run> <reject_writes> [fail_first] -> sets globals
 # OUT, LAST_RC, TRACE. NOT run under command substitution (that would subshell
@@ -66,7 +76,7 @@ run_helper() {
   : > "$WORK/trace"; : > "$WORK/viewcount"
   PATH="$BIN:$PATH" GH_TRACE="$WORK/trace" MOCK_PR_JSON="$WORK/pr.json" \
       MOCK_REJECT_WRITES="$reject" MOCK_FAIL_FIRST="$fail_first" MOCK_FAIL_ALL="${5:-0}" MOCK_VIEW_COUNT="$WORK/viewcount" \
-    PR_NUMBER=123 REPO="Coalfire-CF/some-repo" MERGE_METHOD=squash DRY_RUN="$dry" RETRY_MAX=2 \
+    PR_NUMBER=123 REPO="Coalfire-CF/some-repo" MERGE_METHOD=squash DRY_RUN="$dry" BYPASS_REVIEW="${BR:-false}" RETRY_MAX=2 \
     bash "$HELPER" > "$WORK/out" 2>/dev/null
   LAST_RC=$?
   OUT="$(cat "$WORK/out")"
@@ -85,6 +95,9 @@ CLOSEDJSON="{\"state\":\"MERGED\",\"isDraft\":false,${AUTH},\"statusCheckRollup\
 # F3 hardening scenarios: non-automation author, and an unmet required review.
 HUMANJSON='{"state":"OPEN","isDraft":false,"author":{"login":"mallory"},"reviewDecision":null,"statusCheckRollup":[]}'
 REVREQJSON='{"state":"OPEN","isDraft":false,"author":{"login":"app/dependabot"},"reviewDecision":"REVIEW_REQUIRED","statusCheckRollup":[]}'
+# Bypass-mode scenarios: an unmet required review (merge-able by a bypass actor)
+# and an explicit human block (NEVER merged, even in bypass mode).
+CHREQJSON='{"state":"OPEN","isDraft":false,"author":{"login":"app/dependabot"},"reviewDecision":"CHANGES_REQUESTED","statusCheckRollup":[]}'
 
 # ---- Case 1 (the AC expected-FAIL guard): GREEN + dry-run → WOULD-MERGE, and
 #      the recorded trace contains ZERO write verbs (mock also set to reject). ----
@@ -94,12 +107,14 @@ echo "$OUT" | grep -q "WOULD-MERGE #123" || fail "dry-run GREEN should say WOULD
 echo "$TRACE" | grep -qE "$WRITE_VERBS_RE" && fail "dry-run issued a WRITE verb: $(echo "$TRACE" | grep -E "$WRITE_VERBS_RE")"
 echo "OK: dry-run GREEN → WOULD-MERGE, zero mutating calls (trace clean)"
 
-# ---- Case 2: GREEN + live → MERGED, and exactly one `gh pr merge` recorded. ----
+# ---- Case 2: GREEN + live → MERGED, and exactly one REST merge call recorded
+#      (via `gh api --method PUT .../merge`, never `gh pr merge`). ----
 run_helper "$GREEN" false 0
 [ "$LAST_RC" -eq 0 ] || fail "live GREEN should exit 0 (got $LAST_RC)"
 echo "$OUT" | grep -q "MERGED #123" || fail "live GREEN should MERGE (got: $OUT)"
-[ "$(echo "$TRACE" | grep -cE 'pr merge')" -eq 1 ] || fail "live GREEN must issue exactly one 'gh pr merge'"
-echo "OK: live GREEN → MERGED, exactly one merge call"
+[ "$(echo "$TRACE" | grep -cE 'pulls/[0-9]+/merge')" -eq 1 ] || fail "live GREEN must issue exactly one REST merge call"
+echo "$TRACE" | grep -qE '^pr merge' && fail "live GREEN must NOT use 'gh pr merge' (cannot bypass)"
+echo "OK: live GREEN → MERGED, exactly one REST merge call (no gh pr merge)"
 
 # ---- Case 3: no-checks (wedged clean PR) + live → MERGED. ----
 run_helper "$NOCHECKS" false 0
@@ -147,5 +162,22 @@ run_helper "$GREEN" false 0 0 1
 echo "$OUT" | grep -q "SKIP #123 (pr-view-unavailable)" || fail "persistent read failure should hit pr-view-unavailable SKIP (got: $OUT)"
 echo "$TRACE" | grep -qE "$WRITE_VERBS_RE" && fail "persistent read failure issued a WRITE verb but must never merge"
 echo "OK: persistent pr-view failure → SKIP (pr-view-unavailable), fail-closed branch reachable"
+
+# ---- Case 9 (bypass): BYPASS_REVIEW=true + REVIEW_REQUIRED + green → MERGED via
+#      the REST endpoint. This is the fleet fix — the App is a ruleset bypass
+#      actor, so an unmet code-owner review no longer blocks the merge. ----
+BR=true run_helper "$REVREQJSON" false 0
+[ "$LAST_RC" -eq 0 ] || fail "bypass REVIEW_REQUIRED should exit 0 (got $LAST_RC)"
+echo "$OUT" | grep -q "MERGED #123" || fail "bypass REVIEW_REQUIRED should MERGE (got: $OUT)"
+[ "$(echo "$TRACE" | grep -cE 'pulls/[0-9]+/merge')" -eq 1 ] || fail "bypass merge must issue exactly one REST merge call"
+echo "OK: BYPASS_REVIEW=true + REVIEW_REQUIRED → MERGED (REST, bypasses code-owner)"
+
+# ---- Case 10 (bypass safety): BYPASS_REVIEW=true + CHANGES_REQUESTED → SKIP.
+#      An explicit human "changes requested" is never overridden, bypass or not. ----
+BR=true run_helper "$CHREQJSON" false 0
+[ "$LAST_RC" -eq 0 ] || fail "bypass CHANGES_REQUESTED should exit 0 (skip, got $LAST_RC)"
+echo "$OUT" | grep -q "SKIP #123 (review-CHANGES_REQUESTED)" || fail "CHANGES_REQUESTED must SKIP even in bypass mode (got: $OUT)"
+echo "$TRACE" | grep -qE "$WRITE_VERBS_RE" && fail "CHANGES_REQUESTED issued a WRITE verb but must never merge"
+echo "OK: BYPASS_REVIEW=true + CHANGES_REQUESTED → SKIP (human block never overridden)"
 
 echo "ALL TESTS PASSED"
