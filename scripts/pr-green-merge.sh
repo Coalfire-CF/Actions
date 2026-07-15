@@ -86,10 +86,13 @@ RETRY_MAX="${RETRY_MAX:-3}"
 # them is safe; the repo's real CI checks still gate. Set to "" to disable.
 IGNORE_CHECK_PREFIX="${IGNORE_CHECK_PREFIX:-auto-merge / }"
 # Space-separated allowlist of trusted PR-author logins. NOTE: `gh --json author`
-# reports Dependabot as `app/dependabot` (the GitHub App identity); the webhook
-# `pull_request.user.login` form is `dependabot[bot]`. Both are accepted so the
-# gate matches regardless of representation. A human/triager cannot forge these.
-AUTHOR_ALLOWLIST="${AUTHOR_ALLOWLIST:-app/dependabot dependabot[bot]}"
+# reports GitHub-App authors as `app/<slug>`; the webhook
+# `pull_request.user.login` form is `<slug>[bot]`. Both forms are accepted so
+# the gate matches regardless of representation. A human/triager cannot forge
+# these. Besides Dependabot, the ci-automerge-app itself is trusted: the
+# org-repo-bootstrap sweeper authors baseline-adoption PRs as the App and labels
+# them merge/approved for this same green-gated pipeline to land.
+AUTHOR_ALLOWLIST="${AUTHOR_ALLOWLIST:-app/dependabot dependabot[bot] app/ci-automerge-app ci-automerge-app[bot]}"
 
 # log to STDERR so a retry message never contaminates a $(gh_read ...) capture.
 log() { echo "[pr-green-merge] $*" >&2; }

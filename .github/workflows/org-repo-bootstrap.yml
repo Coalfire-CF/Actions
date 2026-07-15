@@ -1,0 +1,175 @@
+name: Org Repo Bootstrap
+
+# Automated baseline adoption for new (or never-adopted) org repos.
+#
+# GitHub has no native "apply a template when a repo is created" — template
+# repos and starter workflows are opt-in at creation time, the org .github repo
+# only propagates community-health files, and rulesets enforce but never add
+# files. This sweeper is the convergence mechanism: it enumerates org repos,
+# finds ones missing the standard Actions baseline, and opens ONE bootstrap PR
+# per repo containing the pinned caller bundle rendered from
+# templates/bootstrap/ (common + terraform + private variants, classified per
+# repo). Every merge decision beyond that belongs to the existing auto-merge
+# machinery: bootstrap PRs are labeled `bootstrap/proposed` + `merge/approved`,
+# so the reconcile sweeper lands them once their own checks are green.
+#
+# SAFETY MODEL (mirrors org-dependabot-reconcile.yml): scheduled runs are LIVE
+# but capped at MAX_REPOS deliveries per run; manual dispatch is dry-run by
+# DEFAULT (canary with the `repo` input; pass dry_run=false to deliver). The
+# per-repo worker scripts/repo-bootstrap.sh fails CLOSED on any read failure,
+# never overwrites an existing file, and honors three opt-outs: the
+# `bootstrap-exempt` repo topic, a `.github/.no-bootstrap` marker file, and a
+# previously declined (closed-unmerged) bootstrap PR.
+#
+# PREREQUISITE: the ci-automerge-app installation must hold `workflows: write`
+# — the bootstrap PR pushes files under .github/workflows/. See
+# docs/ORG_REPO_BOOTSTRAP.md.
+
+on:
+  schedule:
+    - cron: '43 7 * * *'   # daily at 07:43 UTC — offset off the top-of-hour herd
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Log would-bootstrap decisions only; perform NO writes (default true)'
+        type: boolean
+        default: true
+      repo:
+        description: 'Optional single repo (owner/name) to scope the sweep to — for canary / targeted runs. Empty = whole org.'
+        type: string
+        default: ''
+      max_repos:
+        description: 'Max bootstrap deliveries (non-SKIP decisions) per run'
+        type: string
+        default: '5'
+
+# Least privilege: checkout only. Cross-repo pushes/PRs use the GitHub App
+# token generated below, not GITHUB_TOKEN.
+permissions:
+  contents: read
+
+concurrency:
+  group: repo-bootstrap-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  bootstrap:
+    name: Propose baseline on non-adopted repos
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout (templates + scripts)
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Generate GitHub App token (org-wide)
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.AUTOMERGE_CLIENT_ID }}
+          private-key: ${{ secrets.AUTOMERGE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
+      - name: Sweep non-adopted repos
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          OWNER: ${{ github.repository_owner }}
+          # Scheduled runs are LIVE (capped); manual dispatch stays dry-run
+          # unless dry_run=false is passed explicitly — same expression as the
+          # reconcile sweeper.
+          DRY_RUN: ${{ (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false)) && 'false' || 'true' }}
+          REPO_SCOPE: ${{ inputs.repo || '' }}
+          MAX_REPOS: ${{ inputs.max_repos || '5' }}
+        run: |
+          set -euo pipefail
+          : "${GH_TOKEN:?missing app token}"
+          # Harden dispatch inputs (env-injected, never inline-interpolated):
+          # cap must be numeric; scope must look like owner/name or be empty.
+          case "$MAX_REPOS" in *[!0-9]*|"") echo "::error::max_repos must be numeric"; exit 2 ;; esac
+          if [ -n "$REPO_SCOPE" ] && ! printf '%s' "$REPO_SCOPE" | grep -qE '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$'; then
+            echo "::error::repo must be owner/name"; exit 2
+          fi
+
+          # shellcheck source=scripts/retry-lib.sh
+          . "${GITHUB_WORKSPACE}/scripts/retry-lib.sh"
+
+          # Resolve the latest Actions release once per run: tag -> commit SHA
+          # (annotated tags need one extra deref). All rendered `uses:` pins
+          # carry this SHA + tag comment (RFC-0008).
+          _latest_release() {
+            gh release view --repo "${OWNER}/Actions" --json tagName --jq .tagName 2>/dev/null || return "$RETRY_TRANSIENT_RC"
+          }
+          if ! ACTIONS_VERSION="$(with_retry 3 2 20 -- _latest_release)"; then
+            echo "::error::could not resolve latest Actions release"
+            exit 1
+          fi
+          _tag_obj() {
+            gh api "repos/${OWNER}/Actions/git/ref/tags/${ACTIONS_VERSION}" --jq '[.object.type, .object.sha] | @tsv' 2>/dev/null || return "$RETRY_TRANSIENT_RC"
+          }
+          if ! TAG_TSV="$(with_retry 3 2 20 -- _tag_obj)"; then
+            echo "::error::could not resolve tag ${ACTIONS_VERSION}"
+            exit 1
+          fi
+          TAG_TYPE="$(printf '%s' "$TAG_TSV" | cut -f1)"
+          ACTIONS_SHA="$(printf '%s' "$TAG_TSV" | cut -f2)"
+          if [ "$TAG_TYPE" = "tag" ]; then
+            _deref() {
+              gh api "repos/${OWNER}/Actions/git/tags/${ACTIONS_SHA}" --jq '.object.sha' 2>/dev/null || return "$RETRY_TRANSIENT_RC"
+            }
+            if ! ACTIONS_SHA="$(with_retry 3 2 20 -- _deref)"; then
+              echo "::error::could not dereference annotated tag ${ACTIONS_VERSION}"
+              exit 1
+            fi
+          fi
+          echo "Bootstrap sweep — owner=${OWNER} scope=${REPO_SCOPE:-<org>} dry_run=${DRY_RUN} pin=${ACTIONS_VERSION}@${ACTIONS_SHA} cap=${MAX_REPOS}"
+
+          # Enumerate candidates: all non-archived, non-fork org repos except
+          # the infra repos. Per-repo opt-outs (topic, marker file, adoption,
+          # declined PR) are re-checked inside scripts/repo-bootstrap.sh —
+          # this filter only trims the obvious non-candidates.
+          if [ -n "${REPO_SCOPE}" ]; then
+            REPOS="${REPO_SCOPE}"
+          else
+            _list_repos() {
+              gh repo list "$OWNER" --limit 1000 --no-archived \
+                --json nameWithOwner,isFork,repositoryTopics \
+                --jq '.[] | select(.isFork | not)
+                          | select((.repositoryTopics // []) | map(.name) | index("bootstrap-exempt") | not)
+                          | .nameWithOwner' 2>/dev/null || return "$RETRY_TRANSIENT_RC"
+            }
+            if ! REPOS="$(with_retry 3 2 20 -- _list_repos)"; then
+              echo "::error::gh repo list failed after retries — cannot sweep blind"
+              exit 1
+            fi
+            REPOS="$(printf '%s\n' "$REPOS" | grep -vE "^${OWNER}/(Actions|\.github|\.allstar)$" || true)"
+          fi
+
+          TOTAL="$(printf '%s\n' "$REPOS" | grep -c . || true)"
+          echo "Candidates after pre-filter: ${TOTAL}"
+
+          rc=0 delivered=0
+          while IFS= read -r repo; do
+            [ -n "$repo" ] || continue
+            if [ "$delivered" -ge "$MAX_REPOS" ]; then
+              echo "::warning::delivery cap (${MAX_REPOS}) reached — remaining candidates roll to the next run (no silent truncation)."
+              break
+            fi
+            echo "::group::${repo}"
+            set +e
+            DECISION="$(TARGET_REPO="$repo" ACTIONS_SHA="$ACTIONS_SHA" ACTIONS_VERSION="$ACTIONS_VERSION" \
+              DRY_RUN="$DRY_RUN" bash "${GITHUB_WORKSPACE}/scripts/repo-bootstrap.sh")"
+            script_rc=$?
+            set -e
+            echo "$DECISION"
+            if [ "$script_rc" -ne 0 ]; then
+              echo "::warning::repo-bootstrap failed for ${repo}"
+              rc=1
+            elif printf '%s' "$DECISION" | grep -qE '^(WOULD-BOOTSTRAP|BOOTSTRAPPED)'; then
+              delivered=$((delivered + 1))
+              # Small jitter between live deliveries to avoid API bursts.
+              [ "$DRY_RUN" = "false" ] && sleep 3
+            fi
+            echo "::endgroup::"
+          done <<< "$REPOS"
+
+          echo "Done — ${delivered} bootstrap decision(s) this run."
+          exit "$rc"

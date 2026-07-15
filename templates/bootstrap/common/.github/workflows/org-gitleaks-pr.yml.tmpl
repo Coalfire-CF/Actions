@@ -1,0 +1,9 @@
+name: Gitleaks
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  gitleaks:
+    uses: Coalfire-CF/Actions/.github/workflows/org-gitleaks-pr.yml@__ACTIONS_SHA__ # __ACTIONS_VERSION__

@@ -41,6 +41,16 @@ The `decide` job removes conflicting labels before applying the new one.
 | `merge/manual-review` | `#e4e669` (yellow) | Requires human review |
 | `merge/skipped` | `#cccccc` (gray) | Not eligible (terraform deps) |
 
+### `bootstrap/` - Org Repo Bootstrap
+
+Applied by the org-repo-bootstrap sweeper ([docs](ORG_REPO_BOOTSTRAP.md)) to
+baseline-adoption PRs it opens. These PRs also carry `merge/approved`, so the
+reconcile sweeper lands them once their checks are green.
+
+| Label | Color | Description |
+|-------|-------|-------------|
+| `bootstrap/proposed` | `#0e8a16` (dark green) | Org baseline bootstrap PR opened by the repo-bootstrap sweeper |
+
 ### `check/` - Individual Check Results
 
 Applied additively as each check completes. Provides an audit trail of what

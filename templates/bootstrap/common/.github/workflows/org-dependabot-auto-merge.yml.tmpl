@@ -1,0 +1,28 @@
+name: Dependabot Auto-Merge
+
+# Evaluates Dependabot PRs for auto-merge via the org reusable workflow
+# (supply-chain + breaking-change checks, then approve + bypass-merge on green).
+# pull_request_target gives write access on Dependabot PRs (metadata only; never
+# executes PR-branch code). check_suite drives event-driven re-merge: when a
+# PR's checks finish, an already-approved PR that was still building is merged.
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+  check_suite:
+    types: [completed]
+
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write
+
+jobs:
+  auto-merge:
+    # pull_request_target: only Dependabot PRs. check_suite: pass through — the
+    # reusable workflow's remerge job resolves + filters the associated PR.
+    if: >-
+      github.event_name == 'check_suite' ||
+      github.event.pull_request.user.login == 'dependabot[bot]'
+    uses: Coalfire-CF/Actions/.github/workflows/org-dependabot-auto-merge.yml@__ACTIONS_SHA__ # __ACTIONS_VERSION__
+    secrets: inherit

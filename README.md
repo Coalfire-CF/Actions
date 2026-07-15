@@ -56,6 +56,7 @@ Called on merge to main.
 | Slack Notify | `org-slack-notify.yml` | Sends release, failure, or health-check notifications to Slack |
 | Jira Sync | `org-jira-sync.yml` | Syncs GitHub issues to Jira (Cloud or Data Center) |
 | Terraform Version Check | `org-terraform-version-check.yml` | Scheduled check for new Terraform versions, auto-creates PRs |
+| Repo Bootstrap | `org-repo-bootstrap.yml` | Daily sweeper that opens baseline-adoption PRs (pinned caller bundle from `templates/bootstrap/`) on org repos that never adopted the standard workflows ([docs](docs/ORG_REPO_BOOTSTRAP.md)) |
 
 ### Legacy / Internal
 
