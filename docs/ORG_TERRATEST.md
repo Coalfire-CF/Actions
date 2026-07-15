@@ -176,16 +176,20 @@ permissions:
   pull-requests: write # post the results comment in pr mode
 
 concurrency:
-  # One in-flight Terratest run per branch. cancel-in-progress MUST be false:
-  # cancelling a run mid-apply/destroy orphans real infrastructure in the test
-  # account (see Operational Notes). Superseded *pending* runs are still
-  # auto-cancelled by GitHub — only a running apply is protected.
-  group: terratest-${{ github.workflow }}-${{ github.ref }}
+  # One in-flight Terratest run per REPO — not per branch/ref. A ref-keyed group
+  # serializes pushes within one PR but lets two different PRs apply concurrently,
+  # and fixture resource names are fixed per repo, so concurrent applies collide
+  # (proven: simultaneous dependabot PRs, AlreadyExistsException on KMS aliases /
+  # log groups / NFW rule groups). cancel-in-progress MUST be false: cancelling a
+  # run mid-apply/destroy orphans real infrastructure (see Operational Notes).
+  # Superseded *pending* runs are still auto-cancelled by GitHub — only a running
+  # apply is protected.
+  group: org-terratest-${{ github.repository }}
   cancel-in-progress: false
 
 jobs:
   terratest:
-    uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@9451b979c22b3762b3c8a7d4d9493fefaee7edc5 # v0.11.3
+    uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@33a5e8e2f7fe782ea151eb2bd8c653b5d2778a68 # v0.12.0
     with:
       test_mode: pr
       go_version: "1.26"
@@ -228,12 +232,12 @@ permissions:
   pull-requests: write # post the results comment in pr mode
 
 concurrency:
-  group: terratest-${{ github.workflow }}-${{ github.ref }}
+  group: org-terratest-${{ github.repository }} # repo-wide: cross-PR applies collide on fixed fixture names
   cancel-in-progress: false # never cancel a live apply/destroy mid-flight
 
 jobs:
   terratest-azure:
-    uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@9451b979c22b3762b3c8a7d4d9493fefaee7edc5 # v0.11.3
+    uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@33a5e8e2f7fe782ea151eb2bd8c653b5d2778a68 # v0.12.0
     with:
       test_mode: pr
       go_version: "1.26"
@@ -264,12 +268,12 @@ credential on the Azure AD app must be **subject-scoped to this repo's `pull_req
 
 ```yaml
 concurrency:
-  group: terratest-${{ github.workflow }}-${{ github.ref }}
+  group: org-terratest-${{ github.repository }} # repo-wide: cross-PR applies collide on fixed fixture names
   cancel-in-progress: false
 
 jobs:
   terratest:
-    uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@9451b979c22b3762b3c8a7d4d9493fefaee7edc5 # v0.11.3
+    uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@33a5e8e2f7fe782ea151eb2bd8c653b5d2778a68 # v0.12.0
     with:
       test_mode: pr
       go_version: "1.26"
@@ -292,7 +296,7 @@ on:
 
 jobs:
   terratest:
-    uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@9451b979c22b3762b3c8a7d4d9493fefaee7edc5 # v0.11.3
+    uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@33a5e8e2f7fe782ea151eb2bd8c653b5d2778a68 # v0.12.0
     with:
       test_mode: release
       go_version: "1.26"
@@ -301,7 +305,7 @@ jobs:
 
   release-clean:
     needs: terratest
-    uses: Coalfire-CF/Actions/.github/workflows/org-release-clean.yml@9451b979c22b3762b3c8a7d4d9493fefaee7edc5 # v0.11.3
+    uses: Coalfire-CF/Actions/.github/workflows/org-release-clean.yml@33a5e8e2f7fe782ea151eb2bd8c653b5d2778a68 # v0.12.0
     with:
       tag_name: ${{ github.event.release.tag_name }}
 ```
