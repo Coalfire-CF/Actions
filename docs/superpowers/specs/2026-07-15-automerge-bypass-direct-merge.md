@@ -73,3 +73,14 @@ safety net, not the primary path).
   custom `with:` inputs is skipped (none existed at rollout).
 - Reconcile returns non-zero if any single PR errors (e.g. a merge conflict → 405,
   or a mergeability-recompute race → 409); that is expected, not a fix failure.
+- **Green-gate self-skip (fixed):** the `decide` job merges inline, so its own
+  check run (`auto-merge / decide`) is IN_PROGRESS and `notify_failure`/`remerge`
+  are QUEUED while `pr-green-merge.sh` reads check runs — making the PR-time merge
+  self-classify PENDING forever. Fixed via `IGNORE_CHECK_PREFIX` (default
+  `"auto-merge / "`), which excludes the auto-merge workflow's own jobs from the
+  gate. Repo CI checks still gate.
+- **`check_suite` re-merge is external-CI-only:** GitHub does not emit `check_suite`
+  events for suites created by GitHub Actions (recursion guard), so the `remerge`
+  job never fires for Actions-gated repos. Those rely on the (fixed) PR-time merge
+  or the reconcile sweep. Slow-CI repos whose checks outlast the decide job still
+  need the sweep to converge.

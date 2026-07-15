@@ -53,6 +53,9 @@
 #   RETRY_MAX        optional — max attempts for a transient gh read (default: 3)
 #   AUTHOR_ALLOWLIST optional — space-separated trusted author logins
 #                    (default: "app/dependabot dependabot[bot]")
+#   IGNORE_CHECK_PREFIX optional — exclude check runs whose name starts with this
+#                    from the green gate (default "auto-merge / " — the auto-merge
+#                    workflow's own jobs, which are in-flight while it merges). "" disables.
 #
 # Output: a single decision line on stdout, one of:
 #   MERGED #<n>        (DRY_RUN=false, was GREEN)
@@ -74,6 +77,14 @@ MERGE_METHOD="${MERGE_METHOD:-squash}"
 DRY_RUN="${DRY_RUN:-true}"
 BYPASS_REVIEW="${BYPASS_REVIEW:-false}"
 RETRY_MAX="${RETRY_MAX:-3}"
+# Check runs whose name starts with this prefix are EXCLUDED from the green gate.
+# Default excludes the auto-merge workflow's own jobs ("auto-merge / classify",
+# "auto-merge / decide", …): when the decide job runs the merge inline, its own
+# check run is IN_PROGRESS and notify_failure/remerge are QUEUED, so counting them
+# would make the PR-time merge forever self-classify PENDING and never fire. Those
+# jobs gate the auto-merge DECISION (upstream), not code correctness, so excluding
+# them is safe; the repo's real CI checks still gate. Set to "" to disable.
+IGNORE_CHECK_PREFIX="${IGNORE_CHECK_PREFIX:-auto-merge / }"
 # Space-separated allowlist of trusted PR-author logins. NOTE: `gh --json author`
 # reports Dependabot as `app/dependabot` (the GitHub App identity); the webhook
 # `pull_request.user.login` form is `dependabot[bot]`. Both are accepted so the
@@ -170,7 +181,10 @@ if [ "$REVIEW" = "REVIEW_REQUIRED" ] && [ "$BYPASS_REVIEW" != "true" ]; then
 fi
 
 # Green gate: read the head commit's check runs via REST (checks:read) and
-# classify FAIL > PENDING > GREEN. No check runs (empty) classifies GREEN — the
+# classify FAIL > PENDING > GREEN, EXCLUDING check runs named with
+# IGNORE_CHECK_PREFIX (the auto-merge workflow's own jobs — see var comment; when
+# the decide job merges inline, its own check is IN_PROGRESS and would otherwise
+# wedge the gate PENDING forever). No (remaining) check runs classifies GREEN — the
 # wedged-PR case (a clean PR on a repo with no gating checks). We read check RUNS
 # only (GitHub Actions checks — what the fleet gates on); legacy commit statuses
 # are not consulted, since the ruleset requires no status checks and reading them
@@ -186,8 +200,10 @@ if ! CHECKS_JSON="$(gh_read api "repos/${REPO}/commits/${HEAD_SHA}/check-runs?pe
   echo "SKIP #${PR_NUMBER} (check-runs-unavailable)"
   exit 0
 fi
-CHECK_STATE="$(printf '%s' "$CHECKS_JSON" | jq -r '
-  [ .check_runs[]? | ((.conclusion // .status // "") | ascii_upcase) ] as $c
+CHECK_STATE="$(printf '%s' "$CHECKS_JSON" | jq -r --arg ign "$IGNORE_CHECK_PREFIX" '
+  [ .check_runs[]?
+    | select(($ign == "") or ((.name // "") | startswith($ign) | not))
+    | ((.conclusion // .status // "") | ascii_upcase) ] as $c
   | if   ($c | map(select(. == "FAILURE" or . == "ERROR" or . == "TIMED_OUT" or . == "CANCELLED" or . == "ACTION_REQUIRED" or . == "STARTUP_FAILURE")) | length) > 0 then "FAIL"
     elif ($c | map(select(. == "QUEUED" or . == "IN_PROGRESS" or . == "PENDING" or . == "WAITING" or . == "REQUESTED" or . == "")) | length) > 0 then "PENDING"
     else "GREEN" end')"

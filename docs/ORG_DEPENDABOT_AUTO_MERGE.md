@@ -72,8 +72,11 @@ native auto-merge (`gh pr merge --auto`): native auto-merge waits for every rule
 requirement to be literally met and never consults bypass, so on a
 code-owner-required ruleset it would sit `BLOCKED` forever. Plain `gh pr merge`
 (GraphQL) likewise refuses a blocked PR. The merge is gated on the head commit's
-check runs being green (`scripts/pr-green-merge.sh`); a PR still building is left
-for the event-driven re-merge / the reconcile sweeper to converge.
+check runs being green (`scripts/pr-green-merge.sh`, which ignores the auto-merge
+workflow's own in-flight jobs so it doesn't self-block); a PR still building is left
+for the reconcile sweeper to converge. (A `check_suite` re-merge job also exists, but
+GitHub suppresses `check_suite` events for Actions-created suites, so it only helps
+repos gated by *external* CI apps — not the GitHub-Actions-only common case.)
 
 ### 2. AWS OIDC Role (required)
 

@@ -693,7 +693,11 @@ jobs:
   # (if eligible + all gates passed) labeled it merge/approved. A PR that was
   # still building at decide-time was left PENDING and NOT merged. This job
   # re-drives the bypass merge the instant a check suite completes, so such PRs
-  # merge promptly instead of waiting for the reconcile sweep. It is cheap and
+  # merge promptly instead of waiting for the reconcile sweep.
+  # CAVEAT: GitHub does NOT emit check_suite events for suites created by GitHub
+  # Actions (recursion guard), so this only fires for EXTERNAL CI apps. Repos
+  # gated purely by GitHub Actions rely on the PR-time merge (now that the green
+  # gate ignores auto-merge's own in-flight jobs) or the reconcile sweep. It is cheap and
   # tightly filtered: it acts ONLY on an OPEN, dependabot-authored, merge/approved
   # PR associated with the completed suite, and delegates the green-gate + bypass
   # merge to the same scripts/pr-green-merge.sh (so a not-yet-green PR is still
