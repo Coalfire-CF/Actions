@@ -128,8 +128,10 @@ on:
         required: false
 
 # One auto-merge evaluation per PR at a time; never cancel a merge mid-flight.
+# On check_suite events there is no pull_request.number, so key on the suite's
+# head SHA instead (keeps distinct commits from serialising onto one group).
 concurrency:
-  group: dependabot-auto-merge-${{ github.repository }}-${{ github.event.pull_request.number }}
+  group: dependabot-auto-merge-${{ github.repository }}-${{ github.event.pull_request.number || github.event.check_suite.head_sha }}
   cancel-in-progress: false
 
 jobs:
@@ -608,7 +610,7 @@ jobs:
               labels: newLabels,
             });
 
-      - name: Approve and auto-merge
+      - name: Approve and merge
         if: steps.decision.outputs.decision == 'approve'
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
@@ -619,35 +621,24 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Approve the PR using the GitHub App token
+          # Approve the PR as the auto-merge App (a ruleset bypass actor).
           gh pr review "$PR_NUMBER" --approve \
             --body "Auto-approved by Dependabot Auto-Merge: all supply chain and breaking change checks passed for ${DEP_NAME}@${TO_VERSION}." \
             --repo "$GITHUB_REPOSITORY"
 
-          # Enable auto-merge. On repos without required status checks GitHub
-          # cannot latch auto-merge on an already-clean PR (the enable silently
-          # no-ops or errors) — so verify, and fall back to a direct merge when
-          # nothing is pending. Observed 2026-07-03: ~60% of first-party bumps
-          # stalled approved-but-unmerged without this fallback.
-          gh pr merge "$PR_NUMBER" --auto "--${MERGE_METHOD}" \
-            --repo "$GITHUB_REPOSITORY" || echo "auto-merge enable failed — will verify and fall back"
-
-          sleep 5
-          PR_STATE=$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json state --jq '.state')
-          AUTO_ON=$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json autoMergeRequest --jq '.autoMergeRequest != null')
-          if [ "$PR_STATE" = "OPEN" ] && [ "$AUTO_ON" != "true" ]; then
-            # Neither merged nor armed: delegate the green-gate + direct-merge to
-            # the shared helper (grade-A #14 adoption) instead of an inline
-            # gh-pr-checks|awk gate. Same decision — merge iff the PR is a clean,
-            # green, non-draft trusted-author PR — via the canonical
-            # scripts/pr-green-merge.sh (statusCheckRollup gate; a transient
-            # checks-API error can no longer read as GREEN; a review-blocked PR is
-            # skipped cleanly rather than crashing on a rejected merge).
-            PR_NUMBER="$PR_NUMBER" REPO="$GITHUB_REPOSITORY" MERGE_METHOD="$MERGE_METHOD" DRY_RUN=false \
-              bash "${GITHUB_WORKSPACE}/actions-tools/scripts/pr-green-merge.sh"
-          else
-            echo "Auto-merge armed (or PR already merged) for PR #${PR_NUMBER}"
-          fi
+          # Merge DIRECTLY, exercising the App's ruleset bypass — do NOT arm
+          # GitHub native auto-merge. `gh pr merge --auto` waits for every ruleset
+          # requirement to be literally met and never consults bypass, so on a
+          # code-owner-required ruleset (a bot approval can't satisfy the required
+          # review) it sits BLOCKED forever — the exact stall this replaces.
+          # pr-green-merge.sh green-gates on the head commit's check-runs and, when
+          # GREEN, merges via the REST endpoint past reviewDecision=REVIEW_REQUIRED
+          # (BYPASS_REVIEW=true; a bot approval never satisfies code-owner review).
+          # A PR still building here classifies PENDING and is left for the
+          # event-driven re-merge (check_suite) / the reconcile sweeper to converge.
+          PR_NUMBER="$PR_NUMBER" REPO="$GITHUB_REPOSITORY" MERGE_METHOD="$MERGE_METHOD" \
+            DRY_RUN=false BYPASS_REVIEW=true \
+            bash "${GITHUB_WORKSPACE}/actions-tools/scripts/pr-green-merge.sh"
 
       - name: Add review comment for blocked PRs
         if: steps.decision.outputs.decision != 'approve'
@@ -694,3 +685,79 @@ jobs:
       channel-id: ${{ inputs.slack_channel_id }}
     secrets:
       SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+
+  # ----------------------------------------------------------------
+  # Job 6: Event-driven re-merge (check_suite: completed)
+  # ----------------------------------------------------------------
+  # When a PR's checks finish, the PR-event pipeline has already evaluated it and
+  # (if eligible + all gates passed) labeled it merge/approved. A PR that was
+  # still building at decide-time was left PENDING and NOT merged. This job
+  # re-drives the bypass merge the instant a check suite completes, so such PRs
+  # merge promptly instead of waiting for the reconcile sweep. It is cheap and
+  # tightly filtered: it acts ONLY on an OPEN, dependabot-authored, merge/approved
+  # PR associated with the completed suite, and delegates the green-gate + bypass
+  # merge to the same scripts/pr-green-merge.sh (so a not-yet-green PR is still
+  # left for a later suite / the sweep). Runs only on the check_suite trigger; the
+  # pull_request_target pipeline jobs above skip on this event (their dependabot
+  # PR-actor guard is false when github.event.pull_request is absent).
+  remerge:
+    if: github.event_name == 'check_suite'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Resolve associated merge/approved dependabot PR
+        id: pr
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const prs = context.payload.check_suite?.pull_requests || [];
+            // Same-repo PRs only (fork PRs have an empty list). Pick the first
+            // OPEN, dependabot-authored, merge/approved PR — the green-gate in
+            // pr-green-merge.sh does the freshness re-check and decides to merge.
+            for (const p of prs) {
+              const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: p.number });
+              if (pr.state !== 'open' || pr.draft) continue;
+              if (pr.user?.login !== 'dependabot[bot]') continue;
+              if (!pr.labels.map(l => l.name).includes('merge/approved')) continue;
+              core.info(`Re-merge candidate: #${p.number}`);
+              core.setOutput('pr_number', String(p.number));
+              return;
+            }
+            core.info('No open merge/approved dependabot PR for this check suite — nothing to do.');
+            core.setOutput('pr_number', '');
+
+      - name: Generate GitHub App Token
+        if: steps.pr.outputs.pr_number != ''
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.AUTOMERGE_CLIENT_ID }}
+          private-key: ${{ secrets.AUTOMERGE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
+      - name: Checkout Actions repo (decision scripts)
+        if: steps.pr.outputs.pr_number != ''
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: Coalfire-CF/Actions
+          ref: ${{ inputs.actions_ref || 'main' }}
+          path: actions-tools
+
+      - name: Green-gate and bypass-merge if ready
+        if: steps.pr.outputs.pr_number != ''
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR_NUMBER: ${{ steps.pr.outputs.pr_number }}
+          MERGE_METHOD: ${{ inputs.auto_merge_method }}
+        run: |
+          set -euo pipefail
+          # Same helper as the PR-event step and the reconcile sweep: merges via
+          # the REST endpoint past REVIEW_REQUIRED (bypass actor) only when the
+          # head commit's check runs are GREEN; otherwise SKIPs cleanly.
+          PR_NUMBER="$PR_NUMBER" REPO="$GITHUB_REPOSITORY" MERGE_METHOD="$MERGE_METHOD" \
+            DRY_RUN=false BYPASS_REVIEW=true \
+            bash "${GITHUB_WORKSPACE}/actions-tools/scripts/pr-green-merge.sh"

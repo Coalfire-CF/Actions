@@ -11,6 +11,11 @@ name: Dependabot Auto-Merge
 on:
   pull_request_target:
     types: [opened, synchronize, reopened]
+  # check_suite drives event-driven re-merge: when a PR's checks finish, the
+  # reusable workflow's remerge job merges an already-approved PR that was still
+  # building at decide-time (instead of it waiting for the reconcile sweep).
+  check_suite:
+    types: [completed]
 
 permissions:
   contents: read
@@ -19,6 +24,11 @@ permissions:
 
 jobs:
   auto-merge:
-    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    # pull_request_target: only Dependabot PRs enter the pipeline. check_suite:
+    # pass through — the reusable workflow's remerge job resolves + filters the
+    # associated PR (open, dependabot-authored, merge/approved) itself.
+    if: >-
+      github.event_name == 'check_suite' ||
+      github.event.pull_request.user.login == 'dependabot[bot]'
     uses: ./.github/workflows/org-dependabot-auto-merge.yml
     secrets: inherit

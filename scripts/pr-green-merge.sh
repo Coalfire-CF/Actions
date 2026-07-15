@@ -13,9 +13,12 @@
 #   GREEN  — all checks complete & non-failing, OR no checks configured (the
 #            wedged-PR case: a clean PR on a repo with no required status checks,
 #            which is exactly what this sweeper exists to converge)
-# Classification is FAIL > PENDING > GREEN and is computed from the PR's
-# statusCheckRollup (structured JSON) rather than parsing `gh pr checks` text, so
-# a transient API error can never masquerade as GREEN. NOTE (option B): the
+# Classification is FAIL > PENDING > GREEN and is computed from the head commit's
+# REST check-runs (structured JSON) rather than parsing `gh pr checks` text, so a
+# transient API error can never masquerade as GREEN. (Check RUNS only — the fleet
+# gates on GitHub Actions checks; reading the GraphQL statusCheckRollup would also
+# pull commit statuses and thus require `statuses:read`, which the bypass App does
+# not hold; the ruleset requires no status checks either way.) NOTE (option B): the
 # auto-merge fallback's adoption of this helper is owned by the #9/#12/#13
 # follow-up chain on org-dependabot-auto-merge.yml — this PR does not touch that
 # file. The bounded retry below is a minimal transient-blip guard, NOT #13's full
@@ -24,7 +27,19 @@
 # A PR is NEVER merged (defence-in-depth beyond the sweeper's label/state search
 # filter) when it is closed/draft, authored by anyone outside AUTHOR_ALLOWLIST
 # (the label alone is not trust — a triager can apply it; they cannot forge the
-# author), or its reviewDecision is REVIEW_REQUIRED / CHANGES_REQUESTED.
+# author), or its reviewDecision is CHANGES_REQUESTED (an explicit human block).
+# reviewDecision == REVIEW_REQUIRED (an unmet *required* review, e.g. a code-owner
+# review a bot can neither give nor be named for) is skipped by default but merged
+# when BYPASS_REVIEW=true — the caller is merging AS a ruleset bypass actor (the
+# ci-automerge-app Integration or the cs-coalforge team), for which the merge is
+# allowed server-side despite the unmet requirement. See MERGE MECHANISM below.
+#
+# MERGE MECHANISM: the merge is issued via the REST endpoint
+# (PUT /repos/{o}/{r}/pulls/{n}/merge, `gh api`), NOT `gh pr merge`. `gh pr merge`
+# (GraphQL) refuses when the PR's mergeStateStatus is BLOCKED and does not exercise
+# ruleset bypass — verified 2026-07-15 (it was rejected even for an admin+bypass
+# user, "base branch policy prohibits the merge"). The REST endpoint honors the
+# authenticated actor's bypass entitlement.
 #
 # Inputs (environment):
 #   PR_NUMBER        required — PR number to evaluate
@@ -32,6 +47,9 @@
 #   MERGE_METHOD     optional — merge|squash|rebase (default: squash)
 #   DRY_RUN          optional — "true" (default) logs the would-merge decision and
 #                    performs ZERO mutating calls; "false" performs the merge
+#   BYPASS_REVIEW    optional — "true" merges a PR whose reviewDecision is
+#                    REVIEW_REQUIRED (caller is a bypass actor); "false" (default)
+#                    skips it. CHANGES_REQUESTED is skipped regardless.
 #   RETRY_MAX        optional — max attempts for a transient gh read (default: 3)
 #   AUTHOR_ALLOWLIST optional — space-separated trusted author logins
 #                    (default: "app/dependabot dependabot[bot]")
@@ -54,6 +72,7 @@ PR_NUMBER="${PR_NUMBER:?PR_NUMBER required}"
 REPO="${REPO:?REPO required (owner/name)}"
 MERGE_METHOD="${MERGE_METHOD:-squash}"
 DRY_RUN="${DRY_RUN:-true}"
+BYPASS_REVIEW="${BYPASS_REVIEW:-false}"
 RETRY_MAX="${RETRY_MAX:-3}"
 # Space-separated allowlist of trusted PR-author logins. NOTE: `gh --json author`
 # reports Dependabot as `app/dependabot` (the GitHub App identity); the webhook
@@ -88,9 +107,15 @@ gh_read() {
   with_retry "$RETRY_MAX" 1 8 -- _gh_read_once "$@"
 }
 
-# One combined read: PR state + draft + author + review decision + check rollup.
+# PR metadata read: state + draft + author + review decision + head SHA. We do
+# NOT request statusCheckRollup here — that GraphQL field aggregates check runs
+# AND commit statuses, so it demands BOTH `checks:read` and `statuses:read`; the
+# ci-automerge-app bypass identity carries `checks:read` only. Check state is read
+# separately below via the REST check-runs endpoint (checks:read alone). These
+# fields (state/isDraft/author/reviewDecision/headRefOid) need only pull_requests
+# read, which the App has.
 if ! PR_JSON="$(gh_read pr view "$PR_NUMBER" --repo "$REPO" \
-      --json state,isDraft,author,reviewDecision,statusCheckRollup)"; then
+      --json state,isDraft,author,reviewDecision,headRefOid)"; then
   log "SKIP #${PR_NUMBER} (could not read PR — failing closed, no merge)"
   echo "SKIP #${PR_NUMBER} (pr-view-unavailable)"
   exit 0
@@ -100,6 +125,7 @@ STATE="$(printf '%s' "$PR_JSON" | jq -r '.state // "UNKNOWN"')"
 IS_DRAFT="$(printf '%s' "$PR_JSON" | jq -r '.isDraft // false')"
 AUTHOR="$(printf '%s' "$PR_JSON" | jq -r '.author.login // ""')"
 REVIEW="$(printf '%s' "$PR_JSON" | jq -r '.reviewDecision // ""')"
+HEAD_SHA="$(printf '%s' "$PR_JSON" | jq -r '.headRefOid // ""')"
 
 if [ "$STATE" != "OPEN" ] || [ "$IS_DRAFT" = "true" ]; then
   log "SKIP #${PR_NUMBER} (state=${STATE} draft=${IS_DRAFT}) — never merge a closed/draft PR"
@@ -124,21 +150,46 @@ fi
 
 # Review-decision gate. reviewDecision is null when the repo requires no reviews
 # (the common wedged-PR case — allowed), APPROVED when a required review is
-# satisfied (allowed). REVIEW_REQUIRED means a required review is unmet — GitHub
-# would block the merge server-side anyway, so skip to avoid a noisy failed
-# merge; CHANGES_REQUESTED is an explicit block. Never merge over either.
-if [ "$REVIEW" = "REVIEW_REQUIRED" ] || [ "$REVIEW" = "CHANGES_REQUESTED" ]; then
-  log "SKIP #${PR_NUMBER} (reviewDecision=${REVIEW}) — review unmet/blocked, not sweep-eligible"
-  echo "SKIP #${PR_NUMBER} (review-${REVIEW})"
+# satisfied (allowed).
+#   CHANGES_REQUESTED — an explicit human block. NEVER merged, even in bypass mode:
+#     a bypass actor could technically override it, but "a reviewer said no" is not
+#     something automation may steamroll.
+#   REVIEW_REQUIRED  — a *required* review is unmet (e.g. a code-owner review a bot
+#     can neither give nor be a CODEOWNER for). Skipped by default (a non-bypass
+#     caller would be blocked server-side anyway); merged when BYPASS_REVIEW=true,
+#     because the caller merges AS a ruleset bypass actor and the merge is allowed.
+if [ "$REVIEW" = "CHANGES_REQUESTED" ]; then
+  log "SKIP #${PR_NUMBER} (reviewDecision=CHANGES_REQUESTED) — explicit human block, never overridden"
+  echo "SKIP #${PR_NUMBER} (review-CHANGES_REQUESTED)"
+  exit 0
+fi
+if [ "$REVIEW" = "REVIEW_REQUIRED" ] && [ "$BYPASS_REVIEW" != "true" ]; then
+  log "SKIP #${PR_NUMBER} (reviewDecision=REVIEW_REQUIRED) — required review unmet; set BYPASS_REVIEW=true to merge as a ruleset bypass actor"
+  echo "SKIP #${PR_NUMBER} (review-REVIEW_REQUIRED)"
   exit 0
 fi
 
-# Green gate: FAIL > PENDING > GREEN over the statusCheckRollup. Empty rollup
-# (no checks configured) classifies GREEN — the wedged-PR case.
-CHECK_STATE="$(printf '%s' "$PR_JSON" | jq -r '
-  [ .statusCheckRollup[]? | ((.conclusion // .state // .status // "") | ascii_upcase) ] as $c
+# Green gate: read the head commit's check runs via REST (checks:read) and
+# classify FAIL > PENDING > GREEN. No check runs (empty) classifies GREEN — the
+# wedged-PR case (a clean PR on a repo with no gating checks). We read check RUNS
+# only (GitHub Actions checks — what the fleet gates on); legacy commit statuses
+# are not consulted, since the ruleset requires no status checks and reading them
+# would need `statuses:read` the bypass App does not hold. A blank HEAD_SHA (never
+# expected on an OPEN PR) fails closed.
+if [ -z "$HEAD_SHA" ]; then
+  log "SKIP #${PR_NUMBER} (no head SHA — failing closed, no merge)"
+  echo "SKIP #${PR_NUMBER} (no-head-sha)"
+  exit 0
+fi
+if ! CHECKS_JSON="$(gh_read api "repos/${REPO}/commits/${HEAD_SHA}/check-runs?per_page=100")"; then
+  log "SKIP #${PR_NUMBER} (could not read check-runs — failing closed, no merge)"
+  echo "SKIP #${PR_NUMBER} (check-runs-unavailable)"
+  exit 0
+fi
+CHECK_STATE="$(printf '%s' "$CHECKS_JSON" | jq -r '
+  [ .check_runs[]? | ((.conclusion // .status // "") | ascii_upcase) ] as $c
   | if   ($c | map(select(. == "FAILURE" or . == "ERROR" or . == "TIMED_OUT" or . == "CANCELLED" or . == "ACTION_REQUIRED" or . == "STARTUP_FAILURE")) | length) > 0 then "FAIL"
-    elif ($c | map(select(. == "PENDING" or . == "EXPECTED" or . == "QUEUED" or . == "IN_PROGRESS" or . == "WAITING" or . == "REQUESTED" or . == "")) | length) > 0 then "PENDING"
+    elif ($c | map(select(. == "QUEUED" or . == "IN_PROGRESS" or . == "PENDING" or . == "WAITING" or . == "REQUESTED" or . == "")) | length) > 0 then "PENDING"
     else "GREEN" end')"
 
 if [ "$CHECK_STATE" != "GREEN" ]; then
@@ -147,12 +198,17 @@ if [ "$CHECK_STATE" != "GREEN" ]; then
   exit 0
 fi
 
+BYPASS_NOTE=""
+[ "$REVIEW" = "REVIEW_REQUIRED" ] && BYPASS_NOTE=", bypassing REVIEW_REQUIRED"
+
 if [ "$DRY_RUN" != "false" ]; then
-  log "WOULD-MERGE #${PR_NUMBER} (checks GREEN) — dry-run, no mutation performed"
+  log "WOULD-MERGE #${PR_NUMBER} (checks GREEN${BYPASS_NOTE}) — dry-run, no mutation performed"
   echo "WOULD-MERGE #${PR_NUMBER}"
   exit 0
 fi
 
-log "MERGE #${PR_NUMBER} (checks GREEN) via --${MERGE_METHOD}"
-gh pr merge "$PR_NUMBER" "--${MERGE_METHOD}" --repo "$REPO"
+# Merge via the REST endpoint (see MERGE MECHANISM in the header): `gh pr merge`
+# refuses a BLOCKED PR and does not exercise ruleset bypass; PUT .../merge does.
+log "MERGE #${PR_NUMBER} (checks GREEN${BYPASS_NOTE}) via REST --${MERGE_METHOD}"
+gh api --method PUT "repos/${REPO}/pulls/${PR_NUMBER}/merge" -f "merge_method=${MERGE_METHOD}" >/dev/null
 echo "MERGED #${PR_NUMBER}"
