@@ -233,6 +233,7 @@ for l in "${LABELS[@]}"; do
   LABEL_ARGS+=(--label "$l")
 done
 
+# shellcheck disable=SC2016  # the printf format's backticks are literal markdown, not expansion
 PR_BODY="$(cat <<EOF
 ## Org baseline bootstrap (${ACTIONS_VERSION})
 
