@@ -55,6 +55,11 @@ Create a dedicated GitHub App for PR approval and auto-merge:
 - **Ruleset bypass**: On rulesets that require a code-owner review, add this App
   to the ruleset's **bypass actors** (`bypass_mode: always`). This is what lets it
   merge — see "How the merge works" below.
+  > **Repo-level rulesets are NOT covered by an org-ruleset bypass.** If a repo
+  > defines its own ruleset with a `pull_request` rule, the App must be added to
+  > *that* ruleset's bypass actors too, or its merges 405 ("Waiting on code owner
+  > review") and the repo's Dependabot PRs wedge. Audit:
+  > `gh api repos/<org>/<repo>/rulesets?includes_parents=false`.
 - **Secrets**: Store as org-level secrets:
   - `AUTOMERGE_CLIENT_ID` - The App client ID
   - `AUTOMERGE_APP_PRIVATE_KEY` - The PEM private key
