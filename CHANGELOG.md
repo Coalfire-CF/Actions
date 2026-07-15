@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.13.0](https://github.com/Coalfire-CF/Actions/compare/v0.12.1...v0.13.0) (2026-07-15)
+
+
+### Features
+
+* **reconcile:** scheduled sweeps merge for real (tail-catcher goes live) ([#243](https://github.com/Coalfire-CF/Actions/issues/243)) ([61452a2](https://github.com/Coalfire-CF/Actions/commit/61452a2af5a71baf170b7bc092655fa93e32fdd1))
+
+
+### Bug Fixes
+
+* **automerge:** green gate ignores auto-merge's own in-flight checks ([#241](https://github.com/Coalfire-CF/Actions/issues/241)) ([12f8f39](https://github.com/Coalfire-CF/Actions/commit/12f8f392fb19d29c0c40ab1c157a15cdd9116177))
+
+
+### Miscellaneous
+
+* **deps:** bump Coalfire-CF/Actions/actions/gitleaks ([#244](https://github.com/Coalfire-CF/Actions/issues/244)) ([da14c80](https://github.com/Coalfire-CF/Actions/commit/da14c808658997020919cc2a349a59fb7ceeca06))
+
+
+### Documentation
+
+* **automerge:** repo-level ruleset remnants — App bypass added to 16 repos ([2b8ecc9](https://github.com/Coalfire-CF/Actions/commit/2b8ecc90b07cd89c854e0fe3c24439caf1162f39))
+* **automerge:** repo-level rulesets need their own App bypass entry ([28f2fa0](https://github.com/Coalfire-CF/Actions/commit/28f2fa0b783946feb983a3eae5ac85d2b6323a23))
+* **automerge:** spec for the ruleset-bypass direct-merge fix (v0.12.1) ([78c2c75](https://github.com/Coalfire-CF/Actions/commit/78c2c75433cf07ad1ba4879b6fbbfc94fbb1fd58))
+
 ## [0.12.1](https://github.com/Coalfire-CF/Actions/compare/v0.12.0...v0.12.1) (2026-07-15)
 
 
