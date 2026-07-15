@@ -74,9 +74,13 @@ code-owner-required ruleset it would sit `BLOCKED` forever. Plain `gh pr merge`
 (GraphQL) likewise refuses a blocked PR. The merge is gated on the head commit's
 check runs being green (`scripts/pr-green-merge.sh`, which ignores the auto-merge
 workflow's own in-flight jobs so it doesn't self-block); a PR still building is left
-for the reconcile sweeper to converge. (A `check_suite` re-merge job also exists, but
-GitHub suppresses `check_suite` events for Actions-created suites, so it only helps
-repos gated by *external* CI apps — not the GitHub-Actions-only common case.)
+for the **reconcile sweeper** (`org-dependabot-reconcile.yml`) to converge — its
+scheduled runs (every 6h) merge for real and are the tail-catcher for PRs whose CI
+outlasts the PR-time merge. Manual dispatch of the sweeper stays dry-run by default
+(scope a canary with its `repo` input; pass `dry_run=false` to merge). (A
+`check_suite` re-merge job also exists, but GitHub suppresses `check_suite` events
+for Actions-created suites, so it only helps repos gated by *external* CI apps —
+not the GitHub-Actions-only common case.)
 
 ### 2. AWS OIDC Role (required)
 
