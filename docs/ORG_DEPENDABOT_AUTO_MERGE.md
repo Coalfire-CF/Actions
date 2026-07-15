@@ -227,17 +227,27 @@ name: Dependabot Auto-Merge
 on:
   pull_request_target:
     types: [opened, synchronize, reopened]
+  # Event-driven re-merge: when a PR's checks finish, merge an already-approved
+  # PR that was still building at decide-time (instead of waiting for the sweep).
+  check_suite:
+    types: [completed]
 
 jobs:
   auto-merge:
-    if: github.actor == 'dependabot[bot]'
+    # pull_request_target: only Dependabot PRs. check_suite: pass through — the
+    # reusable workflow's remerge job resolves + filters the associated PR.
+    if: >-
+      github.event_name == 'check_suite' ||
+      github.event.pull_request.user.login == 'dependabot[bot]'
     uses: <YOUR_ORG>/Actions/.github/workflows/org-dependabot-auto-merge.yml@72d0360b99f80252dda40f6dfefc252f5a66edb3 # v0.10.0
     secrets: inherit
 ```
 
 > **Important**: Use `pull_request_target` (not `pull_request`) so the workflow has
 > write permissions on Dependabot PRs. The workflow only checks out the default branch
-> for usage analysis — it never executes code from the PR branch.
+> for usage analysis — it never executes code from the PR branch. The `check_suite`
+> trigger only re-drives the bypass merge for an already-`merge/approved` Dependabot
+> PR; it never runs the evaluation pipeline or checks out PR-branch code.
 
 Requires the org-level setting **"Send secrets to workflows from pull requests
 created by Dependabot"** to be enabled under Org Settings > Actions > General.
