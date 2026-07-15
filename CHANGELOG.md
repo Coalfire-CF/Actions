@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.12.1](https://github.com/Coalfire-CF/Actions/compare/v0.12.0...v0.12.1) (2026-07-15)
+
+
+### Bug Fixes
+
+* **automerge:** merge via ruleset bypass (REST) so code-owner PRs auto-merge ([#240](https://github.com/Coalfire-CF/Actions/issues/240)) ([76a6252](https://github.com/Coalfire-CF/Actions/commit/76a625284987dc12a14cc13ef53514be75881392))
+
+
+### Documentation
+
+* **terratest:** repo-wide concurrency group; bump example pins to v0.12.0 ([#233](https://github.com/Coalfire-CF/Actions/issues/233)) ([72b01b8](https://github.com/Coalfire-CF/Actions/commit/72b01b852dd17cad72c114fd734cbf9a72422d4a))
+
 ## [0.12.0](https://github.com/Coalfire-CF/Actions/compare/v0.11.3...v0.12.0) (2026-07-14)
 
 
