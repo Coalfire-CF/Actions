@@ -186,6 +186,17 @@ echo "$OUT" | grep -q "SKIP #123 (author-not-allowlisted)" || fail "human-author
 echo "$TRACE" | grep -qE "$WRITE_VERBS_RE" && fail "human-authored issued a WRITE verb but must never merge"
 echo "OK: non-automation author → SKIP (author-not-allowlisted)"
 
+# ---- Case 6b: the ci-automerge-app's OWN PRs (org-repo-bootstrap baseline
+#      proposals, labeled merge/approved) ARE swept — App slug in the default
+#      allowlist, both author representations. ----
+PV_APP="{\"state\":\"OPEN\",\"isDraft\":false,\"author\":{\"login\":\"app/ci-automerge-app\"},\"reviewDecision\":null,\"headRefOid\":\"${SHA}\"}"
+run_helper "$PV_APP" "$CK_GREEN" false 0
+echo "$OUT" | grep -q "MERGED #123" || fail "App-authored (app/ci-automerge-app) green PR should MERGE (got: $OUT)"
+PV_APPBOT="{\"state\":\"OPEN\",\"isDraft\":false,\"author\":{\"login\":\"ci-automerge-app[bot]\"},\"reviewDecision\":null,\"headRefOid\":\"${SHA}\"}"
+run_helper "$PV_APPBOT" "$CK_GREEN" false 0
+echo "$OUT" | grep -q "MERGED #123" || fail "App-authored (ci-automerge-app[bot]) green PR should MERGE (got: $OUT)"
+echo "OK: ci-automerge-app-authored PRs (bootstrap proposals) → MERGED (both author forms)"
+
 # ---- Case 7 (F3): an unmet required review is NEVER swept WITHOUT bypass. ----
 run_helper "$PV_REVREQ" "$CK_GREEN" false 0
 [ "$LAST_RC" -eq 0 ] || fail "review-required should exit 0 (skip, got $LAST_RC)"

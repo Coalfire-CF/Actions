@@ -1,0 +1,20 @@
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "daily"
+      time: "__STAGGER_SLOT__"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    groups:
+      org-actions:
+        applies-to: version-updates
+        patterns: ["Coalfire-CF/*"]
+        update-types: ["minor", "patch"]
+      third-party:
+        applies-to: version-updates
+        patterns: ["*"]
+        exclude-patterns: ["Coalfire-CF/*"]
+        update-types: ["minor", "patch"]

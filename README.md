@@ -56,6 +56,7 @@ Called on merge to main.
 | Slack Notify | `org-slack-notify.yml` | Sends release, failure, or health-check notifications to Slack |
 | Jira Sync | `org-jira-sync.yml` | Syncs GitHub issues to Jira (Cloud or Data Center) |
 | Terraform Version Check | `org-terraform-version-check.yml` | Scheduled check for new Terraform versions, auto-creates PRs |
+| Repo Bootstrap | `org-repo-bootstrap.yml` | Daily sweeper that opens baseline-adoption PRs (pinned caller bundle from `templates/bootstrap/`) on org repos that never adopted the standard workflows ([docs](docs/ORG_REPO_BOOTSTRAP.md)) |
 
 ### Legacy / Internal
 
@@ -181,6 +182,7 @@ Issue labels:
 |   |-- gitleaks
 |       |-- action.yml
 |-- docs
+|   |-- CODEBASE_ANALYSIS.md
 |   |-- GATE_CONFIG.md
 |   |-- GATE_PROMOTION.md
 |   |-- ORG_DEPENDABOT_AUTO_MERGE.md
@@ -189,6 +191,7 @@ Issue labels:
 |   |-- ORG_OPA.md
 |   |-- ORG_RELEASE_AUTO_PATCH.md
 |   |-- ORG_RELEASE_CLEAN.md
+|   |-- ORG_REPO_BOOTSTRAP.md
 |   |-- ORG_SLACK_NOTIFY.md
 |   |-- ORG_SOURCE_PIN.md
 |   |-- ORG_TERRATEST.md
@@ -212,12 +215,19 @@ Issue labels:
 |   |-- pr-green-merge.sh
 |   |-- prompt-lib.sh
 |   |-- release-patch-merge.sh
+|   |-- repo-bootstrap.sh
 |   |-- retry-lib.sh
 |   |-- source-pin-check.sh
 |   |-- stagger-slot.sh
 |   |-- supply-chain-check.sh
 |   |-- uses-pin-check.sh
 |   |-- version-band-check.sh
+|-- templates
+|   |-- bootstrap
+|       |-- common
+|       |   |-- release-please-config.json.tmpl
+|       |-- private
+|       |-- terraform
 |-- tests
     |-- auto-merge-decide.test.sh
     |-- cache-read.test.sh
@@ -258,6 +268,7 @@ Issue labels:
     |-- prompt-build.test.sh
     |-- reconcile-sweeper.test.sh
     |-- release-patch-merge.test.sh
+    |-- repo-bootstrap.test.sh
     |-- retry-lib.test.sh
     |-- source-pin-check.test.sh
     |-- stagger-slot.test.sh

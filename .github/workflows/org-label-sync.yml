@@ -48,7 +48,7 @@ jobs:
           script: |
             // ---------------------------------------------------------------
             // Label taxonomy for Dependabot auto-merge system
-            // 6 categories, 35 labels
+            // 7 categories, 36 labels
             // ---------------------------------------------------------------
             const labels = [
               // --- dep/ : Dependency Ecosystem (blue) ---
@@ -71,6 +71,9 @@ jobs:
               { name: 'merge/blocked',            color: 'd73a49', description: 'Auto-merge blocked — see blocked/* labels' },
               { name: 'merge/manual-review',      color: 'e4e669', description: 'Requires human review' },
               { name: 'merge/skipped',            color: 'cccccc', description: 'Not eligible for auto-merge (terraform deps)' },
+
+              // --- bootstrap/ : org repo-bootstrap proposals ---
+              { name: 'bootstrap/proposed',       color: '0e8a16', description: 'Org baseline bootstrap PR opened by the repo-bootstrap sweeper' },
 
               // --- check/ : Individual Check Results ---
               { name: 'check/osv-clear',          color: '0e8a16', description: 'No known vulnerabilities in OSV.dev' },
