@@ -13,9 +13,12 @@
 #   GREEN  — all checks complete & non-failing, OR no checks configured (the
 #            wedged-PR case: a clean PR on a repo with no required status checks,
 #            which is exactly what this sweeper exists to converge)
-# Classification is FAIL > PENDING > GREEN and is computed from the PR's
-# statusCheckRollup (structured JSON) rather than parsing `gh pr checks` text, so
-# a transient API error can never masquerade as GREEN. NOTE (option B): the
+# Classification is FAIL > PENDING > GREEN and is computed from the head commit's
+# REST check-runs (structured JSON) rather than parsing `gh pr checks` text, so a
+# transient API error can never masquerade as GREEN. (Check RUNS only — the fleet
+# gates on GitHub Actions checks; reading the GraphQL statusCheckRollup would also
+# pull commit statuses and thus require `statuses:read`, which the bypass App does
+# not hold; the ruleset requires no status checks either way.) NOTE (option B): the
 # auto-merge fallback's adoption of this helper is owned by the #9/#12/#13
 # follow-up chain on org-dependabot-auto-merge.yml — this PR does not touch that
 # file. The bounded retry below is a minimal transient-blip guard, NOT #13's full
@@ -104,9 +107,15 @@ gh_read() {
   with_retry "$RETRY_MAX" 1 8 -- _gh_read_once "$@"
 }
 
-# One combined read: PR state + draft + author + review decision + check rollup.
+# PR metadata read: state + draft + author + review decision + head SHA. We do
+# NOT request statusCheckRollup here — that GraphQL field aggregates check runs
+# AND commit statuses, so it demands BOTH `checks:read` and `statuses:read`; the
+# ci-automerge-app bypass identity carries `checks:read` only. Check state is read
+# separately below via the REST check-runs endpoint (checks:read alone). These
+# fields (state/isDraft/author/reviewDecision/headRefOid) need only pull_requests
+# read, which the App has.
 if ! PR_JSON="$(gh_read pr view "$PR_NUMBER" --repo "$REPO" \
-      --json state,isDraft,author,reviewDecision,statusCheckRollup)"; then
+      --json state,isDraft,author,reviewDecision,headRefOid)"; then
   log "SKIP #${PR_NUMBER} (could not read PR — failing closed, no merge)"
   echo "SKIP #${PR_NUMBER} (pr-view-unavailable)"
   exit 0
@@ -116,6 +125,7 @@ STATE="$(printf '%s' "$PR_JSON" | jq -r '.state // "UNKNOWN"')"
 IS_DRAFT="$(printf '%s' "$PR_JSON" | jq -r '.isDraft // false')"
 AUTHOR="$(printf '%s' "$PR_JSON" | jq -r '.author.login // ""')"
 REVIEW="$(printf '%s' "$PR_JSON" | jq -r '.reviewDecision // ""')"
+HEAD_SHA="$(printf '%s' "$PR_JSON" | jq -r '.headRefOid // ""')"
 
 if [ "$STATE" != "OPEN" ] || [ "$IS_DRAFT" = "true" ]; then
   log "SKIP #${PR_NUMBER} (state=${STATE} draft=${IS_DRAFT}) — never merge a closed/draft PR"
@@ -159,12 +169,27 @@ if [ "$REVIEW" = "REVIEW_REQUIRED" ] && [ "$BYPASS_REVIEW" != "true" ]; then
   exit 0
 fi
 
-# Green gate: FAIL > PENDING > GREEN over the statusCheckRollup. Empty rollup
-# (no checks configured) classifies GREEN — the wedged-PR case.
-CHECK_STATE="$(printf '%s' "$PR_JSON" | jq -r '
-  [ .statusCheckRollup[]? | ((.conclusion // .state // .status // "") | ascii_upcase) ] as $c
+# Green gate: read the head commit's check runs via REST (checks:read) and
+# classify FAIL > PENDING > GREEN. No check runs (empty) classifies GREEN — the
+# wedged-PR case (a clean PR on a repo with no gating checks). We read check RUNS
+# only (GitHub Actions checks — what the fleet gates on); legacy commit statuses
+# are not consulted, since the ruleset requires no status checks and reading them
+# would need `statuses:read` the bypass App does not hold. A blank HEAD_SHA (never
+# expected on an OPEN PR) fails closed.
+if [ -z "$HEAD_SHA" ]; then
+  log "SKIP #${PR_NUMBER} (no head SHA — failing closed, no merge)"
+  echo "SKIP #${PR_NUMBER} (no-head-sha)"
+  exit 0
+fi
+if ! CHECKS_JSON="$(gh_read api "repos/${REPO}/commits/${HEAD_SHA}/check-runs?per_page=100")"; then
+  log "SKIP #${PR_NUMBER} (could not read check-runs — failing closed, no merge)"
+  echo "SKIP #${PR_NUMBER} (check-runs-unavailable)"
+  exit 0
+fi
+CHECK_STATE="$(printf '%s' "$CHECKS_JSON" | jq -r '
+  [ .check_runs[]? | ((.conclusion // .status // "") | ascii_upcase) ] as $c
   | if   ($c | map(select(. == "FAILURE" or . == "ERROR" or . == "TIMED_OUT" or . == "CANCELLED" or . == "ACTION_REQUIRED" or . == "STARTUP_FAILURE")) | length) > 0 then "FAIL"
-    elif ($c | map(select(. == "PENDING" or . == "EXPECTED" or . == "QUEUED" or . == "IN_PROGRESS" or . == "WAITING" or . == "REQUESTED" or . == "")) | length) > 0 then "PENDING"
+    elif ($c | map(select(. == "QUEUED" or . == "IN_PROGRESS" or . == "PENDING" or . == "WAITING" or . == "REQUESTED" or . == "")) | length) > 0 then "PENDING"
     else "GREEN" end')"
 
 if [ "$CHECK_STATE" != "GREEN" ]; then
