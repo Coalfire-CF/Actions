@@ -21,7 +21,7 @@ Dependabot PR opened
        -> breaking_change_check (semver + Bedrock changelog       /
             + repo usage analysis for applicability)
        -> decide:
-            all green  -> merge/approved -> approve + auto-merge
+            all green  -> merge/approved -> approve + bypass merge when green
             concerns   -> merge/blocked  -> label reasons + comment
 ```
 
@@ -43,14 +43,37 @@ The breaking change check does more than semver detection. It:
 
 Create a dedicated GitHub App for PR approval and auto-merge:
 
-- **Permissions**: Pull Requests (read/write), Contents (read)
+- **Permissions**: Pull Requests (read/write), Contents (read/write),
+  Checks (read), Metadata (read)
+  - **Contents: write** — required to merge (the merge writes the base branch).
+  - **Checks: read** — required so the green-gate can read the head commit's
+    check runs (`GET /commits/{sha}/check-runs`). Without it the merge helper
+    fails closed on every PR. (`statuses:read` is deliberately NOT required — the
+    helper reads check runs only, avoiding the GraphQL `statusCheckRollup` field
+    that would demand both permissions.)
 - **Installation**: Install on your GitHub organization
+- **Ruleset bypass**: On rulesets that require a code-owner review, add this App
+  to the ruleset's **bypass actors** (`bypass_mode: always`). This is what lets it
+  merge — see "How the merge works" below.
 - **Secrets**: Store as org-level secrets:
   - `AUTOMERGE_CLIENT_ID` - The App client ID
   - `AUTOMERGE_APP_PRIVATE_KEY` - The PEM private key
 
 The App is required because `GITHUB_TOKEN` cannot approve PRs authored by
-`dependabot[bot]` when branch protection requires non-bot approvals.
+`dependabot[bot]`, and because a bot approval can never satisfy a *required
+code-owner review* — so the App instead merges by exercising its ruleset bypass.
+
+### How the merge works (bypass direct-merge, not native auto-merge)
+
+On approval, the App **directly merges** via the REST endpoint
+(`PUT /repos/{o}/{r}/pulls/{n}/merge`), which honors its ruleset **bypass**
+entitlement and merges past an unmet code-owner review. It does **not** arm GitHub
+native auto-merge (`gh pr merge --auto`): native auto-merge waits for every ruleset
+requirement to be literally met and never consults bypass, so on a
+code-owner-required ruleset it would sit `BLOCKED` forever. Plain `gh pr merge`
+(GraphQL) likewise refuses a blocked PR. The merge is gated on the head commit's
+check runs being green (`scripts/pr-green-merge.sh`); a PR still building is left
+for the event-driven re-merge / the reconcile sweeper to converge.
 
 ### 2. AWS OIDC Role (required)
 

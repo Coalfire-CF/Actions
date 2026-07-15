@@ -608,7 +608,7 @@ jobs:
               labels: newLabels,
             });
 
-      - name: Approve and auto-merge
+      - name: Approve and merge
         if: steps.decision.outputs.decision == 'approve'
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
@@ -619,35 +619,24 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Approve the PR using the GitHub App token
+          # Approve the PR as the auto-merge App (a ruleset bypass actor).
           gh pr review "$PR_NUMBER" --approve \
             --body "Auto-approved by Dependabot Auto-Merge: all supply chain and breaking change checks passed for ${DEP_NAME}@${TO_VERSION}." \
             --repo "$GITHUB_REPOSITORY"
 
-          # Enable auto-merge. On repos without required status checks GitHub
-          # cannot latch auto-merge on an already-clean PR (the enable silently
-          # no-ops or errors) — so verify, and fall back to a direct merge when
-          # nothing is pending. Observed 2026-07-03: ~60% of first-party bumps
-          # stalled approved-but-unmerged without this fallback.
-          gh pr merge "$PR_NUMBER" --auto "--${MERGE_METHOD}" \
-            --repo "$GITHUB_REPOSITORY" || echo "auto-merge enable failed — will verify and fall back"
-
-          sleep 5
-          PR_STATE=$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json state --jq '.state')
-          AUTO_ON=$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json autoMergeRequest --jq '.autoMergeRequest != null')
-          if [ "$PR_STATE" = "OPEN" ] && [ "$AUTO_ON" != "true" ]; then
-            # Neither merged nor armed: delegate the green-gate + direct-merge to
-            # the shared helper (grade-A #14 adoption) instead of an inline
-            # gh-pr-checks|awk gate. Same decision — merge iff the PR is a clean,
-            # green, non-draft trusted-author PR — via the canonical
-            # scripts/pr-green-merge.sh (statusCheckRollup gate; a transient
-            # checks-API error can no longer read as GREEN; a review-blocked PR is
-            # skipped cleanly rather than crashing on a rejected merge).
-            PR_NUMBER="$PR_NUMBER" REPO="$GITHUB_REPOSITORY" MERGE_METHOD="$MERGE_METHOD" DRY_RUN=false \
-              bash "${GITHUB_WORKSPACE}/actions-tools/scripts/pr-green-merge.sh"
-          else
-            echo "Auto-merge armed (or PR already merged) for PR #${PR_NUMBER}"
-          fi
+          # Merge DIRECTLY, exercising the App's ruleset bypass — do NOT arm
+          # GitHub native auto-merge. `gh pr merge --auto` waits for every ruleset
+          # requirement to be literally met and never consults bypass, so on a
+          # code-owner-required ruleset (a bot approval can't satisfy the required
+          # review) it sits BLOCKED forever — the exact stall this replaces.
+          # pr-green-merge.sh green-gates on the head commit's check-runs and, when
+          # GREEN, merges via the REST endpoint past reviewDecision=REVIEW_REQUIRED
+          # (BYPASS_REVIEW=true; a bot approval never satisfies code-owner review).
+          # A PR still building here classifies PENDING and is left for the
+          # event-driven re-merge (check_suite) / the reconcile sweeper to converge.
+          PR_NUMBER="$PR_NUMBER" REPO="$GITHUB_REPOSITORY" MERGE_METHOD="$MERGE_METHOD" \
+            DRY_RUN=false BYPASS_REVIEW=true \
+            bash "${GITHUB_WORKSPACE}/actions-tools/scripts/pr-green-merge.sh"
 
       - name: Add review comment for blocked PRs
         if: steps.decision.outputs.decision != 'approve'
