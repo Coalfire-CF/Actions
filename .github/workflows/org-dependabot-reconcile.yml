@@ -17,10 +17,13 @@ name: Dependabot Reconcile Sweeper
 # REST endpoint (which honors the App's bypass) past reviewDecision=REVIEW_REQUIRED.
 # An explicit human block (CHANGES_REQUESTED) is still never overridden.
 #
-# SAFETY: dry_run defaults to TRUE everywhere (scheduled runs included) — the
-# sweep logs would-merge decisions and performs ZERO mutating calls. To enable
-# live healing, dispatch manually with dry_run=false (validate first), or flip
-# the schedule default once the dry-run window looks correct.
+# SAFETY MODEL (2026-07-15): scheduled runs merge FOR REAL — this sweep is the
+# tail-catcher for PRs whose CI outlasts the PR-time merge (check_suite events
+# never fire for Actions-created suites, so no event-driven path exists for
+# Actions-gated repos). Every merge is still gated per-PR by pr-green-merge.sh:
+# green CI, dependabot author, merge/approved label, never over CHANGES_REQUESTED.
+# Manual dispatch stays dry-run by DEFAULT (safe canaries; scope with the `repo`
+# input) — pass dry_run=false explicitly to make a dispatched run merge.
 #
 # The auto-merge fallback's own adoption of scripts/pr-green-merge.sh is owned by
 # the #9/#12/#13 follow-up chain on org-dependabot-auto-merge.yml (option B) —
@@ -80,9 +83,9 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           OWNER: ${{ github.repository_owner }}
-          # dry_run defaults to true; only a manual dispatch with dry_run=false
-          # (unchecked) performs merges. Scheduled runs are always dry-run.
-          DRY_RUN: ${{ (github.event_name == 'workflow_dispatch' && inputs.dry_run == false) && 'false' || 'true' }}
+          # Scheduled runs are LIVE (the tail-catcher — see header). Manual
+          # dispatch stays dry-run unless dry_run=false is passed explicitly.
+          DRY_RUN: ${{ (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false)) && 'false' || 'true' }}
           MERGE_METHOD: ${{ inputs.merge_method || 'squash' }}
           REPO_SCOPE: ${{ inputs.repo || '' }}
           MAX_PRS: '200'

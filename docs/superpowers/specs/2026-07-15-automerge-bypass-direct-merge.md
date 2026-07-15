@@ -48,8 +48,10 @@ The pipeline never did that. Three mechanics, each verified live:
   evaluation pipeline or checks out PR-branch code.
 
 **`org-dependabot-reconcile.yml`** — passes `BYPASS_REVIEW=true`; gained a `repo`
-input for scoped canary / targeted sweeps. Stays `dry_run` on schedule (a manual
-safety net, not the primary path).
+input for scoped canary / targeted sweeps. **Scheduled runs (every 6h) are LIVE**
+(flipped 2026-07-15, after `check_suite` proved a dead end — see gotchas): the sweep
+is the tail-catcher for PRs whose CI outlasts the PR-time merge. Manual dispatch
+stays dry-run by default.
 
 **Prerequisite:** `ci-automerge-app` granted `Checks: Read-only`
 (perms now: contents:write, pull_requests:write, metadata:read, checks:read).
@@ -83,4 +85,5 @@ safety net, not the primary path).
   events for suites created by GitHub Actions (recursion guard), so the `remerge`
   job never fires for Actions-gated repos. Those rely on the (fixed) PR-time merge
   or the reconcile sweep. Slow-CI repos whose checks outlast the decide job still
-  need the sweep to converge.
+  need the sweep to converge — which is why the scheduled sweep runs live: it is
+  the only reliable automated catcher for that tail.
