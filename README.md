@@ -197,6 +197,7 @@ Issue labels:
 |   |-- superpowers
 |       |-- specs
 |           |-- 2026-07-14-self-dogfood-reusable-workflows-design.md
+|           |-- 2026-07-15-automerge-bypass-direct-merge.md
 |-- gate-config.yml
 |-- package-lock.json
 |-- package.json

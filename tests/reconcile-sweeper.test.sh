@@ -116,6 +116,19 @@ CK_GREEN='{"check_runs":[{"status":"completed","conclusion":"success"}]}'
 CK_EMPTY='{"check_runs":[]}'
 CK_RED='{"check_runs":[{"status":"completed","conclusion":"failure"}]}'
 CK_PEND='{"check_runs":[{"status":"in_progress","conclusion":null}]}'
+# Self-referential: the auto-merge workflow's own jobs are in-flight (decide
+# running the merge, notify_failure/remerge queued) while a real repo check is
+# green. The green gate must EXCLUDE the "auto-merge / *" runs and see GREEN.
+CK_SELF='{"check_runs":[
+  {"name":"gitleaks / scan","status":"completed","conclusion":"success"},
+  {"name":"auto-merge / decide","status":"in_progress","conclusion":null},
+  {"name":"auto-merge / notify_failure","status":"queued","conclusion":null},
+  {"name":"auto-merge / remerge","status":"queued","conclusion":null}]}'
+# Same, but a NON-excluded repo check (terraform) is still running -> PENDING.
+CK_SELF_PEND='{"check_runs":[
+  {"name":"gitleaks / scan","status":"completed","conclusion":"success"},
+  {"name":"auto-merge / decide","status":"in_progress","conclusion":null},
+  {"name":"terraform / plan","status":"in_progress","conclusion":null}]}'
 
 # ---- Case 1 (the AC expected-FAIL guard): GREEN + dry-run → WOULD-MERGE, and
 #      the recorded trace contains ZERO write verbs (mock also set to reject). ----
@@ -210,5 +223,20 @@ BR=true CF=1 run_helper "$PV_REVREQ" "$CK_GREEN" false 0
 echo "$OUT" | grep -q "SKIP #123 (check-runs-unavailable)" || fail "unreadable check-runs should fail closed (got: $OUT)"
 echo "$TRACE" | grep -qE 'pulls/[0-9]+/merge' && fail "unreadable check-runs must never merge"
 echo "OK: bypass + unreadable check-runs → SKIP (fail closed, no merge)"
+
+# ---- Case 12 (self-skip fix): auto-merge's OWN jobs in-flight + green repo check
+#      -> GREEN via IGNORE_CHECK_PREFIX exclusion -> MERGED. Without the exclusion
+#      this PR would wedge PENDING forever at PR-merge time. ----
+BR=true run_helper "$PV_REVREQ" "$CK_SELF" false 0
+echo "$OUT" | grep -q "MERGED #123" || fail "self-jobs-in-flight + green should MERGE (got: $OUT)"
+[ "$(echo "$TRACE" | grep -cE 'pulls/[0-9]+/merge')" -eq 1 ] || fail "should issue exactly one REST merge"
+echo "OK: own auto-merge jobs in-flight ignored → MERGED (self-skip fixed)"
+
+# ---- Case 13 (exclusion is scoped): a NON-excluded repo check still running
+#      -> PENDING -> SKIP (we don't merge over a real in-flight check). ----
+BR=true run_helper "$PV_REVREQ" "$CK_SELF_PEND" false 0
+echo "$OUT" | grep -q "SKIP #123 (checks-PENDING)" || fail "real pending check must still block (got: $OUT)"
+echo "$TRACE" | grep -qE "$WRITE_VERBS_RE" && fail "must not merge while a real check is pending"
+echo "OK: real repo check pending (terraform) → SKIP (exclusion is scoped to auto-merge/*)"
 
 echo "ALL TESTS PASSED"
