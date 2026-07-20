@@ -158,7 +158,7 @@ jobs:
       is_first_party: ${{ steps.decide-eligibility.outputs.is_first_party }}
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Fetch Dependabot metadata
         id: metadata
@@ -321,7 +321,7 @@ jobs:
           aws-region: ${{ inputs.aws_region }}
 
       - name: Checkout Actions repo (decision scripts)
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: Coalfire-CF/Actions
           ref: ${{ inputs.actions_ref || 'main' }}
@@ -388,7 +388,7 @@ jobs:
       check_errors: ${{ steps.checks.outputs.check_errors }}
     steps:
       - name: Checkout default branch (for usage analysis)
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.repository.default_branch }}
 
@@ -444,7 +444,7 @@ jobs:
           aws-region: ${{ inputs.aws_region }}
 
       - name: Checkout Actions repo (decision scripts)
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: Coalfire-CF/Actions
           ref: ${{ inputs.actions_ref || 'main' }}
@@ -528,7 +528,7 @@ jobs:
           owner: ${{ github.repository_owner }}
 
       - name: Checkout Actions repo (decision scripts)
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: Coalfire-CF/Actions
           ref: ${{ inputs.actions_ref || 'main' }}
@@ -745,7 +745,7 @@ jobs:
 
       - name: Checkout Actions repo (decision scripts)
         if: steps.pr.outputs.pr_number != ''
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: Coalfire-CF/Actions
           ref: ${{ inputs.actions_ref || 'main' }}
