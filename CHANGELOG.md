@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.14.0](https://github.com/Coalfire-CF/Actions/compare/v0.13.0...v0.14.0) (2026-07-22)
+
+
+### Features
+
+* **org-terratest:** add timeout_minutes input (default 60) for large modules ([#251](https://github.com/Coalfire-CF/Actions/issues/251)) ([cf96d91](https://github.com/Coalfire-CF/Actions/commit/cf96d91f41a805a7e9178c984b3173a4baa9c829))
+
+
+### Miscellaneous
+
+* **deps:** bump Coalfire-CF/Actions/actions/gitleaks ([#246](https://github.com/Coalfire-CF/Actions/issues/246)) ([758332b](https://github.com/Coalfire-CF/Actions/commit/758332b791700bc8b1398d3dec51a8c3df8cbe27))
+
+
+### Documentation
+
+* **bootstrap:** design spec for the org repo-bootstrap sweeper (v0.13.0) ([e751bc8](https://github.com/Coalfire-CF/Actions/commit/e751bc8138b35ecd44dc5e853df171952060b6e8))
+
 ## [0.13.0](https://github.com/Coalfire-CF/Actions/compare/v0.12.1...v0.13.0) (2026-07-15)
 
 
