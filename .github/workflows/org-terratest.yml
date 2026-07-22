@@ -44,6 +44,11 @@ on:
         required: false
         default: '30m'
         type: string
+      timeout_minutes:
+        description: 'Job timeout in minutes. Default 60; raise for large modules whose full create+destroy exceeds an hour (e.g. a full EKS + Splunk Operator deploy).'
+        required: false
+        default: 60
+        type: number
       working_directory:
         description: 'Working directory (repo root by default)'
         required: false
@@ -162,7 +167,7 @@ jobs:
     runs-on: ubuntu-latest
     # Cap the job so a hung 'terraform apply' cannot burn the 6-hour default while
     # holding cloud resources (the header's 'prevent runaway resource creation' claim).
-    timeout-minutes: 60
+    timeout-minutes: ${{ inputs.timeout_minutes || 60 }}
     defaults:
       run:
         working-directory: ${{ inputs.working_directory }}
