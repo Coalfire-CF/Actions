@@ -13,6 +13,14 @@ name: Caliper Scan
 #     + the caliper S3 cache prefix) and the aws_region input. Absent role =
 #     triage skips with a notice; the scan still runs.
 #
+# Q8 delivery deviation (recorded): the plan called for AI drafts as
+# suggested-changes reviews on .caliper/dispositions.yaml; GitHub suggestions
+# can only anchor to lines already in the PR diff, which that file usually
+# isn't. v1 therefore ships the draft as fenced YAML in the triage comment —
+# the human-commits contract is preserved, the click-to-commit mechanic is
+# not. Follow-up (diff-anchored suggestions when the file IS in the diff):
+# Coalfire-CF/caliper#13.
+#
 # v1 coverage note: remote module sources are NOT expanded (no terraform init
 # at scan time — the engine does not consume .terraform yet); every artifact
 # carries modules_resolved:false and the report says so. Do not add an init
@@ -25,7 +33,7 @@ on:
         description: 'Coalfire-CF/caliper ref to install (pin a release SHA; update deliberately)'
         required: false
         type: string
-        default: 'b08f66017477298c99daf95ef321aca4fc281e38' # main @ P4 merge, pre-v1 (2026-07-23)
+        default: 'b08f66017477298c99daf95ef321aca4fc281e38' # main @ P4 merge, pre-v1 — replace with the v0.1.0 release SHA when release-please cuts it (RFC-0008)
       baseline:
         description: 'Rev5 baseline for the crosswalk projection'
         required: false
@@ -72,14 +80,25 @@ permissions:
   pull-requests: write
   id-token: write
 
+concurrency:
+  group: org-caliper-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   scan:
+    # dependabot-triggered runs receive Dependabot secrets only — org secrets
+    # (CALIPER_READ_TOKEN) resolve empty and the install would fail loud.
+    # Skip entirely; dependabot bumps are covered by their own pipeline.
+    if: github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     outputs:
       gate_ok: ${{ steps.gate.outputs.gate_ok }}
       not_aligned: ${{ steps.head_scan.outputs.not_aligned }}
     steps:
-      - name: Checkout PR head
+      - name: Checkout PR merge ref
+        # default pull_request checkout = the MERGE commit; paired with the
+        # base.sha baseline below, the ratchet delta is the PR's effective
+        # contribution (deliberate design choice, not an accident)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
@@ -104,6 +123,7 @@ jobs:
           git -C caliper-src checkout --quiet "$CALIPER_REF"
           git -C caliper-src submodule update --init --quiet rules
           pip install --quiet ./caliper-src
+          rm -rf caliper-src/.git  # token-bearing remote config; checked-out files remain
           echo "CALIPER_RULES_PATH=${GITHUB_WORKSPACE}/caliper-src/rules/fedramp-consolidated-rules.json" >> "$GITHUB_ENV"
 
       - name: Scan PR head
@@ -146,14 +166,31 @@ jobs:
           set -e
           echo "gate_ok=$([ $RC -eq 0 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
 
+      - name: Lint dispositions (expiry + validity)
+        id: lint
+        if: github.event_name == 'pull_request'
+        run: |
+          set -euo pipefail
+          if [ ! -f repo/.caliper/dispositions.yaml ]; then
+            echo "lint_ok=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          set +e
+          caliper lint --artifact out/head/scan.json \
+            --dispositions repo/.caliper/dispositions.yaml | tee out/lint.txt
+          RC=$?
+          set -e
+          echo "lint_ok=$([ $RC -eq 0 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
       - name: Upload artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: caliper-scan
           path: out/
+          overwrite: true  # re-runs reuse the run's artifact namespace
 
       - name: Comment scan results (upsert)
-        if: github.event_name == 'pull_request' && github.actor != 'dependabot[bot]'
+        if: github.event_name == 'pull_request'
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -179,8 +216,9 @@ jobs:
             if (na.length) {
               body += `<details>\n<summary>NOT_ALIGNED findings (${na.length})</summary>\n\n` +
                 `| Check | Where | Evidence |\n| --- | --- | --- |\n`;
+              const esc = (v) => String(v).replace(/\|/g, '\\|');
               for (const f of na) {
-                body += `| ${f.check} | \`${f.address || 'repo-scoped'}\` | \`${f.evidence || '—'}\` |\n`;
+                body += `| ${f.check} | \`${esc(f.address || 'repo-scoped')}\` | \`${esc(f.evidence || '—')}\` |\n`;
               }
               body += `\n</details>\n\n`;
             }
@@ -188,7 +226,7 @@ jobs:
               `modules not expanded (delegated hardening checked in dependency repos) · ` +
               `full report in the workflow artifacts</sub>`;
 
-            const {data: comments} = await github.rest.issues.listComments({
+            const comments = await github.paginate(github.rest.issues.listComments, {
               owner: context.repo.owner, repo: context.repo.repo,
               issue_number: context.issue.number, per_page: 100});
             const mine = comments.find(c => c.body && c.body.startsWith(marker));
@@ -203,14 +241,10 @@ jobs:
                 issue_number: context.issue.number, body});
             }
 
-      - name: Dependabot notice (read-only token cannot comment)
-        if: github.event_name == 'pull_request' && github.actor == 'dependabot[bot]'
-        run: echo "::notice::dependabot PR — GITHUB_TOKEN is read-only; scan ran, comment skipped (see artifacts)."
-
-      - name: Enforce gate
-        if: inputs.gate_enforce && steps.gate.outputs.gate_ok == 'false'
+      - name: Enforce gate + lint
+        if: inputs.gate_enforce && (steps.gate.outputs.gate_ok == 'false' || steps.lint.outputs.lint_ok == 'false')
         run: |
-          echo "::error::caliper gate: new undispositioned NOT_ALIGNED findings (ratchet only tightens — disposition or fix them)"
+          echo "::error::caliper: gate_ok=${{ steps.gate.outputs.gate_ok }} lint_ok=${{ steps.lint.outputs.lint_ok }} (new undispositioned findings and/or invalid/expired dispositions)"
           exit 1
 
   triage:
@@ -255,6 +289,7 @@ jobs:
           git -C caliper-src checkout --quiet "$CALIPER_REF"
           git -C caliper-src submodule update --init --quiet rules
           pip install --quiet './caliper-src[triage]'
+          rm -rf caliper-src/.git  # token-bearing remote config; checked-out files remain
           echo "CALIPER_RULES_PATH=${GITHUB_WORKSPACE}/caliper-src/rules/fedramp-consolidated-rules.json" >> "$GITHUB_ENV"
 
       - name: Download scan artifact
@@ -290,7 +325,7 @@ jobs:
                 `a human owns every disposition)</summary>\n\n\`\`\`yaml\n${draft}\`\`\`\n\n</details>`;
             }
             body = body.slice(0, 60000);
-            const {data: comments} = await github.rest.issues.listComments({
+            const comments = await github.paginate(github.rest.issues.listComments, {
               owner: context.repo.owner, repo: context.repo.repo,
               issue_number: context.issue.number, per_page: 100});
             const mine = comments.find(c => c.body && c.body.startsWith(marker));
