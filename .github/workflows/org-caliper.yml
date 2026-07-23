@@ -50,10 +50,15 @@ on:
         type: boolean
         default: true
       aws_region:
-        description: 'AWS region for OIDC + Bedrock + S3 cache (required if triage runs)'
+        description: 'AWS region for OIDC + Bedrock + S3 cache'
         required: false
         type: string
-        default: ''
+        default: 'us-gov-east-1'
+      triage_model_id:
+        description: 'Bedrock model/inference-profile id (GovCloud has no Haiku 4.5; default is gov Sonnet 4.5)'
+        required: false
+        type: string
+        default: 'us-gov.anthropic.claude-sonnet-4-5-20250929-v1:0'
       triage_cache_bucket:
         description: 'S3 bucket for the triage result cache (optional but strongly recommended)'
         required: false
@@ -303,6 +308,7 @@ jobs:
         if: steps.provisioned.outputs.ready == 'true'
         env:
           CALIPER_TRIAGE_BUCKET: ${{ inputs.triage_cache_bucket }}
+          CALIPER_TRIAGE_MODEL_ID: ${{ inputs.triage_model_id }}
         run: |
           set -euo pipefail
           caliper triage --artifact out/head/scan.json --out out/triage
