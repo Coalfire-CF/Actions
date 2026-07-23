@@ -7,9 +7,11 @@ name: Caliper Scan
 # zero). Triage is a Bedrock call whose output is DRAFTS ONLY — the model
 # never gates, never commits (structural guard inside caliper itself).
 #
-# Caller requirements:
-#   - org secret CALIPER_READ_TOKEN (read access to Coalfire-CF/caliper)
-#   - for triage: org secret CALIPER_ROLE_ARN (OIDC role with Bedrock Converse
+# Caller requirements (use `secrets: inherit`):
+#   - the org App cf-gha-tf-pull-from-private-repo credentials
+#     (CF_TF_PULL_PRIVATE_APP_CLIENTID / _PRIVATE_KEY) — already org secrets;
+#     each job mints a ~1h token scoped to Coalfire-CF/caliper only. No PAT.
+#   - for triage: org secret CALIPER_ROLE_ARN (OIDC role with Bedrock invoke
 #     + the caliper S3 cache prefix) and the aws_region input. Absent role =
 #     triage skips with a notice; the scan still runs.
 #
@@ -70,8 +72,11 @@ on:
         type: string
         default: ''
     secrets:
-      CALIPER_READ_TOKEN:
-        description: 'Token with read access to Coalfire-CF/caliper (private)'
+      CF_TF_PULL_PRIVATE_APP_CLIENTID:
+        description: 'Client id of the org cf-gha-tf-pull-from-private-repo App (reads private Coalfire-CF/caliper). Pass via secrets: inherit.'
+        required: true
+      CF_TF_PULL_PRIVATE_APP_PRIVATE_KEY:
+        description: 'Private key of the cf-gha-tf-pull-from-private-repo App.'
         required: true
       CALIPER_ROLE_ARN:
         description: 'OIDC role for Bedrock triage (optional; triage skips without it)'
@@ -91,9 +96,9 @@ concurrency:
 
 jobs:
   scan:
-    # dependabot-triggered runs receive Dependabot secrets only — org secrets
-    # (CALIPER_READ_TOKEN) resolve empty and the install would fail loud.
-    # Skip entirely; dependabot bumps are covered by their own pipeline.
+    # dependabot-triggered runs receive Dependabot secrets only — the App
+    # secrets resolve empty and the token mint would fail. Skip entirely;
+    # dependabot bumps are covered by their own pipeline.
     if: github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     outputs:
@@ -114,16 +119,24 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Mint caliper read token (org App, scoped to caliper only)
+        id: caliper_token
+        # cf-gha-tf-pull-from-private-repo App (contents:read) → a ~1h token
+        # scoped to just Coalfire-CF/caliper. No PAT; nothing personal; the
+        # token dies with the job. Mirrors org-terraform-validate's pattern.
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.CF_TF_PULL_PRIVATE_APP_CLIENTID }}
+          private-key: ${{ secrets.CF_TF_PULL_PRIVATE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: caliper
+
       - name: Install caliper (pinned ref)
         env:
-          READ_TOKEN: ${{ secrets.CALIPER_READ_TOKEN }}
+          READ_TOKEN: ${{ steps.caliper_token.outputs.token }}
           CALIPER_REF: ${{ inputs.caliper_ref }}
         run: |
           set -euo pipefail
-          if [ -z "$READ_TOKEN" ]; then
-            echo "::error::CALIPER_READ_TOKEN is not configured — cannot install caliper. Refusing a silent skip."
-            exit 2
-          fi
           git clone --quiet "https://x-access-token:${READ_TOKEN}@github.com/Coalfire-CF/caliper.git" caliper-src
           git -C caliper-src checkout --quiet "$CALIPER_REF"
           git -C caliper-src submodule update --init --quiet rules
@@ -283,10 +296,20 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Mint caliper read token (org App, scoped to caliper only)
+        id: caliper_token
+        if: steps.provisioned.outputs.ready == 'true'
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.CF_TF_PULL_PRIVATE_APP_CLIENTID }}
+          private-key: ${{ secrets.CF_TF_PULL_PRIVATE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: caliper
+
       - name: Install caliper[triage] (pinned ref)
         if: steps.provisioned.outputs.ready == 'true'
         env:
-          READ_TOKEN: ${{ secrets.CALIPER_READ_TOKEN }}
+          READ_TOKEN: ${{ steps.caliper_token.outputs.token }}
           CALIPER_REF: ${{ inputs.caliper_ref }}
         run: |
           set -euo pipefail
