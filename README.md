@@ -267,6 +267,7 @@ Issue labels:
     |       |-- pass_sha.yml
     |       |-- warn_tag.yml
     |-- gate-config-resolve.test.sh
+    |-- pr-green-merge.test.sh
     |-- prompt-build.test.sh
     |-- reconcile-sweeper.test.sh
     |-- release-patch-merge.test.sh
