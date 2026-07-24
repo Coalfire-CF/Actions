@@ -108,16 +108,21 @@ jobs:
     - name: Validate Terraform
       id: validate
       run: |
+        # H4/#197: capture stderr (validate writes diagnostics there) AND preserve
+        # terraform's exit code, then re-fail on it. Previously $() captured only
+        # stdout and the code was discarded into the substitution, with
+        # continue-on-error and no later re-check — so invalid Terraform passed
+        # green with an empty comment. Mirrors the org-terraform-plan.yml idiom.
         set +e
-        OUTPUT=$(terraform validate)
-        CLEAN_OUTPUT=$(echo "$OUTPUT" | sed -r "s/\x1B\[([0-9]{1,2}(;[0-9]{1,2})?)?[m|K]//g")
-        echo "$CLEAN_OUTPUT"
-        echo "$CLEAN_OUTPUT" > "$GITHUB_WORKSPACE/validate_output.txt"
+        terraform validate 2>&1 | sed -r "s/\x1B\[([0-9]{1,2}(;[0-9]{1,2})?)?[m|K]//g" | tee "$GITHUB_WORKSPACE/validate_output.txt"
+        RC=${PIPESTATUS[0]}
         set -e
-      continue-on-error: true
+        exit "$RC"
 
     - name: Create comment
-      if: github.event_name == 'pull_request'
+      # always() so the diagnostics comment still posts when validate FAILS
+      # (the step above now exits non-zero on invalid Terraform).
+      if: always() && github.event_name == 'pull_request'
       uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
       with:
         github-token: ${{ secrets.GITHUB_TOKEN }}
