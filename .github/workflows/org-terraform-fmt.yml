@@ -32,8 +32,11 @@ concurrency:
   group: terraform-fmt-${{ github.repository }}-${{ github.ref }}
   cancel-in-progress: false
 
+# Least privilege (#198): the fmt gate now only checks + comments; it no longer
+# writes a commit, so contents:read suffices (pull-requests:write is for the
+# failure comment).
 permissions:
-  contents: write
+  contents: read
   pull-requests: write
 
 jobs:
@@ -76,14 +79,13 @@ jobs:
       with:
         terraform_version: ${{ steps.tf-version.outputs.version }}
 
-    - name: Run Terraform fmt
-      run: terraform fmt -recursive
-
-    - name: Commit changes
-      run: |
-        git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action"
-        git diff --quiet && git diff --staged --quiet || (git add -A && git commit -m "Apply terraform fmt")
+    - name: Check Terraform formatting
+      # M1/#198: this is an ENFORCE gate (job name "Check Terraform Formatting" +
+      # the failure comment telling authors to run fmt). The old `terraform fmt
+      # -recursive` reformatted in place, exited 0 (never failed), and committed
+      # locally without pushing — a no-op discarded on teardown. `-check` fails on
+      # drift; `-diff` surfaces exactly what needs formatting.
+      run: terraform fmt -check -recursive -diff
 
     - name: Post comment on failure
       if: failure()

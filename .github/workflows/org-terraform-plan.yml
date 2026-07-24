@@ -234,23 +234,26 @@ jobs:
         env:
           INPUT_BACKEND_CONFIG: ${{ inputs.backend_config }}
         run: |
-          INIT_ARGS=""
+          # L12/#218: bash array so a backend_config value with spaces is passed
+          # as a single argument (not word-split), and empty args add nothing.
+          INIT_ARGS=()
           if [ -n "$INPUT_BACKEND_CONFIG" ]; then
-            INIT_ARGS="-backend-config=$INPUT_BACKEND_CONFIG"
+            INIT_ARGS+=("-backend-config=$INPUT_BACKEND_CONFIG")
           fi
-          terraform init $INIT_ARGS
+          terraform init "${INIT_ARGS[@]}"
 
       - name: Terraform Plan
         id: plan
         env:
           INPUT_VAR_FILE: ${{ inputs.var_file }}
         run: |
-          PLAN_ARGS="-no-color -input=false -out=tfplan"
+          # L12/#218: bash array so a var_file path with spaces survives intact.
+          PLAN_ARGS=(-no-color -input=false -out=tfplan)
           if [ -n "$INPUT_VAR_FILE" ]; then
-            PLAN_ARGS="$PLAN_ARGS -var-file=$INPUT_VAR_FILE"
+            PLAN_ARGS+=("-var-file=$INPUT_VAR_FILE")
           fi
           set +e
-          terraform plan $PLAN_ARGS -detailed-exitcode 2>&1 | tee "$GITHUB_WORKSPACE/plan_output.txt"
+          terraform plan "${PLAN_ARGS[@]}" -detailed-exitcode 2>&1 | tee "$GITHUB_WORKSPACE/plan_output.txt"
           EXIT_CODE=${PIPESTATUS[0]}
           set -e
 
