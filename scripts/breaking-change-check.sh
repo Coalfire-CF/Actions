@@ -255,8 +255,10 @@ if [ "$SHARED_CACHE_HIT" = "false" ]; then
     RELEASE_NOTES="No release notes available."
   fi
 
-  # Truncate to ~4000 chars to keep Claude API costs low
-  RELEASE_NOTES=$(echo "$RELEASE_NOTES" | head -c 4000)
+  # Truncate to ~4000 chars to keep Claude API costs low. L19/#225: bash substring
+  # counts CHARACTERS in a UTF-8 locale, so it won't split a multibyte character
+  # mid-sequence the way byte-based `head -c` did.
+  RELEASE_NOTES="${RELEASE_NOTES:0:4000}"
 
   # ---------------------------------------------------------
   # Bedrock Converse API analysis
@@ -326,6 +328,11 @@ if [ "$SHARED_CACHE_HIT" = "false" ]; then
   fi
   HAS_BREAKING=$(echo "$AI_TEXT" | jq -r '.breaking // false')
   CONFIDENCE=$(echo "$AI_TEXT" | jq -r '.confidence // 0')
+  # M2/#199: a valid-JSON verdict with a non-numeric confidence (e.g. a prompt-
+  # injected "high", or "") would make `--argjson conf` invalid JSON → jq abort
+  # under set -e. `// 0` does not fire on a present-but-non-numeric value, so
+  # validate explicitly and default to 0.
+  [[ "$CONFIDENCE" =~ ^[0-9]+(\.[0-9]+)?$ ]] || CONFIDENCE=0
   RISK_SUMMARY=$(echo "$AI_TEXT" | jq -r '.summary // "Analysis unavailable"')
   AI_RISKS=$(echo "$AI_TEXT" | jq -r '.risks // []')
   APPLIES_TO_REPO=$(echo "$AI_TEXT" | jq -r '.applies_to_repo // true')
@@ -510,6 +517,9 @@ echo "confidence=${AGG_CONF}" >> "$GITHUB_OUTPUT"
 echo "applies_to_repo=${AGG_APPLIES}" >> "$GITHUB_OUTPUT"
 echo "check_errors=${CHECK_ERRORS}" >> "$GITHUB_OUTPUT"
 
-# Escape newlines + truncate for GITHUB_OUTPUT
-SAFE_SUMMARY=$(echo "$AGG_SUMMARY" | tr '\n' ' ' | head -c 900)
+# Escape newlines + truncate for GITHUB_OUTPUT. L19/#225: char-based substring
+# (UTF-8-aware) instead of byte-based `head -c`, so a multibyte char at the cut
+# point is not split.
+SAFE_SUMMARY=$(printf '%s' "$AGG_SUMMARY" | tr '\n' ' ')
+SAFE_SUMMARY="${SAFE_SUMMARY:0:900}"
 echo "risk_summary=${SAFE_SUMMARY}" >> "$GITHUB_OUTPUT"

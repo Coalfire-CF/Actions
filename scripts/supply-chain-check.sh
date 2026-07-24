@@ -182,7 +182,12 @@ if [ "$CACHE_HIT" = "false" ]; then
       http_retryable --max-time 30 \
       "https://api.securityscorecards.dev/projects/${SCORECARD_REPO}" \
       || echo '{}')
-    SCORECARD_SCORE=$(echo "$SCORECARD_RESPONSE" | jq -r '.score // 0')
+    # M3/#200: a 2xx-but-non-JSON body (proxy/HTML error page) makes jq exit
+    # non-zero → set -e abort; a valid-JSON non-numeric .score leaves a value bc
+    # can't compare → integer-expr error. Guard the read and fail closed to 0
+    # (below any threshold → not-pass) on anything non-numeric.
+    SCORECARD_SCORE=$(echo "$SCORECARD_RESPONSE" | jq -r '.score // 0' 2>/dev/null || echo 0)
+    [[ "$SCORECARD_SCORE" =~ ^[0-9]+(\.[0-9]+)?$ ]] || SCORECARD_SCORE=0
 
     if [ "$(echo "$SCORECARD_SCORE < $SCORECARD_THRESHOLD" | bc -l)" -eq 1 ]; then
       SCORECARD_PASS="false"
@@ -238,7 +243,9 @@ fi
 [ "$OSV_CLEAR" = "true" ]      || AGG_OSV_CLEAR="false"
 [ "$SCORECARD_PASS" = "true" ] || AGG_SC_PASS="false"
 [ "$CACHE_HIT" = "true" ]      || AGG_CACHE_HIT="false"
-if [ "$SCORECARD_SCORE" != "N/A" ]; then
+# M3/#200: only fold a genuinely numeric score into the aggregate min — a "N/A"
+# (no repo) or a garbage cache-hit score must not reach bc (integer-expr abort).
+if [ "$SCORECARD_SCORE" != "N/A" ] && [[ "$SCORECARD_SCORE" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
   if [ -z "$AGG_SC_SCORE" ] || [ "$(echo "$SCORECARD_SCORE < $AGG_SC_SCORE" | bc -l)" -eq 1 ]; then
     AGG_SC_SCORE="$SCORECARD_SCORE"
   fi

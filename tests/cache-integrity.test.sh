@@ -94,6 +94,13 @@ cat > "$BEDROCK_GOOD" <<'EOF'
 {"output":{"message":{"content":[{"text":"{\"breaking\":false,\"confidence\":80,\"risks\":[],\"summary\":\"no breaking changes\",\"applies_to_repo\":true}"}]}}}
 EOF
 
+# Valid-JSON verdict with a NON-numeric confidence — a prompt-injection could make
+# the model emit this; the fix must default confidence to 0, not crash --argjson.
+BEDROCK_BADCONF="$WORK/bedrock_badconf.json"
+cat > "$BEDROCK_BADCONF" <<'EOF'
+{"output":{"message":{"content":[{"text":"{\"breaking\":false,\"confidence\":\"high\",\"risks\":[],\"summary\":\"x\",\"applies_to_repo\":true}"}]}}}
+EOF
+
 b64() { printf '%b' "$1" | base64 | tr -d '\n'; }
 s3put() { cp "$2" "$FAKE_S3_DIR/$(printf '%s' "$1" | sed 's#[/:]#_#g')"; }
 NOW="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -207,5 +214,42 @@ DEP2_OBJ="$S3/analyses_shared_actions--setup-go_5.0.0.json"
 osv_field="$(jq -c '.osv // "ABSENT"' "$DEP2_OBJ")"
 [ "$osv_field" = '"ABSENT"' ] || fail "#195 breaking: dep2 object inherited dep1's supply-chain fields (.osv=${osv_field}) — stale /tmp contamination"
 echo "OK: #195 breaking-change dep2 (cache miss) does not inherit dep1's cached fields"
+
+# ============================================================================
+# #200 (M3) — supply-chain: a non-JSON / non-numeric Scorecard body fails closed
+# (SCORECARD_PASS=false) instead of crashing bc / jq under set -e.
+# ============================================================================
+S3="$WORK/s3_t6"; mkdir -p "$S3"; UL="$WORK/ul_t6"; : > "$UL"; GHO="$WORK/gho_t6"; : > "$GHO"
+(
+  export PATH="$BIN:$PATH" FAKE_S3_DIR="$S3" UPLOAD_LOG="$UL" GITHUB_OUTPUT="$GHO"
+  export S3_BUCKET=test-bucket CACHE_TTL_DAYS=30 SCORECARD_THRESHOLD=7
+  export ECOSYSTEM=github-actions RETRY_MAX=1 JITTER_MAX_SECONDS=0
+  export DEPS_B64="$(b64 'actions/checkout\t4.0.0\t5.0.0\n')"
+  export OSV_BODY='{"vulns":[]}' OSV_CODE=200 SC_BODY='<html>502 Bad Gateway</html>' SC_CODE=200
+  bash "$SUPPLY" >>"$WORK/log_t6" 2>&1
+)
+rc=$?
+[ "$rc" -eq 0 ] || fail "#200 supply: non-JSON Scorecard body crashed the job (exit $rc): $(cat "$WORK/log_t6")"
+grep -q '^scorecard_pass=false$' "$GHO" || fail "#200 supply: garbage score must fail closed (scorecard_pass=false), got: $(grep scorecard_pass "$GHO")"
+echo "OK: #200 supply-chain non-numeric/garbage Scorecard body fails closed (no crash)"
+
+# ============================================================================
+# #199 (M2) — breaking-change: a non-numeric model confidence defaults to 0
+# instead of crashing `jq --argjson conf` under set -e.
+# ============================================================================
+S3="$WORK/s3_t7"; mkdir -p "$S3"; UL="$WORK/ul_t7"; : > "$UL"; GHO="$WORK/gho_t7"; : > "$GHO"
+(
+  export PATH="$BIN:$PATH" FAKE_S3_DIR="$S3" UPLOAD_LOG="$UL" GITHUB_OUTPUT="$GHO"
+  export S3_BUCKET=test-bucket CACHE_TTL_DAYS=30 BEDROCK_MODEL_ID=test-model
+  export ECOSYSTEM=github-actions RETRY_MAX=1 JITTER_MAX_SECONDS=0
+  export GH_TOKEN=x GITHUB_REPOSITORY=test-org/test-repo BEDROCK_RESP_FILE="$BEDROCK_BADCONF"
+  export DEPS_B64="$(b64 'actions/checkout\t4.0.0\t5.0.0\n')"
+  export GH_CODE=404
+  bash "$BREAKING" >>"$WORK/log_t7" 2>&1
+)
+rc=$?
+[ "$rc" -eq 0 ] || fail "#199 breaking: non-numeric confidence crashed the job (exit $rc): $(cat "$WORK/log_t7")"
+grep -q '^confidence=0$' "$GHO" || fail "#199 breaking: non-numeric confidence should default to 0, got: $(grep '^confidence=' "$GHO")"
+echo "OK: #199 breaking-change non-numeric confidence defaults to 0 (no --argjson crash)"
 
 echo "ALL TESTS PASSED"
