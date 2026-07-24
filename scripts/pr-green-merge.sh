@@ -101,6 +101,7 @@ log() { echo "[pr-green-merge] $*" >&2; }
 # success; on any failure logs the last stderr line (STDERR only) and returns
 # $RETRY_TRANSIENT_RC so with_retry treats a gh blip as transient (matches the
 # prior retry-any-failure behavior).
+# shellcheck disable=SC2317,SC2329  # invoked indirectly via `with_retry -- _gh_read_once` (SC2317/SC2329 are the version-dependent codes for the same "unreachable/unused function" false positive)
 _gh_read_once() {
   local out errf
   errf="$(mktemp)"
@@ -228,6 +229,24 @@ fi
 
 # Merge via the REST endpoint (see MERGE MECHANISM in the header): `gh pr merge`
 # refuses a BLOCKED PR and does not exercise ruleset bypass; PUT .../merge does.
-log "MERGE #${PR_NUMBER} (checks GREEN${BYPASS_NOTE}) via REST --${MERGE_METHOD}"
-gh api --method PUT "repos/${REPO}/pulls/${PR_NUMBER}/merge" -f "merge_method=${MERGE_METHOD}" >/dev/null
-echo "MERGED #${PR_NUMBER}"
+# M5/#202: compare-and-swap on the head SHA pinned at green-gate time. The REST
+# endpoint's `sha` requires the PR head to still match at merge time; if a commit
+# was pushed (or the head otherwise moved) between our classification and now,
+# GitHub returns 409 and refuses — so we can never merge unreviewed/unchecked code
+# that landed after the gate. A 409 is a benign race → clean SKIP, not an error.
+log "MERGE #${PR_NUMBER} (checks GREEN${BYPASS_NOTE}) via REST --${MERGE_METHOD}, CAS sha=${HEAD_SHA}"
+MERGE_ERR="$(mktemp)"
+if gh api --method PUT "repos/${REPO}/pulls/${PR_NUMBER}/merge" \
+     -f "merge_method=${MERGE_METHOD}" -f "sha=${HEAD_SHA}" >/dev/null 2>"$MERGE_ERR"; then
+  rm -f "$MERGE_ERR"
+  echo "MERGED #${PR_NUMBER}"
+  exit 0
+fi
+ERRTXT="$(cat "$MERGE_ERR" 2>/dev/null)"; rm -f "$MERGE_ERR"
+if printf '%s' "$ERRTXT" | grep -qiE '409|Head branch was modified|did not match|Conflict'; then
+  log "SKIP #${PR_NUMBER} (head moved after green-gate; CAS sha=${HEAD_SHA} rejected): ${ERRTXT}"
+  echo "SKIP #${PR_NUMBER} (head-moved)"
+  exit 0
+fi
+log "MERGE FAILED #${PR_NUMBER}: ${ERRTXT}"
+exit 1
