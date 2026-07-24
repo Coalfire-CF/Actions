@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.15.0](https://github.com/Coalfire-CF/Actions/compare/v0.14.0...v0.15.0) (2026-07-24)
+
+
+### Features
+
+* org-caliper.yml — CR2026/Rev5 scan + advisory Bedrock triage (reusable) ([#252](https://github.com/Coalfire-CF/Actions/issues/252)) ([26bc09d](https://github.com/Coalfire-CF/Actions/commit/26bc09d670f3d57ef52c9369a0e3a53ae91194e5))
+
+
+### Bug Fixes
+
+* **org-caliper:** pin default caliper_ref to v0.1.0 release SHA ([#255](https://github.com/Coalfire-CF/Actions/issues/255)) ([6526259](https://github.com/Coalfire-CF/Actions/commit/6526259c96be65c0d3e2ba8b6d0d13eca5aa1b09))
+
+
+### Miscellaneous
+
+* **deps:** bump Coalfire-CF/Actions/actions/gitleaks ([#253](https://github.com/Coalfire-CF/Actions/issues/253)) ([df2d7b8](https://github.com/Coalfire-CF/Actions/commit/df2d7b84a26ca4c8e6d7ff9a314bb6d28b858695))
+
 ## [0.14.0](https://github.com/Coalfire-CF/Actions/compare/v0.13.0...v0.14.0) (2026-07-22)
 
 
