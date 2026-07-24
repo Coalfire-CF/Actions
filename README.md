@@ -233,6 +233,7 @@ Issue labels:
     |-- auto-merge-decide.test.sh
     |-- cache-integrity.test.sh
     |-- cache-read.test.sh
+    |-- example-pin-check.test.sh
     |-- fixtures
     |   |-- auto-merge-decide
     |   |   |-- first_party_waiver.env
