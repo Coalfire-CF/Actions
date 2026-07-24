@@ -345,7 +345,9 @@ jobs:
 
   notify-failure:
     name: Slack Failure Notification
-    needs: [release, release-clean, trivy-scan, gitleaks-scan]
+    # #215: include auto-merge-patch + notify-release so a failure in either is
+    # covered by the failure() Slack alert below (previously omitted).
+    needs: [release, release-clean, trivy-scan, gitleaks-scan, auto-merge-patch, notify-release]
     if: failure() && inputs.slack_channel_id != ''
     uses: ./.github/workflows/org-slack-notify.yml
     secrets:
