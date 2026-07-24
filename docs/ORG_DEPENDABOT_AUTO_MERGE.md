@@ -224,7 +224,7 @@ Run the label sync workflow on each repo before enabling auto-merge:
 ```yaml
 jobs:
   sync-labels:
-    uses: <YOUR_ORG>/Actions/.github/workflows/org-label-sync.yml@72d0360b99f80252dda40f6dfefc252f5a66edb3 # v0.10.0
+    uses: <YOUR_ORG>/Actions/.github/workflows/org-label-sync.yml@0324cf8a90b4b9c523465f53a892a722f613e318 # v0.15.0
     secrets: inherit
 ```
 
@@ -251,7 +251,7 @@ jobs:
     if: >-
       github.event_name == 'check_suite' ||
       github.event.pull_request.user.login == 'dependabot[bot]'
-    uses: <YOUR_ORG>/Actions/.github/workflows/org-dependabot-auto-merge.yml@72d0360b99f80252dda40f6dfefc252f5a66edb3 # v0.10.0
+    uses: <YOUR_ORG>/Actions/.github/workflows/org-dependabot-auto-merge.yml@0324cf8a90b4b9c523465f53a892a722f613e318 # v0.15.0
     secrets: inherit
 ```
 
@@ -283,9 +283,9 @@ pass `actions_ref`:
 jobs:
   auto-merge:
     if: github.actor == 'dependabot[bot]'
-    uses: <YOUR_ORG>/Actions/.github/workflows/org-dependabot-auto-merge.yml@72d0360b99f80252dda40f6dfefc252f5a66edb3 # v0.10.0
+    uses: <YOUR_ORG>/Actions/.github/workflows/org-dependabot-auto-merge.yml@0324cf8a90b4b9c523465f53a892a722f613e318 # v0.15.0
     with:
-      actions_ref: 72d0360b99f80252dda40f6dfefc252f5a66edb3 # v0.10.0
+      actions_ref: 0324cf8a90b4b9c523465f53a892a722f613e318 # v0.15.0
     secrets: inherit
 ```
 
@@ -317,7 +317,8 @@ jobs:
 | Condition | Decision | Labels Applied |
 |-----------|----------|---------------|
 | Terraform module/provider | Skip | `merge/skipped`, `blocked/terraform-no-tests` |
-| All checks green (patch/minor, no vulns, good scorecard, no breaking changes) | Approve + auto-merge | `merge/approved`, `risk/low` |
+| All checks green — **patch** (no vulns, good scorecard, no breaking changes) | Approve + auto-merge | `merge/approved`, `risk/low` |
+| All checks green — **minor** (no vulns, good scorecard, no breaking changes) | Approve + auto-merge | `merge/approved`, `risk/medium` |
 | Known vulnerability | Block | `merge/blocked`, `risk/high`, `blocked/known-vuln` |
 | Low scorecard | Block | `merge/blocked`, `risk/high`, `blocked/low-scorecard` |
 | Major version bump | Block | `merge/blocked`, `risk/high`, `blocked/major-bump` |

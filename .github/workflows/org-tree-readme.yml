@@ -107,6 +107,10 @@ jobs:
                 inList && /^[[:space:]]*-/ {
                   gsub(/^[[:space:]]*-[[:space:]]*/, "", $0);
                   gsub(/^[[:space:]]+|[[:space:]]+$/, "", $0);
+                  # #208: strip surrounding quotes so a quoted include (e.g. - "modules")
+                  # yields modules, not the literal "modules" (which fails the -e test
+                  # and is silently skipped, falling back to repo root).
+                  gsub(/^["'\'']|["'\'']$/, "", $0);
                   print $0; next
                 }
                 inList && !/^[[:space:]]*-/ {inList=0}
