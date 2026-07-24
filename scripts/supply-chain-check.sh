@@ -63,6 +63,9 @@ AGG_CACHE_HIT="true"
 
 check_one() {
 local DEP_NAME="$1" TO_VERSION="$2"
+# Per-dependency error baseline (#194/H1): if THIS dependency's checks error, we
+# must NOT persist its optimistic fallback verdict to the fleet-wide shared cache.
+local ERRORS_BEFORE="$CHECK_ERRORS"
 
 # -----------------------------------------------------------
 # Normalize dependency name for S3 key (replace / with --)
@@ -80,8 +83,10 @@ SCORECARD_SCORE="0"
 
 CACHED=$(aws s3 cp "s3://${S3_BUCKET}/${CACHE_KEY}" /tmp/cached_analysis.json 2>/dev/null && echo "ok" || echo "miss")
 if [ "$CACHED" = "ok" ]; then
-  # Validate TTL
-  ANALYZED_AT=$(jq -r '.analyzed_at // ""' /tmp/cached_analysis.json)
+  # Validate TTL. Guard the pre-validation read (#201/M4): a corrupt/non-JSON
+  # cached object makes jq exit non-zero, which under set -e would abort the whole
+  # job instead of treating the object as a miss. Fail safe to "" (→ re-analyze).
+  ANALYZED_AT=$(jq -r '.analyzed_at // ""' /tmp/cached_analysis.json 2>/dev/null || true)
   if [ -n "$ANALYZED_AT" ]; then
     ANALYZED_EPOCH=$(date -d "$ANALYZED_AT" +%s 2>/dev/null || date -jf "%Y-%m-%dT%H:%M:%SZ" "$ANALYZED_AT" +%s 2>/dev/null || echo 0)
     NOW_EPOCH=$(date +%s)
@@ -194,28 +199,37 @@ if [ "$CACHE_HIT" = "false" ]; then
   # Write to S3 cache (partial — supply chain fields only)
   # Breaking change check will merge its fields in separately
   # ---------------------------------------------------------
-  jq -n \
-    --arg schema "$CACHE_SCHEMA_VERSION" \
-    --arg producer "$CACHE_PRODUCER" \
-    --arg dep "$DEP_NAME" \
-    --arg ver "$TO_VERSION" \
-    --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-    --argjson osv_clear "$([ "$OSV_CLEAR" = "true" ] && echo true || echo false)" \
-    --argjson osv_vulns "$OSV_VULNS" \
-    --arg sc_score "$SCORECARD_SCORE" \
-    --argjson sc_pass "$([ "$SCORECARD_PASS" = "true" ] && echo true || echo false)" \
-    '{
-      schema_version: $schema,
-      producer: $producer,
-      dependency: $dep,
-      version: $ver,
-      analyzed_at: $ts,
-      osv: { clear: $osv_clear, vulns: $osv_vulns },
-      scorecard: { score: $sc_score, pass: $sc_pass }
-    }' > /tmp/supply_chain_result.json
+  # Fail-closed cache write (#194/H1): if THIS dependency errored (e.g. a transient
+  # OSV outage → OSV_CLEAR stays optimistically "true"), do NOT persist that verdict.
+  # The whole fleet reads this shared object for the full TTL window; a poisoned
+  # "clear=true" entry could auto-approve an unscanned dependency. Skip the write so
+  # the next run re-analyzes on a genuine cache miss.
+  if [ "$CHECK_ERRORS" -gt "$ERRORS_BEFORE" ]; then
+    echo "::warning::Skipping shared-cache write for ${DEP_NAME}@${TO_VERSION} — a check errored this run (fail-closed; not persisting an optimistic verdict)"
+  else
+    jq -n \
+      --arg schema "$CACHE_SCHEMA_VERSION" \
+      --arg producer "$CACHE_PRODUCER" \
+      --arg dep "$DEP_NAME" \
+      --arg ver "$TO_VERSION" \
+      --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+      --argjson osv_clear "$([ "$OSV_CLEAR" = "true" ] && echo true || echo false)" \
+      --argjson osv_vulns "$OSV_VULNS" \
+      --arg sc_score "$SCORECARD_SCORE" \
+      --argjson sc_pass "$([ "$SCORECARD_PASS" = "true" ] && echo true || echo false)" \
+      '{
+        schema_version: $schema,
+        producer: $producer,
+        dependency: $dep,
+        version: $ver,
+        analyzed_at: $ts,
+        osv: { clear: $osv_clear, vulns: $osv_vulns },
+        scorecard: { score: $sc_score, pass: $sc_pass }
+      }' > /tmp/supply_chain_result.json
 
-  aws s3 cp /tmp/supply_chain_result.json "s3://${S3_BUCKET}/${CACHE_KEY}" \
-    --content-type "application/json" --quiet
+    aws s3 cp /tmp/supply_chain_result.json "s3://${S3_BUCKET}/${CACHE_KEY}" \
+      --content-type "application/json" --quiet
+  fi
 fi
 
 # -----------------------------------------------------------

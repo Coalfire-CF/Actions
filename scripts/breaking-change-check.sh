@@ -78,6 +78,13 @@ semver_rank() {
 
 check_one() {
 local DEP_NAME="$1" FROM_VERSION="$2" TO_VERSION="$3"
+# Per-dependency error baseline (#194/H1): a dependency whose analysis errors must
+# not persist its optimistic fallback verdict to the fleet-wide shared cache.
+local ERRORS_BEFORE="$CHECK_ERRORS"
+# Clear per-iteration cache temp files (#195/H2): a cache MISS leaves aws's
+# download target absent, so a stale file from the PREVIOUS dependency in a grouped
+# PR must not linger and contaminate this dependency's written object.
+rm -f /tmp/cached_analysis.json /tmp/cached_repo_analysis.json
 
 SAFE_DEP_NAME=$(echo "$DEP_NAME" | sed 's|/|--|g')
 SAFE_REPO_NAME=$(echo "$GITHUB_REPOSITORY" | sed 's|/|--|g')
@@ -99,9 +106,12 @@ APPLIES_TO_REPO="true"
 # Check shared cache for universal changelog analysis
 CACHED=$(aws s3 cp "s3://${S3_BUCKET}/${SHARED_CACHE_KEY}" /tmp/cached_analysis.json 2>/dev/null && echo "ok" || echo "miss")
 if [ "$CACHED" = "ok" ]; then
-  BC_EXISTS=$(jq -r '.changelog // empty' /tmp/cached_analysis.json)
+  # Guard the pre-validation reads (#201/M4): a corrupt/non-JSON cached object
+  # makes jq exit non-zero, which under set -e would abort the whole job instead
+  # of treating the object as a miss and re-analyzing. Fail safe to empty (miss).
+  BC_EXISTS=$(jq -r '.changelog // empty' /tmp/cached_analysis.json 2>/dev/null || true)
   if [ -n "$BC_EXISTS" ]; then
-    ANALYZED_AT=$(jq -r '.analyzed_at // ""' /tmp/cached_analysis.json)
+    ANALYZED_AT=$(jq -r '.analyzed_at // ""' /tmp/cached_analysis.json 2>/dev/null || true)
     if [ -n "$ANALYZED_AT" ]; then
       ANALYZED_EPOCH=$(date -d "$ANALYZED_AT" +%s 2>/dev/null || date -jf "%Y-%m-%dT%H:%M:%SZ" "$ANALYZED_AT" +%s 2>/dev/null || echo 0)
       NOW_EPOCH=$(date +%s)
@@ -130,7 +140,8 @@ fi
 # Check repo-scoped cache for applicability
 REPO_CACHED=$(aws s3 cp "s3://${S3_BUCKET}/${REPO_CACHE_KEY}" /tmp/cached_repo_analysis.json 2>/dev/null && echo "ok" || echo "miss")
 if [ "$REPO_CACHED" = "ok" ]; then
-  REPO_AT=$(jq -r '.analyzed_at // ""' /tmp/cached_repo_analysis.json)
+  # Guarded pre-validation read (#201/M4) — treat a corrupt object as a miss.
+  REPO_AT=$(jq -r '.analyzed_at // ""' /tmp/cached_repo_analysis.json 2>/dev/null || true)
   if [ -n "$REPO_AT" ]; then
     REPO_EPOCH=$(date -d "$REPO_AT" +%s 2>/dev/null || date -jf "%Y-%m-%dT%H:%M:%SZ" "$REPO_AT" +%s 2>/dev/null || echo 0)
     NOW_EPOCH=$(date +%s)
@@ -332,39 +343,49 @@ if [ "$SHARED_CACHE_HIT" = "false" ]; then
   # ---------------------------------------------------------
   # Write shared cache (universal changelog + semver analysis)
   # ---------------------------------------------------------
-  # Read existing cache entry (from supply chain check) or start fresh
-  if [ -f /tmp/cached_analysis.json ]; then
-    EXISTING=$(cat /tmp/cached_analysis.json)
+  # Fail-closed cache write (#194/H1): if THIS dependency's analysis errored
+  # (Bedrock/parse failure → optimistic breaking=false fallback), do NOT persist
+  # that verdict to the fleet-wide shared cache — the next run must re-analyze on a
+  # genuine miss rather than cache-hit an unanalyzed dependency for the TTL window.
+  if [ "$CHECK_ERRORS" -gt "$ERRORS_BEFORE" ]; then
+    echo "::warning::Skipping shared-cache write for ${DEP_NAME}@${TO_VERSION} — analysis errored this run (fail-closed; not persisting an optimistic verdict)"
   else
-    EXISTING='{}'
+    # Merge onto THIS dependency's existing shared object only on a genuine hit
+    # (#195/H2): keying off file-existence would fold a stale /tmp file from the
+    # previous dep in a grouped PR into this dep's object. On a miss, start fresh.
+    if [ "$CACHED" = "ok" ]; then
+      EXISTING=$(cat /tmp/cached_analysis.json)
+    else
+      EXISTING='{}'
+    fi
+
+    echo "$EXISTING" | jq \
+      --arg schema "$CACHE_SCHEMA_VERSION" \
+      --arg producer "$CACHE_PRODUCER" \
+      --arg dep "$DEP_NAME" \
+      --arg ver "$TO_VERSION" \
+      --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+      --arg sv_type "$SEMVER_TYPE" \
+      --arg sv_from "$FROM_VERSION" \
+      --arg sv_to "$TO_VERSION" \
+      --argjson breaking "$([ "$HAS_BREAKING" = "true" ] && echo true || echo false)" \
+      --argjson ai_breaking "$([ "$AI_BREAKING" = "true" ] && echo true || echo false)" \
+      --argjson conf "$CONFIDENCE" \
+      --arg summary "$RISK_SUMMARY" \
+      --argjson risks "$AI_RISKS" \
+      '. + {
+        schema_version: $schema,
+        producer: $producer,
+        dependency: $dep,
+        version: $ver,
+        analyzed_at: $ts,
+        semver: { type: $sv_type, from: $sv_from, to: $sv_to },
+        changelog: { breaking: $breaking, ai_breaking: $ai_breaking, confidence: ($conf | tonumber), summary: $summary, risks: $risks }
+      }' > /tmp/merged_analysis.json
+
+    aws s3 cp /tmp/merged_analysis.json "s3://${S3_BUCKET}/${SHARED_CACHE_KEY}" \
+      --content-type "application/json" --quiet
   fi
-
-  echo "$EXISTING" | jq \
-    --arg schema "$CACHE_SCHEMA_VERSION" \
-    --arg producer "$CACHE_PRODUCER" \
-    --arg dep "$DEP_NAME" \
-    --arg ver "$TO_VERSION" \
-    --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-    --arg sv_type "$SEMVER_TYPE" \
-    --arg sv_from "$FROM_VERSION" \
-    --arg sv_to "$TO_VERSION" \
-    --argjson breaking "$([ "$HAS_BREAKING" = "true" ] && echo true || echo false)" \
-    --argjson ai_breaking "$([ "$AI_BREAKING" = "true" ] && echo true || echo false)" \
-    --argjson conf "$CONFIDENCE" \
-    --arg summary "$RISK_SUMMARY" \
-    --argjson risks "$AI_RISKS" \
-    '. + {
-      schema_version: $schema,
-      producer: $producer,
-      dependency: $dep,
-      version: $ver,
-      analyzed_at: $ts,
-      semver: { type: $sv_type, from: $sv_from, to: $sv_to },
-      changelog: { breaking: $breaking, ai_breaking: $ai_breaking, confidence: ($conf | tonumber), summary: $summary, risks: $risks }
-    }' > /tmp/merged_analysis.json
-
-  aws s3 cp /tmp/merged_analysis.json "s3://${S3_BUCKET}/${SHARED_CACHE_KEY}" \
-    --content-type "application/json" --quiet
 fi
 
 # ---------------------------------------------------------
