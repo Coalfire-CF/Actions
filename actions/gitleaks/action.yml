@@ -59,7 +59,10 @@ runs:
         curl -sSfL -o "${TARBALL}" \
           "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
         echo "${GITLEAKS_SHA256}  ${TARBALL}" | sha256sum -c -
-        tar -xzf "${TARBALL}" -C /usr/local/bin gitleaks
+        # L5/#211: sudo the extract — /usr/local/bin is not writable by the runner
+        # user on hardened/self-hosted runners (EACCES). Matches test-scripts.yml's
+        # actionlint install (sudo tar … -C /usr/local/bin).
+        sudo tar -xzf "${TARBALL}" -C /usr/local/bin gitleaks
         rm -f "${TARBALL}"
         echo "Installed gitleaks $(gitleaks version)"
 
@@ -112,6 +115,11 @@ runs:
           echo "finding-count=${FINDING_COUNT}" >> "$GITHUB_OUTPUT"
           echo "::warning::${FINDING_COUNT} potential secret(s) detected"
         else
+          # L4/#210: write defined, fail-closed outputs on the error path so a
+          # consumer reading outputs.passed after continue-on-error sees "false"
+          # (not an empty string) and finding-count a sentinel, not unset.
+          echo "passed=false" >> "$GITHUB_OUTPUT"
+          echo "finding-count=-1" >> "$GITHUB_OUTPUT"
           echo "::error::Gitleaks encountered an unexpected error (exit code: ${GITLEAKS_EXIT})"
           exit "$GITLEAKS_EXIT"
         fi
