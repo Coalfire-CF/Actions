@@ -32,7 +32,7 @@ case "$sub" in
     if [ "$jf" = "headRefOid,state,labels,reviewDecision" ] && [ -n "${MOCK_RESNAP:-}" ]; then cat "$MOCK_RESNAP"; exit 0; fi
     if [ "$jf" = "statusCheckRollup" ] && [ -n "${MOCK_ROLLUP2:-}" ]; then cat "$MOCK_ROLLUP2"; exit 0; fi
     cat "$MOCK_SNAP"; exit 0 ;;
-  "pr checks") exit "${MOCK_WATCH_RC:-0}" ;;
+  "pr checks") [ -n "${MOCK_WATCH_SLEEP:-}" ] && sleep "$MOCK_WATCH_SLEEP"; exit "${MOCK_WATCH_RC:-0}" ;;
   "pr merge")
     if [ "${MOCK_REJECT_WRITES:-0}" = "1" ]; then echo "MOCK: merge rejected (dry-run must not merge)" >&2; exit 90; fi
     if [ -n "${MOCK_MERGE_ERR:-}" ]; then echo "$MOCK_MERGE_ERR" >&2; exit "${MOCK_MERGE_RC:-1}"; fi
@@ -41,8 +41,11 @@ case "$sub" in
     if [ "${MOCK_REJECT_WRITES:-0}" = "1" ]; then echo "MOCK: review rejected" >&2; exit 90; fi
     exit 0 ;;
   "api "*|"api")
-    ep="$2"
-    if [ "$ep" = "-X" ]; then exit 0; fi            # comment upsert (PATCH/POST) — allowed write
+    # Any `-X` (PATCH/POST) is an allowed mutation (comment upsert).
+    for a in "$@"; do [ "$a" = "-X" ] && exit 0; done
+    # Endpoint = first non-flag arg after `api` (robust to --paginate, --jq, …).
+    shift; ep=""
+    while [ $# -gt 0 ]; do case "$1" in -*) shift ;; *) ep="$1"; break ;; esac; done
     case "$ep" in
       */contents/*)
         ref="${ep##*ref=}"; path="${ep#*/contents/}"; path="${path%%\?*}"
@@ -254,7 +257,33 @@ E; run TOKEN_IS_APP=true DRY_RUN=false MOCK_COMMENT_ID=555 MOCK_SNAP="$MOCK_SNAP
 assert_rc0; assert_line "MERGED #42"
 echo "$TRACE" | grep -q 'api -X PATCH repos/Coalfire-CF/demo/issues/comments/555' || fail "${CASE}: expected a PATCH edit of comment 555 (not a re-post)"
 echo "$TRACE" | grep -q 'api -X POST repos/Coalfire-CF/demo/issues/42/comments' && fail "${CASE}: must NOT POST a new comment when one exists"
+# M6/#203: the marker lookup must paginate, or a PR with >30 comments never finds
+# the existing marker and the upsert degrades to append.
+echo "$TRACE" | grep -qE 'api --paginate .*issues/42/comments' || fail "${CASE}: comment lookup must use --paginate (#203)"
 echo "OK: ${CASE}"
+
+CASE="#214 permanent 404 is not retried (base-manifest read happens once)"
+E; run TOKEN_IS_APP=true DRY_RUN=false RETRY_MAX=3 MOCK_SNAP="$MOCK_SNAP" \
+  MOCK_MANIFEST_BASE="$WORK/nope-manifest.json" MOCK_MANIFEST_HEAD="$MOCK_MANIFEST_HEAD" \
+  MOCK_CL_BASE="$MOCK_CL_BASE" MOCK_CL_HEAD="$MOCK_CL_HEAD"
+assert_rc0; assert_line "SKIP #42 (missing-manifest)"; assert_nomerge
+n=$(echo "$TRACE" | grep -cE 'contents/.*manifest.*ref=basesha000')
+[ "$n" -eq 1 ] || fail "${CASE}: base-manifest 404 attempted ${n}× (expected 1 — a 404 is permanent, must not spin RETRY_MAX times)"
+echo "OK: ${CASE}"
+
+# L7/#213: bound the pending-checks watch so a stuck check can't hang the step.
+# Requires coreutils `timeout` (present on CI ubuntu; skipped where absent, e.g. stock macOS).
+if command -v timeout >/dev/null 2>&1; then
+  CASE="#213 watch times out → checks-not-green (bounded, no hang)"
+  E; s="$(snap '.statusCheckRollup=[{"status":"IN_PROGRESS","conclusion":null}]')"
+  run TOKEN_IS_APP=true DRY_RUN=false CHECKS_WATCH_TIMEOUT=1 MOCK_WATCH_SLEEP=8 MOCK_SNAP="$s" \
+    MOCK_MANIFEST_BASE="$MOCK_MANIFEST_BASE" MOCK_MANIFEST_HEAD="$MOCK_MANIFEST_HEAD" \
+    MOCK_CL_BASE="$MOCK_CL_BASE" MOCK_CL_HEAD="$MOCK_CL_HEAD"
+  assert_rc0; assert_line "SKIP #42 (checks-not-green)"; assert_nomerge
+  echo "OK: ${CASE}"
+else
+  echo "SKIP (no timeout(1) on this host): #213 watch-timeout case"
+fi
 
 CASE="missing-manifest (404 at base) → SKIP, no merge"
 E; run TOKEN_IS_APP=true DRY_RUN=false RETRY_MAX=1 MOCK_SNAP="$MOCK_SNAP" \
