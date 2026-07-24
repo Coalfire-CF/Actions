@@ -102,4 +102,19 @@ run DRY_RUN=false MOCK_PRJSON="$(prjson 'mallory')" MOCK_CHECKS="$GREEN_CHECKS"
 assert_rc0; assert_line "SKIP #7 (author-not-allowlisted)"; assert_nomerge
 echo "OK: ${CASE}"
 
+# ---- L6/#212: `dependabot[bot]` is a valid glob ([bot] = char class). With a
+# matching file in CWD, an unquoted `for a in $AUTHOR_ALLOWLIST` would expand the
+# allowlist token against it and corrupt the match → a trusted author wrongly SKIPs.
+CASE="#212 author allowlist is glob-safe (CWD decoy does not corrupt match)"
+gdir="$WORK/globtest"; mkdir -p "$gdir"; : > "$gdir/dependabott"   # matches dependabot[bot]
+prj="$(prjson 'dependabot[bot]')"
+( cd "$gdir"
+  env "PATH=$BIN:$PATH" "GH_TRACE=$WORK/trace212" \
+    REPO="Coalfire-CF/demo" PR_NUMBER=7 MERGE_METHOD=squash RETRY_MAX=1 DRY_RUN=false \
+    MOCK_PRJSON="$prj" MOCK_CHECKS="$GREEN_CHECKS" bash "$SCRIPT" > "$WORK/out212" 2>/dev/null
+)
+grep -qF "MERGED #7" "$WORK/out212" \
+  || fail "${CASE}: dependabot[bot] author must still MERGE despite a CWD glob-decoy, got: $(cat "$WORK/out212")"
+echo "OK: ${CASE}"
+
 echo "ALL TESTS PASSED"

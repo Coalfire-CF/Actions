@@ -154,7 +154,12 @@ fi
 # "triager labels an arbitrary PR into a live merge" vector on repos without
 # required status checks.
 author_ok=false
-for a in $AUTHOR_ALLOWLIST; do
+# L6/#212: read into an array (word-split, NO pathname expansion). An unquoted
+# `for a in $AUTHOR_ALLOWLIST` globs — and `dependabot[bot]` is a valid glob
+# ([bot] is a char class), so a matching file in CWD would corrupt the token and
+# make a trusted author wrongly fail the allowlist.
+read -ra _allow <<< "$AUTHOR_ALLOWLIST"
+for a in "${_allow[@]}"; do
   [ "$AUTHOR" = "$a" ] && { author_ok=true; break; }
 done
 if [ "$author_ok" != "true" ]; then

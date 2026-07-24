@@ -174,14 +174,19 @@ printf '%s' "$SNAP" | jq -e '.labels[]?|select(.name=="autorelease: pending")' >
 
 # ================= GATE 7 — author allowlist =================
 author_ok=false
-for a in $AUTHOR_ALLOWLIST; do [ "$AUTHOR" = "$a" ] && { author_ok=true; break; }; done
+# L6/#212: array read (word-split, NO globbing) — `coalfire-release[bot]` is a
+# valid glob, so an unquoted expansion could match a CWD file and corrupt the token.
+read -ra _authors <<< "$AUTHOR_ALLOWLIST"
+for a in "${_authors[@]}"; do [ "$AUTHOR" = "$a" ] && { author_ok=true; break; }; done
 [ "$author_ok" = "true" ] || { DECISION_BODY="Author '${AUTHOR}' not in allowlist."; skip "author-not-allowlisted"; }
 
 # ================= GATE 8 — changed files ⊆ allowlist =================
+# L6/#212: array read (word-split, no globbing) for the file allowlist too.
+read -ra _allow_files <<< "$RELEASE_FILE_ALLOWLIST"
 while IFS= read -r f; do
   [ -n "$f" ] || continue
   ok=false
-  for a in $RELEASE_FILE_ALLOWLIST; do [ "$f" = "$a" ] && { ok=true; break; }; done
+  for a in "${_allow_files[@]}"; do [ "$f" = "$a" ] && { ok=true; break; }; done
   [ "$ok" = "true" ] || { DECISION_BODY="Changed file outside the release allowlist: \`${f}\`."; skip "unexpected-file"; }
 done < <(printf '%s' "$SNAP" | jq -r '.files[].path')
 
