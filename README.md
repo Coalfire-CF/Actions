@@ -231,6 +231,7 @@ Issue labels:
 |       |-- terraform
 |-- tests
     |-- auto-merge-decide.test.sh
+    |-- cache-integrity.test.sh
     |-- cache-read.test.sh
     |-- fixtures
     |   |-- auto-merge-decide
