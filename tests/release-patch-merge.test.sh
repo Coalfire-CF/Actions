@@ -169,6 +169,22 @@ run TOKEN_IS_APP=true DRY_RUN=false MOCK_SNAP="$s"
 assert_rc0; assert_line "SKIP #42 (author-not-allowlisted)"; assert_nomerge
 echo "OK: ${CASE}"
 
+CASE="#212 author allowlist is glob-safe (CWD decoy does not corrupt match)"
+E; s="$(snap '.author.login="coalfire-release[bot]"')"
+gdir="$WORK/globtest"; mkdir -p "$gdir"; : > "$gdir/coalfire-releaseb"   # matches coalfire-release[bot]
+( cd "$gdir"
+  env "PATH=$BIN:$PATH" "GH_TRACE=$WORK/trace212" \
+    REPO="Coalfire-CF/demo" PR_NUMBER=42 MERGE_METHOD=squash RETRY_MAX=1 \
+    CHECKS_GRACE_TRIES=2 CHECKS_GRACE_SLEEP=0 "MOCK_BASE_SHA=$BASE_SHA" \
+    TOKEN_IS_APP=true DRY_RUN=false MOCK_SNAP="$s" \
+    MOCK_MANIFEST_BASE="$MOCK_MANIFEST_BASE" MOCK_MANIFEST_HEAD="$MOCK_MANIFEST_HEAD" \
+    MOCK_CL_BASE="$MOCK_CL_BASE" MOCK_CL_HEAD="$MOCK_CL_HEAD" \
+    bash "$SCRIPT" > "$WORK/out212" 2>/dev/null
+)
+grep -qF "MERGED #42" "$WORK/out212" \
+  || fail "${CASE}: coalfire-release[bot] author must still MERGE despite a CWD glob-decoy, got: $(cat "$WORK/out212")"
+echo "OK: ${CASE}"
+
 CASE="first-release (new package key in manifest)"
 E; mb="$WORK/f.base"; mh="$WORK/f.head"; printf '{".":"1.2.3"}' >"$mb"; printf '{".":"1.2.4","pkg/new":"0.1.0"}' >"$mh"
 run TOKEN_IS_APP=true DRY_RUN=false MOCK_SNAP="$MOCK_SNAP" MOCK_MANIFEST_BASE="$mb" MOCK_MANIFEST_HEAD="$mh" MOCK_CL_BASE="$MOCK_CL_BASE" MOCK_CL_HEAD="$MOCK_CL_HEAD"

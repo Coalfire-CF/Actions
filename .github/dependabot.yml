@@ -20,3 +20,15 @@ updates:
         patterns: ["*"]
         exclude-patterns: ["Coalfire-CF/*"]
         update-types: ["minor", "patch"]
+  # npm (#204): this repo ships package.json + package-lock.json (markdownlint-cli2),
+  # which org-dependabot.yml maps to the npm ecosystem — so the dogfood must declare
+  # it too, or advisories against the pinned tree open no bump PRs. The generator
+  # emits groups only for github-actions (the Coalfire-CF/* first-party split does
+  # not apply to npm), so npm is a plain block; majors arrive as singleton PRs.
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "daily"
+    commit-message:
+      prefix: "chore"
+      include: "scope"

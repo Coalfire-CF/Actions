@@ -18,7 +18,9 @@
     {
       "customType": "regex",
       "description": "Coalfire-CF git-module sources pinned as ?ref=<sha> # vX.Y.Z (source-pin PASS shape)",
-      "fileMatch": ["\\.tf$"],
+      // #224: use managerFilePatterns (the current key) rather than the deprecated
+      // alias; a /regex/-wrapped value preserves the prior regex-match semantics.
+      "managerFilePatterns": ["/\\.tf$/"],
       "matchStrings": [
         "(?<host>git::https://github\\.com/|github\\.com/)(?<depName>Coalfire-CF/[A-Za-z0-9._-]+?)(?<gitsuffix>\\.git)?(?<subdir>//[^\"?]*)?\\?ref=(?<currentDigest>[a-fA-F0-9]{40})\"(?<sp>[ \\t]*)#[ \\t]*(?<currentValue>v[0-9]+\\.[0-9]+\\.[0-9]+)"
       ],
