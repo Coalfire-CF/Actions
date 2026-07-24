@@ -106,6 +106,21 @@ if [ "$MANUAL" = "true" ] && [ "$DECISION" = "approve" ]; then
   DECISION="manual"
 fi
 
+# Dedupe blocked labels while preserving order and the leading-space format.
+# The group-aware (UPDATE_TYPE_META) and aggregate (SEMVER_TYPE=major) gates both
+# append blocked/major-bump; a duplicate in this output would mislead any
+# consumer that splits/counts blocked_labels (issue #207).
+if [ -n "$BLOCKED_LABELS" ]; then
+  _seen=""
+  _dedup=""
+  for _label in $BLOCKED_LABELS; do
+    case " ${_seen} " in *" ${_label} "*) continue ;; esac
+    _seen="${_seen} ${_label}"
+    _dedup="${_dedup} ${_label}"
+  done
+  BLOCKED_LABELS="$_dedup"
+fi
+
 # Determine if medium risk (not blocked but warrants attention)
 if [ "$DECISION" = "approve" ] && [ "$SEMVER_TYPE" = "minor" ]; then
   RISK_LEVEL="medium"

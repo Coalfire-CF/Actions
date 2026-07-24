@@ -112,13 +112,19 @@ while IFS= read -r entry; do
     emit_fail "$file" "$lineno" "required_version '${constraint}' is open-ended (no upper bound); RFC-0004 requires a ceiling (< ${CEILING} or ~>)"
     continue
   fi
-  # The first concrete version in the constraint is the effective lower/anchor bound.
-  low="$(printf '%s' "$constraint" | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1)"
-  if [ -n "$low" ]; then
-    # Normalize to X.Y.Z for comparison.
-    [[ "$low" =~ ^[0-9]+\.[0-9]+$ ]] && low="${low}.0"
-    if ! in_band "$low"; then
-      emit_fail "$file" "$lineno" "required_version '${constraint}' anchors at ${low}, outside the band [>= ${FLOOR}, < ${CEILING})"
+  # The first concrete version is the effective lower/anchor bound ONLY when the
+  # constraint actually carries a lower bound (>=, >, or ~> — all contain '>').
+  # An upper-bound-only constraint (e.g. "< 2.0.0") has no lower anchor; its first
+  # concrete version is the ceiling, so anchoring on it would spuriously flag a
+  # legitimately upper-bounded constraint as out-of-band (issue #209).
+  if [[ "$constraint" == *">"* ]]; then
+    low="$(printf '%s' "$constraint" | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1)"
+    if [ -n "$low" ]; then
+      # Normalize to X.Y.Z for comparison.
+      [[ "$low" =~ ^[0-9]+\.[0-9]+$ ]] && low="${low}.0"
+      if ! in_band "$low"; then
+        emit_fail "$file" "$lineno" "required_version '${constraint}' anchors at ${low}, outside the band [>= ${FLOOR}, < ${CEILING})"
+      fi
     fi
   fi
 done < <(grep -rnE 'required_version[[:space:]]*=' "$ROOT" \

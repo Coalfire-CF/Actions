@@ -12,14 +12,14 @@
 # Each fixture under tests/fixtures/auto-merge-decide/*.env sets the complete
 # input environment for one of the four decision paths and is asserted against
 # the exact decision AND blocked_labels the gate emits:
-#   major_blocked       -> block   / " blocked/major-bump blocked/major-bump"
+#   major_blocked       -> block   / " blocked/major-bump"
 #   osv_blocked         -> block   / " blocked/known-vuln"
 #   parse_error_manual  -> manual  / ""            (fail-closed, no blocker)
 #   first_party_waiver  -> approve / ""            (Scorecard waived, RFC-0010)
 #
-# NOTE on the doubled blocked/major-bump: both the group-aware UPDATE_TYPE_META
-# gate and the aggregate SEMVER_TYPE=major gate append the label. That is the
-# characterized present-day behavior — asserted verbatim, not "fixed" here.
+# NOTE on blocked/major-bump: both the group-aware UPDATE_TYPE_META gate and the
+# aggregate SEMVER_TYPE=major gate detect a major bump, but the gate dedupes
+# BLOCKED_LABELS before emitting, so the label appears exactly once (issue #207).
 
 set -uo pipefail
 
@@ -66,7 +66,7 @@ assert_path() {
 }
 
 # ---- The four characterized decision paths (expected-PASS) ----
-assert_path major_blocked      block   " blocked/major-bump blocked/major-bump" high
+assert_path major_blocked      block   " blocked/major-bump"                    high
 assert_path osv_blocked        block   " blocked/known-vuln"                    high
 assert_path parse_error_manual manual  ""                                       high
 assert_path first_party_waiver approve ""                                       medium
