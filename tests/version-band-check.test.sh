@@ -37,6 +37,18 @@ out="$(STRICT=true "$CHECK" "$pass" "$FLOOR" "$CEILING" 2>&1)"; code=$?
 echo "$out" | grep -q "::error" && fail "PASS tree emitted an error: $out"
 echo "OK: in-band concrete + bounded/pessimistic constraints pass (exit $code)"
 
+# ---- PASS: ceiling-only required_version (upper-bounded, no lower anchor) — issue #209 ----
+ceil="$root/ceil"; mkdir -p "$ceil"
+cat > "$ceil/main.tf" <<'EOF'
+terraform {
+  required_version = "< 2.0.0"
+}
+EOF
+out="$(STRICT=true "$CHECK" "$ceil" "$FLOOR" "$CEILING" 2>&1)"; code=$?
+[ "$code" -eq 0 ] || fail "ceiling-only constraint should pass under strict, got $code: $out"
+echo "$out" | grep -q "::error" && fail "ceiling-only constraint emitted an error: $out"
+echo "OK: ceiling-only required_version '< 2.0.0' passes under strict (exit $code)"
+
 # ---- FAIL: below floor (.terraform-version) ----
 low="$root/low"; mkdir -p "$low"; printf '1.14.9\n' > "$low/.terraform-version"
 out="$(STRICT=true "$CHECK" "$low" "$FLOOR" "$CEILING" 2>&1)"; code=$?
