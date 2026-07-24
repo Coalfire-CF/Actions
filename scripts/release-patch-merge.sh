@@ -64,8 +64,22 @@ MARKER="<!-- org-release-auto-patch -->"
 log() { echo "[release-patch-merge] $*" >&2; }
 
 # ---- gh read wrappers (transient blip → retry via with_retry) ----
+# L8/#214: classify on evidence — only retry transient classes (429 rate-limit,
+# 5xx, timeouts/conn resets). A definitive 4xx (esp. 404 for an absent manifest)
+# is permanent: return 1 so with_retry stops immediately instead of spinning
+# RETRY_MAX times. Unknown failures also default permanent (retry-lib philosophy:
+# never spin on an unclassifiable error).
 # shellcheck disable=SC2317,SC2329  # invoked indirectly via `with_retry -- _gh_once` (SC2317/SC2329 are the version-dependent codes for the same "unreachable/unused function" false positive)
-_gh_once()      { local o; if o="$(gh "$@" 2>/dev/null)"; then printf '%s' "$o"; return 0; fi; return "$RETRY_TRANSIENT_RC"; }
+_gh_once() {
+  local o err rc
+  err="$(mktemp)"
+  if o="$(gh "$@" 2>"$err")"; then rm -f "$err"; printf '%s' "$o"; return 0; fi
+  rc=$?
+  if grep -qiE 'HTTP (429|5[0-9][0-9])|rate limit|timeout|timed out|temporar|connection reset|connection refused|no such host|i/o timeout|EOF' "$err"; then
+    rm -f "$err"; return "$RETRY_TRANSIENT_RC"      # transient — retry
+  fi
+  rm -f "$err"; return "$rc"                          # permanent (4xx / unknown) — no spin
+}
 gh_read()       { with_retry "$RETRY_MAX" 2 20 -- _gh_once "$@"; }
 # Read a repo file's decoded content at a pinned SHA (empty string if absent).
 read_file_at() { # <path> <sha>
@@ -93,9 +107,12 @@ upsert_comment() { # <decision-text>
 **org-release auto-patch** — ${1}
 ${DECISION_BODY}
 _run: ${RUN_URL:-n/a}_"
-  # Locate an existing marker comment (edit, never re-post).
-  id="$(gh_read api "repos/${REPO}/issues/${PR_NUMBER}/comments" \
-        --jq "map(select(.body|contains(\"${MARKER}\")))|last|.id // empty" 2>/dev/null || true)"
+  # Locate an existing marker comment (edit, never re-post). M6/#203: --paginate so
+  # a PR with >30 comments still finds the marker (else the upsert appends a new
+  # comment every run). With --paginate the --jq filter runs per page, so emit each
+  # matching id and take the last (most recent) rather than a per-page `last`.
+  id="$(gh_read api --paginate "repos/${REPO}/issues/${PR_NUMBER}/comments" \
+        --jq ".[]|select(.body|contains(\"${MARKER}\"))|.id" 2>/dev/null | tail -n1 || true)"
   if [ -n "$id" ]; then
     gh api -X PATCH "repos/${REPO}/issues/comments/${id}" -f body="$body" >/dev/null 2>&1 || log "comment edit failed (non-fatal)"
   else
@@ -240,10 +257,26 @@ case "$CHECK_STATE" in
   EMPTY)   [ "$ALLOW_ZERO_CHECKS" = "true" ] || { DECISION_BODY="No status checks registered on the PR."; skip "zero-checks"; }; CHECK_STATE="GREEN" ;;
   FAIL)    DECISION_BODY="A required check failed."; skip "checks-fail" ;;
   PENDING)
-    if gh pr checks "$PR_NUMBER" --repo "$REPO" --watch --fail-fast >/dev/null 2>&1; then
-      CHECK_STATE="GREEN"
+    # L7/#213: bound the watch so a stuck/never-completing check can't hang the
+    # step until the workflow-level timeout. `timeout` exits 124 on deadline →
+    # treated as checks-not-green. Fall back to an unbounded watch only where
+    # coreutils `timeout` is unavailable (stock macOS); CI runners have it.
+    WATCH_TIMEOUT="${CHECKS_WATCH_TIMEOUT:-900}"
+    if command -v timeout >/dev/null 2>&1; then
+      watch_cmd=(timeout "$WATCH_TIMEOUT" gh pr checks "$PR_NUMBER" --repo "$REPO" --watch --fail-fast)
     else
-      DECISION_BODY="Checks did not go green (failed or timed out while watching)."
+      watch_cmd=(gh pr checks "$PR_NUMBER" --repo "$REPO" --watch --fail-fast)
+    fi
+    # `|| watch_rc=$?` keeps set -e from aborting on a non-zero (failed/timeout) watch.
+    watch_rc=0
+    "${watch_cmd[@]}" >/dev/null 2>&1 || watch_rc=$?
+    if [ "$watch_rc" -eq 0 ]; then
+      CHECK_STATE="GREEN"
+    elif [ "$watch_rc" -eq 124 ]; then
+      DECISION_BODY="Checks did not complete within ${WATCH_TIMEOUT}s while watching."
+      skip "checks-not-green"
+    else
+      DECISION_BODY="Checks did not go green (failed while watching)."
       skip "checks-not-green"
     fi ;;
 esac
