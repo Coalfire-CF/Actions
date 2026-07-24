@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.15.1](https://github.com/Coalfire-CF/Actions/compare/v0.15.0...v0.15.1) (2026-07-24)
+
+
+### Bug Fixes
+
+* **auto-merge:** cache-integrity hardening (H1/H2/M4) ([#258](https://github.com/Coalfire-CF/Actions/issues/258)) ([703dcb1](https://github.com/Coalfire-CF/Actions/commit/703dcb11501b3095f309556afa5e286dc873e0e3))
+* **auto-merge:** check-script robustness + test coverage (M2/M3/L19) — [#199](https://github.com/Coalfire-CF/Actions/issues/199) [#200](https://github.com/Coalfire-CF/Actions/issues/200) [#225](https://github.com/Coalfire-CF/Actions/issues/225) [#206](https://github.com/Coalfire-CF/Actions/issues/206) ([#261](https://github.com/Coalfire-CF/Actions/issues/261)) ([6051ce8](https://github.com/Coalfire-CF/Actions/commit/6051ce86cdc494b25d5f68f88b768df22dc4c93f))
+* **ci:** route step outputs/inputs through env: into github-script (H3/L11/L13) — [#196](https://github.com/Coalfire-CF/Actions/issues/196) [#217](https://github.com/Coalfire-CF/Actions/issues/217) [#219](https://github.com/Coalfire-CF/Actions/issues/219) ([#260](https://github.com/Coalfire-CF/Actions/issues/260)) ([f8b8691](https://github.com/Coalfire-CF/Actions/commit/f8b86912db8689542162ff24d8e5a87dc1c79a27))
+* **ci:** workflow hygiene — notify coverage, event guard, perms, dead code (L9/L10/L16/L17) — [#215](https://github.com/Coalfire-CF/Actions/issues/215) [#216](https://github.com/Coalfire-CF/Actions/issues/216) [#222](https://github.com/Coalfire-CF/Actions/issues/222) [#223](https://github.com/Coalfire-CF/Actions/issues/223) ([#269](https://github.com/Coalfire-CF/Actions/issues/269)) ([f9abe2e](https://github.com/Coalfire-CF/Actions/commit/f9abe2e2c4161d79e6d64e7b4a1be61474de2ea3))
+* **config:** npm dependabot ecosystem, renovate key rename, glob-safe allowlists (M7/L18/L6) — [#204](https://github.com/Coalfire-CF/Actions/issues/204) [#224](https://github.com/Coalfire-CF/Actions/issues/224) [#212](https://github.com/Coalfire-CF/Actions/issues/212) ([#264](https://github.com/Coalfire-CF/Actions/issues/264)) ([d8233c4](https://github.com/Coalfire-CF/Actions/commit/d8233c43f8bb8374de0b9b83e19c895535437e07))
+* correct two low-severity script bugs ([#207](https://github.com/Coalfire-CF/Actions/issues/207) duplicate label, [#209](https://github.com/Coalfire-CF/Actions/issues/209) ceiling-only band)  ([#257](https://github.com/Coalfire-CF/Actions/issues/257)) ([24fa4ec](https://github.com/Coalfire-CF/Actions/commit/24fa4ecad85285e508578a47ca28cf9a41dc09df))
+* **docs/ci:** tree-readme quote-strip, risk-label matrix, current example pins (L2/L14/L15) ([#270](https://github.com/Coalfire-CF/Actions/issues/270)) ([c6528d9](https://github.com/Coalfire-CF/Actions/commit/c6528d9ef24da8ffa2d8c9902be8aef349d98a3d))
+* **gitleaks:** fail-closed outputs on error + sudo install (L4/L5) — [#210](https://github.com/Coalfire-CF/Actions/issues/210) [#211](https://github.com/Coalfire-CF/Actions/issues/211) ([#267](https://github.com/Coalfire-CF/Actions/issues/267)) ([c811be1](https://github.com/Coalfire-CF/Actions/commit/c811be1a4994a8387609f8eaf840bb443fa11fc0))
+* **reconcile:** pr-green-merge compare-and-swap merge (M5) ([#263](https://github.com/Coalfire-CF/Actions/issues/263)) ([800ef6b](https://github.com/Coalfire-CF/Actions/commit/800ef6b1571b9b2b009e878d684f666ecdd11cdc))
+* **release:** paginate comment lookup, bound watch, classify gh failures (M6/L7/L8) — [#203](https://github.com/Coalfire-CF/Actions/issues/203) [#213](https://github.com/Coalfire-CF/Actions/issues/213) [#214](https://github.com/Coalfire-CF/Actions/issues/214) ([#262](https://github.com/Coalfire-CF/Actions/issues/262)) ([503a081](https://github.com/Coalfire-CF/Actions/commit/503a0818dd24d214c2fdbc2518de76446ba337cd))
+* **terraform:** make the TF gates actually enforce (H4/M1/M8/L12) — [#197](https://github.com/Coalfire-CF/Actions/issues/197) [#198](https://github.com/Coalfire-CF/Actions/issues/198) [#205](https://github.com/Coalfire-CF/Actions/issues/205) [#218](https://github.com/Coalfire-CF/Actions/issues/218) ([#259](https://github.com/Coalfire-CF/Actions/issues/259)) ([764a9f5](https://github.com/Coalfire-CF/Actions/commit/764a9f50256bff7b2502ec16d85b26e5cef37ab2))
+
+
+### Miscellaneous
+
+* **deps-dev:** bump markdownlint-cli2 from 0.23.0 to 0.23.1 ([#266](https://github.com/Coalfire-CF/Actions/issues/266)) ([252d974](https://github.com/Coalfire-CF/Actions/commit/252d974e6f86db585a4795c3a9da3d33fe9e7b89))
+* **deps:** bump actions/setup-go from 6.5.0 to 7.0.0 ([#248](https://github.com/Coalfire-CF/Actions/issues/248)) ([1728239](https://github.com/Coalfire-CF/Actions/commit/1728239e00875156bd4eb59058f9fdddf1a256d3))
+* **deps:** bump aws-actions/configure-aws-credentials ([#268](https://github.com/Coalfire-CF/Actions/issues/268)) ([d9908b6](https://github.com/Coalfire-CF/Actions/commit/d9908b6d43ae8893f7fd39c1dea5213da9ae8674))
+* **deps:** bump Coalfire-CF/Actions/actions/gitleaks ([#265](https://github.com/Coalfire-CF/Actions/issues/265)) ([8192ede](https://github.com/Coalfire-CF/Actions/commit/8192edef18e3f0f46cd5abd19d53206d65bf3cb7))
+* **deps:** bump the third-party group across 1 directory with 2 updates ([#250](https://github.com/Coalfire-CF/Actions/issues/250)) ([0417480](https://github.com/Coalfire-CF/Actions/commit/0417480c947ecb2730b0f341c13148dba9b69258))
+
 ## [0.15.0](https://github.com/Coalfire-CF/Actions/compare/v0.14.0...v0.15.0) (2026-07-24)
 
 
