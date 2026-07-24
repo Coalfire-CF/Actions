@@ -43,8 +43,9 @@ on:
         required: false
 
 permissions:
+  # #222: this generator commits + pushes the generated dependabot.yml (needs
+  # contents:write) but makes no PR-API calls — drop the unused pull-requests grant.
   contents: write
-  pull-requests: write
 
 jobs:
   sync:

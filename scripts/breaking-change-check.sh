@@ -299,10 +299,6 @@ if [ "$SHARED_CACHE_HIT" = "false" ]; then
     AI_RESPONSE='{"output":{"message":{"content":[{"text":"{\"breaking\":false,\"confidence\":0,\"risks\":[\"API call failed\"],\"summary\":\"Analysis errored — routed to manual review\"}"}]}}}'
   fi
 
-  if [ -s /tmp/bedrock_err.log ]; then
-    echo "Bedrock stderr: $(cat /tmp/bedrock_err.log)"
-  fi
-
   # Parse the Bedrock Converse response
   AI_TEXT=$(echo "$AI_RESPONSE" | jq -r '.output.message.content[0].text // "{}"')
   # Strip markdown fences if present, then validate JSON

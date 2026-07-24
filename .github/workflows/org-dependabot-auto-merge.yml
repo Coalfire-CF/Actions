@@ -169,7 +169,7 @@ jobs:
       - name: Parse dependency details
         id: parse
         env:
-          PR_TITLE: ${{ github.event.pull_request.title }}
+          # #223: removed unused PR_TITLE env (no run: script referenced it).
           META_DEP_NAMES: ${{ steps.metadata.outputs.dependency-names }}
           META_PREV_VER: ${{ steps.metadata.outputs.previous-version }}
           META_NEW_VER: ${{ steps.metadata.outputs.new-version }}
@@ -210,7 +210,7 @@ jobs:
         env:
           ECOSYSTEM: ${{ steps.metadata.outputs.package-ecosystem }}
           DEP_NAMES: ${{ steps.metadata.outputs.dependency-names }}
-          PR_TITLE: ${{ github.event.pull_request.title }}
+          # #223: removed unused PR_TITLE env (no run: script referenced it).
           FIRST_PARTY_PREFIX: ${{ inputs.first_party_prefix }}
         run: |
           set -euo pipefail

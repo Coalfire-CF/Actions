@@ -94,12 +94,9 @@ jobs:
         # Set API version (default to 3 for Cloud, can be overridden to 2 for older instances)
         API_VERSION="${JIRA_API_VERSION:-3}"
 
-        # Prepare the issue description with link back to GitHub
-        ISSUE_BODY=$(cat <<'EOF'
-        ${ISSUE_BODY_INPUT}
-        EOF
-        )
-        # Substitute the actual value via envsubst-free approach
+        # Prepare the issue description, appending a link back to the GitHub issue.
+        # (#223: removed a dead `${ISSUE_BODY_INPUT}` heredoc — wrong var name,
+        # never substituted, immediately overwritten by the line below.)
         ISSUE_BODY="${INPUT_ISSUE_BODY}
 
         ---

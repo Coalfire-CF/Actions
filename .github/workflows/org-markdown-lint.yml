@@ -108,7 +108,9 @@ jobs:
 
     - name: Create Fail Comment
       uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
-      if: failure()
+      # #216: guard on pull_request — on a non-PR trigger context.issue.number is
+      # undefined and github.rest.issues.createComment throws.
+      if: failure() && github.event_name == 'pull_request'
       with:
         github-token: ${{ secrets.GITHUB_TOKEN }}
         script: |
