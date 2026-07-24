@@ -35,7 +35,7 @@ on:
         description: 'Coalfire-CF/caliper ref to install (pin a release SHA; update deliberately)'
         required: false
         type: string
-        default: 'b08f66017477298c99daf95ef321aca4fc281e38' # main @ P4 merge, pre-v1 — replace with the v0.1.0 release SHA when release-please cuts it (RFC-0008)
+        default: 'c0d8b9bcfd26d6dc3f258cef4edb3ca92a658692' # v0.1.0 (release-please; evaluation-tier 0.x pin, RFC-0008)
       baseline:
         description: 'Rev5 baseline for the crosswalk projection'
         required: false
