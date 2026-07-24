@@ -109,13 +109,22 @@ jobs:
     - name: Create issue for expired exceptions
       if: steps.check_expired.outputs.has_expired == 'true'
       uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+      # H3/#196: .trivyignore.yaml `statement` content flows into expired_list /
+      # expiring_soon_list. Interpolating it into the JS template literal let a
+      # backtick or ${…} in a statement break out and run arbitrary code on a
+      # runner whose token has issues:write. Pass via env: + process.env instead,
+      # mirroring the "Generate summary" step below.
+      env:
+        EXPIRED_LIST: ${{ steps.check_expired.outputs.expired_list }}
+        EXPIRING_SOON_LIST: ${{ steps.check_expired.outputs.expiring_soon_list }}
+        HAS_EXPIRING_SOON: ${{ steps.check_expired.outputs.has_expiring_soon }}
       with:
         github-token: ${{ secrets.GITHUB_TOKEN }}
         script: |
           const today = new Date().toISOString().split('T')[0];
-          const expiredList = `${{ steps.check_expired.outputs.expired_list }}`;
-          const expiringSoonList = `${{ steps.check_expired.outputs.expiring_soon_list }}`;
-          const hasExpiringSoon = '${{ steps.check_expired.outputs.has_expiring_soon }}' === 'true';
+          const expiredList = process.env.EXPIRED_LIST || '';
+          const expiringSoonList = process.env.EXPIRING_SOON_LIST || '';
+          const hasExpiringSoon = process.env.HAS_EXPIRING_SOON === 'true';
 
           let body = `## SAST Exception Review Required\n\n`;
           body += `The following security exceptions in \`.trivyignore.yaml\` have expired and require review.\n\n`;
