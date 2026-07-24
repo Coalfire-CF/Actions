@@ -277,12 +277,16 @@ jobs:
       - name: Post plan to PR
         if: github.event_name == 'pull_request' && always()
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        # L13/#219: pass the step output via env: + process.env instead of
+        # interpolating ${{ }} into the JS (repo hardening convention).
+        env:
+          PLAN_EXITCODE: ${{ steps.plan.outputs.exitcode }}
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const fs = require('fs');
             let plan = fs.readFileSync(process.env.GITHUB_WORKSPACE + '/plan_output.txt', 'utf8');
-            const exitCode = '${{ steps.plan.outputs.exitcode }}';
+            const exitCode = process.env.PLAN_EXITCODE;
 
             let status = '✅ No changes';
             if (exitCode === '2') status = '⚠️ Changes detected';

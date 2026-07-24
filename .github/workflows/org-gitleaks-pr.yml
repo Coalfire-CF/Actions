@@ -46,11 +46,15 @@ jobs:
     - name: Create PR comment
       if: always()
       uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+      # L13/#219: pass the step output via env: + process.env instead of
+      # interpolating ${{ }} into the JS (repo hardening convention).
+      env:
+        GITLEAKS_PASSED: ${{ steps.gitleaks.outputs.passed }}
       with:
         github-token: ${{ secrets.GITHUB_TOKEN }}
         script: |
           const fs = require('fs');
-          const passed = '${{ steps.gitleaks.outputs.passed }}' === 'true';
+          const passed = process.env.GITLEAKS_PASSED === 'true';
 
           if (passed) {
             const output = `#### Gitleaks Secret Scan Results\n\n` +

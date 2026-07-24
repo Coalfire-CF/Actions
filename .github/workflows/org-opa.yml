@@ -97,6 +97,9 @@ jobs:
         id: guard
         env:
           POLICY_REF: ${{ inputs.policy_ref }}
+          # L11/#217: route policy_repo through env: for consistency with the
+          # repo's hardening pattern, rather than interpolating ${{ }} into run:.
+          POLICY_REPO: ${{ inputs.policy_repo }}
           CHECKOUT_OUTCOME: ${{ steps.policies.outcome }}
         run: |
           set -eo pipefail
@@ -104,7 +107,7 @@ jobs:
             echo "::notice::org-opa: no policy_ref provided — skipping (advisory). Pin org-opa-policies by release SHA to enable."
             echo "skip=true" >> "$GITHUB_OUTPUT"
           elif [ "$CHECKOUT_OUTCOME" != "success" ]; then
-            echo "::notice::org-opa: policy repo/ref unreachable (${{ inputs.policy_repo }}@${POLICY_REF}) — skipping (advisory)."
+            echo "::notice::org-opa: policy repo/ref unreachable (${POLICY_REPO}@${POLICY_REF}) — skipping (advisory)."
             echo "skip=true" >> "$GITHUB_OUTPUT"
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
