@@ -149,10 +149,15 @@ echo "$OUT" | grep -q "WOULD-BOOTSTRAP Coalfire-CF/new-repo (8 files)" || fail "
 echo "$TRACE" | grep -qE "$WRITE_RE" && fail "dry-run issued a WRITE: $(echo "$TRACE" | grep -E "$WRITE_RE")"
 echo "OK: dry-run generic public → WOULD-BOOTSTRAP (8 files), zero mutating calls"
 
-# ---- Case 2: dry-run, terraform private → common(8) + terraform(5) + private(1) = 14. ----
+# ---- Case 2: dry-run, terraform private → common(8) + terraform(3) + private(1) = 12. ----
+# NOTE: this count is DERIVED FROM THE TEMPLATE INVENTORY on disk, i.e. the number
+# of *.tmpl files under templates/bootstrap/{common,terraform,private}. If you add
+# or delete a template, update this number in the SAME change. A failure here means
+# the inventory moved, not that the bootstrapper broke — the assertion is a tripwire
+# for accidental template loss, so keep it an exact count rather than a lower bound.
 run_helper "$META_PRIV" "$LANGS_HCL" "$PRS_NONE" "" true 1
-echo "$OUT" | grep -q "WOULD-BOOTSTRAP Coalfire-CF/new-repo (14 files)" || fail "terraform+private dry-run should propose 14 files (got: $OUT)"
-echo "OK: dry-run terraform private → WOULD-BOOTSTRAP (14 files)"
+echo "$OUT" | grep -q "WOULD-BOOTSTRAP Coalfire-CF/new-repo (12 files)" || fail "terraform+private dry-run should propose 12 files (got: $OUT)"
+echo "OK: dry-run terraform private → WOULD-BOOTSTRAP (12 files)"
 
 # ---- Case 3: adopted repo (org-release.yml present) → SKIP (compliant). ----
 run_helper "$META_PUB" "$LANGS_NONE" "$PRS_NONE" ".github/workflows/org-release.yml" true 1
