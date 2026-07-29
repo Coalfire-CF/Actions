@@ -22,7 +22,7 @@ Called by downstream repos on pull requests.
 |----------|------|-------------|
 | Trivy PR | `org-trivy-pr.yml` | Security scanning of changed Terraform files |
 | Gitleaks | `org-gitleaks-pr.yml` | Secret detection on PR commits |
-| Terraform Validate | `org-terraform-validate.yml` | `terraform init` + `terraform validate` with PR comment |
+| Terraform Validate | `org-terraform-validate.yml` | `terraform init` + `terraform validate` with PR comment. Takes `working_directory` (default `.`) — **repos with no root module must set or matrix it**, or the gate validates an empty directory |
 | Terraform fmt | `org-terraform-fmt.yml` | Format check and auto-fix for Terraform files |
 | Terraform Docs | `org-terraform-docs.yml` | Auto-generate and commit terraform-docs output (check-only on Dependabot PRs — read-only token can't push; drift surfaced as a warning, [#149](https://github.com/Coalfire-CF/Actions/issues/149)) |
 | Terraform Plan | `org-terraform-plan.yml` | Terraform plan with PR comment |

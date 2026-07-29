@@ -8,6 +8,11 @@ on:
         required: false
         default: ''
         type: string
+      working_directory:
+        description: 'Directory in the caller repo to validate. Default "." preserves the previous root-only behaviour. A repo with no root module (modules/*, examples/*) MUST set this — or matrix over it — or the gate validates an empty directory and passes having examined nothing.'
+        required: false
+        type: string
+        default: '.'
       slack_channel_id:
         description: 'Slack channel ID for failure notifications (optional)'
         required: false
@@ -31,6 +36,11 @@ on:
         required: false
         default: ''
         type: string
+      working_directory:
+        description: 'Directory in the caller repo to validate'
+        required: false
+        type: string
+        default: '.'
 
 permissions:
   contents: read
@@ -103,10 +113,17 @@ jobs:
         git config --global url."https://actions:${APP_TOKEN}@github.com/".insteadOf ssh://git@github.com/
         
     - name: Initialise with no backend
-      run: terraform init -backend=false
+      env:
+        # Default "." is the previous behaviour. A repo with no root module must
+        # set working_directory (or matrix over it), else init/validate run in an
+        # empty directory and pass having examined nothing.
+        WORKDIR: ${{ inputs.working_directory || '.' }}
+      run: terraform -chdir="$WORKDIR" init -backend=false
 
     - name: Validate Terraform
       id: validate
+      env:
+        WORKDIR: ${{ inputs.working_directory || '.' }}
       run: |
         # H4/#197: capture stderr (validate writes diagnostics there) AND preserve
         # terraform's exit code, then re-fail on it. Previously $() captured only
@@ -114,7 +131,7 @@ jobs:
         # continue-on-error and no later re-check — so invalid Terraform passed
         # green with an empty comment. Mirrors the org-terraform-plan.yml idiom.
         set +e
-        terraform validate 2>&1 | sed -r "s/\x1B\[([0-9]{1,2}(;[0-9]{1,2})?)?[m|K]//g" | tee "$GITHUB_WORKSPACE/validate_output.txt"
+        terraform -chdir="$WORKDIR" validate 2>&1 | sed -r "s/\x1B\[([0-9]{1,2}(;[0-9]{1,2})?)?[m|K]//g" | tee "$GITHUB_WORKSPACE/validate_output.txt"
         RC=${PIPESTATUS[0]}
         set -e
         exit "$RC"
