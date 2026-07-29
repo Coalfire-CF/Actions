@@ -254,6 +254,15 @@ until green (then tighten — see §4).
   Firewall service principals (both spellings exist across partitions).
 - **Subnet groups + resolver DNSSEC** cover the database/cache subnet groups and the DNSSEC
   config the module optionally manages; enumerated because they are low-volume and easy to pin.
+- **`ec2:ReleaseAddress` is required by the `if: always()` NAT-EIP sweep** (`enable_nat_eip_sweep`,
+  issue #273), not just by `terraform destroy`. It is already inside the `ec2:*` wildcard above,
+  but a normal green run never *exercises* a release (destroy usually frees the EIP first), so
+  the §4 Access-Analyzer tightening below would **drop it** — leaving the sweep to fail with
+  `UnauthorizedOperation` exactly when it is finally needed (a killed run). When tightening,
+  keep `ec2:ReleaseAddress` (and `ec2:DescribeAddresses`, `ec2:DescribeRegions`) in the
+  enumerated set explicitly. Verify once against the live account:
+  `aws ec2 release-address` is denied only by IAM, so a dry sweep on a run with a known orphan is
+  the only way to confirm the grant — it cannot be proven on paper.
 
 Attach it:
 
@@ -312,6 +321,32 @@ az ad app federated-credential delete --id <azure_client_id> \
   --federated-credential-id coalfire-<repo>-pr
 ```
 
+### RBAC scope — least-privilege, not Contributor-at-subscription (#231)
+
+The federated credential above governs *who* can assume the identity; the identity's **RBAC
+role assignment** governs *what* it can do once assumed. The pilot granted the principal
+**Contributor at subscription scope**, which is far broader than any single module self-test
+needs. Narrow it to the dedicated test subscription's terratest resource group (or a custom
+role scoped to the module's actual resource providers):
+
+```bash
+# Scope the assignment to the ephemeral-RG parent, not the whole subscription.
+az role assignment create --assignee <azure_client_id> \
+  --role Contributor \
+  --scope "/subscriptions/<test_sub_id>/resourceGroups/rg-terratest"
+
+# Remove any pre-existing subscription-scoped grant once the scoped one is verified green.
+az role assignment delete --assignee <azure_client_id> \
+  --scope "/subscriptions/<test_sub_id>"
+```
+
+The tests create their own ephemeral `rg-terratest-*` resource groups, so scope the assignment
+to the parent that can create sibling RGs (or grant `Microsoft.Resources/subscriptions/
+resourceGroups/write` via a custom role) rather than leaving Contributor at the subscription
+root. Same "tighten after first green" discipline as the AWS §4 flow. If you cannot manage role
+assignments in the Gov tenant, record the exact `az role assignment` commands as a blocker for
+the identity owner (Doug), same as the credential step.
+
 ### Org secret visibility
 
 The private-module pull secrets (`CF_TF_PULL_PRIVATE_APP_CLIENTID` /
@@ -356,8 +391,14 @@ starter:
 
 1. Diff the generated policy against the starter, replace the service wildcards
    (`ec2:*`, `s3:*`, `logs:*`) with the enumerated action set Access Analyzer observed, keep the
-   already-tight IAM/KMS statements, and `put-role-policy` the result.
-1. Re-run the lane to confirm it is still green under the tightened policy.
+   already-tight IAM/KMS statements, and `put-role-policy` the result. **Manually add back
+   `ec2:ReleaseAddress`, `ec2:DescribeAddresses`, and `ec2:DescribeRegions`** — the NAT-EIP
+   sweep needs them, but a clean run never triggers a release so CloudTrail (and therefore
+   Access Analyzer) will not have observed it. Dropping them is the silent-green trap called
+   out in §2.
+1. Re-run the lane to confirm it is still green under the tightened policy, and run one sweep
+   against a run with a known orphan to confirm `ec2:ReleaseAddress` actually works (paper
+   review cannot prove an IAM grant).
 
 This converts the "wildcard to get green, then tighten" starter into a real least-privilege
 policy grounded in observed behavior — the same iteration that produced the vpc-nfw KMS/IAM

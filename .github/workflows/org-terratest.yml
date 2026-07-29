@@ -15,6 +15,8 @@ name: Terratest
 #   - GitHub App token scoped to repo owner for private module access (AC-6, IA-2)
 #   - Test timeout enforced to prevent runaway resource creation (SC-6)
 #   - Step summary and artifacts for audit trail (AU-3)
+#   - Optional protected-environment gate for credentialed runs (#237, AC-6/CM-3)
+#   - Optional if:always() run-scoped NAT-EIP sweep backstops SIGKILL teardown (#273, CP-10)
 
 on:
   workflow_call:
@@ -48,6 +50,17 @@ on:
         description: 'Job timeout in minutes. Default 60; raise for large modules whose full create+destroy exceeds an hour (e.g. a full EKS + Splunk Operator deploy).'
         required: false
         default: 60
+        type: number
+      # Flake resilience (#236 / WI-3.5). Opt-in automatic re-run of ONLY the failed tests, via
+      # gotestsum --rerun-fails, capped low. 0 (default) keeps the current single-attempt
+      # behavior — no caller changes unless it sets this. Real-infra flakiness (eventual
+      # consistency, transient API errors) is the primary blocker to promoting the check to
+      # required (ADR-0011); a bounded rerun distinguishes a flake from a real failure without
+      # re-running the whole suite. Keep it low (1–2): a high cap masks a genuinely broken test.
+      rerun_fails:
+        description: 'Max automatic re-runs of failed tests (gotestsum --rerun-fails). 0 disables (default).'
+        required: false
+        default: 0
         type: number
       working_directory:
         description: 'Working directory (repo root by default)'
@@ -102,6 +115,24 @@ on:
         required: false
         default: ''
         type: string
+      # Protected-environment gate (#237 / WI-1.6). Opt-in: when set to the name of a
+      # GitHub Environment configured with required reviewers, the credentialed job pauses
+      # for approval before any cloud OIDC step runs. Empty (the default) = no gate, so
+      # every existing caller is unaffected until it deliberately opts in.
+      environment:
+        description: 'GitHub Environment to gate the credentialed job (e.g. terratest-gov). Empty = no gate.'
+        required: false
+        default: ''
+        type: string
+      # if:always() NAT-EIP sweep (#273 / WI-1.3). Opt-in named input, default false, so it
+      # is a no-op for every current caller and lands only when a caller both passes an AWS
+      # role AND flips this true. A caller must also stamp RunId=<run_id>-<run_attempt> on its
+      # NAT EIPs (see docs/ORG_TERRATEST.md) or the sweep has nothing to select.
+      enable_nat_eip_sweep:
+        description: 'Run an if:always() run-scoped NAT Elastic IP sweep after the tests (AWS only; requires RunId-tagged EIPs).'
+        required: false
+        default: false
+        type: boolean
     secrets:
       TERRATEST_APP_CLIENT_ID:
         description: 'GitHub App client ID for private module access'
@@ -165,6 +196,11 @@ jobs:
   terratest:
     name: Terratest
     runs-on: ubuntu-latest
+    # Opt-in protected-environment gate (#237 / WI-1.6). When the caller passes a non-empty
+    # `environment` naming a GitHub Environment with required reviewers, this credentialed job
+    # (it configures cloud OIDC and runs a real apply) pauses for approval before any step runs.
+    # An empty value resolves to no environment, so callers that do not opt in are unaffected.
+    environment: ${{ inputs.environment }}
     # Cap the job so a hung 'terraform apply' cannot burn the 6-hour default while
     # holding cloud resources (the header's 'prevent runaway resource creation' claim).
     timeout-minutes: ${{ inputs.timeout_minutes || 60 }}
@@ -373,14 +409,32 @@ jobs:
         env:
           TEST_DIR: ${{ inputs.test_directory }}
           TEST_TIMEOUT: ${{ inputs.test_timeout }}
+          RERUN_FAILS: ${{ inputs.rerun_fails }}
         run: |
           set +e
           cd "${TEST_DIR}"
-          gotestsum \
-            --format standard-verbose \
-            --junitfile "${GITHUB_WORKSPACE}/terratest-results.xml" \
-            --jsonfile "${GITHUB_WORKSPACE}/terratest-results.json" \
-            -- -tags terratest -timeout "${TEST_TIMEOUT}" ./... 2>&1 | tee "${GITHUB_WORKSPACE}/terratest_output.txt"
+
+          # Opt-in flake resilience (#236). gotestsum --rerun-fails re-runs ONLY the tests that
+          # failed, up to the cap, and reports green if a rerun passes — turning a transient infra
+          # flake into a pass without a human re-run, while a test that fails every attempt still
+          # fails. gotestsum requires that in rerun mode the packages come from --packages and are
+          # NOT also passed as positional args after `--` (doing both is an error), so the package
+          # spec `./...` moves into --packages in that mode. When RERUN_FAILS is 0 (default) we
+          # keep the original single-attempt invocation with `./...` positional, so no caller's
+          # behavior changes unless it opts in.
+          if [ "${RERUN_FAILS:-0}" -gt 0 ]; then
+            echo "::notice::flake resilience on — up to ${RERUN_FAILS} rerun(s) of failed tests"
+            gotestsum \
+              --format standard-verbose \
+              --junitfile "${GITHUB_WORKSPACE}/terratest-results.xml" \
+              --rerun-fails="${RERUN_FAILS}" --rerun-fails-max-failures=15 --packages=./... \
+              -- -tags terratest -timeout "${TEST_TIMEOUT}" 2>&1 | tee "${GITHUB_WORKSPACE}/terratest_output.txt"
+          else
+            gotestsum \
+              --format standard-verbose \
+              --junitfile "${GITHUB_WORKSPACE}/terratest-results.xml" \
+              -- -tags terratest -timeout "${TEST_TIMEOUT}" ./... 2>&1 | tee "${GITHUB_WORKSPACE}/terratest_output.txt"
+          fi
           EXIT_CODE=${PIPESTATUS[0]}
           set -e
 
@@ -394,15 +448,104 @@ jobs:
 
       # --- Reporting ---
 
+      # Durable per-run telemetry record (#235 / WI-2.2). The old terratest-results.json was
+      # gotestsum's raw event stream, uploaded but read by NOTHING and expiring with the 30-day
+      # artifact. Replace it with a purpose-built record — repo / module / commit SHA / result /
+      # counts / duration — keyed by the tested commit SHA so the MTCS terratest-posture collector
+      # can bind evidence to the exact code tested and it outlives the artifact. Built with
+      # `jq -n` (never string interpolation) so an embedded quote/newline can't corrupt it, and
+      # the counts come from the same JUnit XML the step summary parses (one source of truth).
+      - name: Emit telemetry record
+        if: always()
+        env:
+          RESULT_SHA: ${{ github.sha }}
+          RUN_REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          TEST_MODE: ${{ inputs.test_mode }}
+          TEST_DIR: ${{ inputs.test_directory }}
+          TF_VERSION: ${{ steps.tf-version.outputs.version }}
+          GO_VERSION: ${{ inputs.go_version }}
+          EXIT_CODE: ${{ steps.terratest.outputs.exitcode }}
+        run: |
+          set -euo pipefail
+          XML="${GITHUB_WORKSPACE}/terratest-results.xml"
+
+          # Counts from the JUnit root aggregate (same parse as the step summary). If the XML is
+          # missing, the test binary died before writing it (SIGKILL/timeout) — emit a record with
+          # a null test count and a 'no-report' note rather than silently omitting the run, so a
+          # killed run is still visible in the posture surface instead of vanishing.
+          tests=null; failures=null; errors=null; skipped=null; time=null; have_report=false
+          if [ -f "$XML" ]; then
+            have_report=true
+            root="$(grep -m1 -oE '<testsuites[^>]*>' "$XML" || true)"
+            tests="$(printf '%s' "$root"    | grep -oE ' tests="[0-9]+"'   | grep -oE '[0-9]+' || echo 0)"
+            failures="$(printf '%s' "$root" | grep -oE 'failures="[0-9]+"' | grep -oE '[0-9]+' || echo 0)"
+            errors="$(printf '%s' "$root"   | grep -oE 'errors="[0-9]+"'   | grep -oE '[0-9]+' || echo 0)"
+            time="$(printf '%s' "$root"     | grep -oE 'time="[0-9.]+"'    | grep -oE '[0-9.]+' || echo 0)"
+            skipped="$(grep -oE '<testsuite [^>]*>' "$XML" | grep -oE 'skipped="[0-9]+"' | grep -oE '[0-9]+' | awk '{s+=$1} END{print s+0}')"
+          fi
+
+          # result is derived from the gate exit code, NOT from the presence of the XML — a green
+          # XML with a non-zero exit is still a failure.
+          if [ "${EXIT_CODE}" = "0" ]; then result="pass"; else result="fail"; fi
+
+          jq -n \
+            --arg repo "${RUN_REPO}" \
+            --arg module "${TEST_DIR}" \
+            --arg sha "${RESULT_SHA}" \
+            --arg mode "${TEST_MODE}" \
+            --arg result "${result}" \
+            --arg exit_code "${EXIT_CODE}" \
+            --arg run_id "${RUN_ID}" \
+            --arg run_attempt "${RUN_ATTEMPT}" \
+            --arg run_url "${RUN_URL}" \
+            --arg tf "${TF_VERSION}" \
+            --arg go "${GO_VERSION}" \
+            --argjson have_report "${have_report}" \
+            --argjson tests "${tests}" \
+            --argjson failures "${failures}" \
+            --argjson errors "${errors}" \
+            --argjson skipped "${skipped}" \
+            --argjson time "${time}" \
+            '{
+               schema: "terratest-posture/v1",
+               repo: $repo, module: $module, commit_sha: $sha, mode: $mode,
+               result: $result, exit_code: ($exit_code | tonumber),
+               run_id: $run_id, run_attempt: ($run_attempt | tonumber), run_url: $run_url,
+               terraform_version: $tf, go_version: $go,
+               have_report: $have_report,
+               counts: (if $have_report
+                        then { tests: $tests, failures: $failures, errors: $errors,
+                               skipped: $skipped,
+                               passed: ($tests - $failures - $errors - $skipped) }
+                        else null end),
+               duration_seconds: $time
+             }' > "${GITHUB_WORKSPACE}/terratest-record.json"
+
+          # Fail loud if the record did not serialize to a non-empty object — a zero-byte or
+          # empty record read as "run had no telemetry" downstream, which is the silent-green
+          # trap (a tool that fails quiet rather than loud).
+          if ! jq -e 'type == "object" and (.commit_sha | length > 0)' \
+                 "${GITHUB_WORKSPACE}/terratest-record.json" >/dev/null; then
+            echo "::error title=Telemetry record malformed::terratest-record.json did not serialize"
+            exit 1
+          fi
+          echo "emitted terratest-record.json for ${RUN_REPO}@${RESULT_SHA} result=${result}"
+          cat "${GITHUB_WORKSPACE}/terratest-record.json"
+
       - name: Upload test artifacts
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: terratest-results-${{ github.run_id }}
+          # SHA-stamped (#235 / RPT-04) so an archived run binds to the exact commit tested,
+          # not just an opaque run-id. run_id keeps the name unique across re-runs of one SHA.
+          name: terratest-results-${{ github.sha }}-${{ github.run_id }}
           path: |
             terratest_output.txt
             terratest-results.xml
-            terratest-results.json
+            terratest-record.json
           retention-days: 30
 
       - name: Post results to PR
@@ -577,6 +720,7 @@ jobs:
           GO_VERSION: ${{ inputs.go_version }}
           TF_VERSION: ${{ steps.tf-version.outputs.version }}
           EXIT_CODE: ${{ steps.terratest.outputs.exitcode }}
+          COMMIT_SHA: ${{ github.sha }}
         run: |
           if [ "${EXIT_CODE}" = "0" ]; then
             STATUS="Passed"
@@ -590,6 +734,7 @@ jobs:
             echo "| Property | Value |"
             echo "| --- | --- |"
             echo "| Status | ${STATUS} |"
+            echo "| Commit | \`${COMMIT_SHA}\` |"
             echo "| Mode | \`${TEST_MODE}\` |"
             echo "| Test Directory | \`${TEST_DIR}\` |"
             echo "| Timeout | \`${TEST_TIMEOUT}\` |"
@@ -629,6 +774,145 @@ jobs:
         run: |
           echo "::error::Terratest failed with exit code ${EXIT_CODE} — blocking pipeline"
           exit 1
+
+  # if:always() NAT Elastic IP sweep (#273 / WI-1.3). The suite's only teardown guard is a Go
+  # `defer terraform.Destroy(...)`, which covers panics and assertion failures but does NOT run
+  # on SIGKILL — which is exactly what a cancelled job, a `timeout-minutes` expiry, or a runner
+  # eviction does to the process group. So that guard covers the case that was already safe and
+  # misses the one that orphans addresses; seven NAT EIPs leaked this way, one triplet ~15 months,
+  # ~$302/yr (Coalfire-CF/terraform-aws-vpc-nfw#214). This job is the net for that gap.
+  #
+  # It is a SEPARATE runner from the terratest job, so it configures its own OIDC credentials; it
+  # cannot inherit them. It runs `if: always()`, including on cancellation, which is the whole
+  # point. Idempotent by construction: it releases only addresses tagged with THIS run's RunId
+  # that are also unassociated, and treats an already-released address as success — so it usually
+  # runs after a destroy that already succeeded and finds nothing.
+  #
+  # Opt-in twice: only when the caller flips `enable_nat_eip_sweep` true AND passes an AWS role.
+  # An unset role = clean skip, so no existing caller starts running (or failing) this at its next
+  # run. Requires callers to stamp RunId=<run_id>-<run_attempt> on their NAT EIPs; see
+  # docs/ORG_TERRATEST.md "Run-scoped resource tagging".
+  nat-eip-sweep:
+    name: NAT EIP sweep
+    needs: terratest
+    if: ${{ always() && inputs.enable_nat_eip_sweep && inputs.aws_role_arn != '' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # cloud OIDC
+    steps:
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+        with:
+          role-to-assume: ${{ inputs.aws_role_arn }}
+          aws-region: ${{ inputs.aws_region }}
+
+      - name: Sweep NAT EIPs belonging to this run
+        env:
+          # Never interpolate ${{ }} directly into a run: body. These are passed through env and
+          # are trusted (numeric / repo-controlled), but the pattern must not vary by trust level.
+          RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+          TERRATEST_RESULT: ${{ needs.terratest.result }}
+          AWS_REGION: ${{ inputs.aws_region }}
+        run: |
+          set -euo pipefail
+
+          # -- Positive control -------------------------------------------------------
+          # An empty address list is indistinguishable from broken credentials, a wrong
+          # region, or a missing IAM permission: all four print "0 orphans" and exit 0.
+          # describe-regions cannot legitimately return 0 in a working account, so it
+          # separates "the API works and found nothing" from "the API did not work".
+          # Without this the sweep would certify a clean account forever.
+          echo "::group::Positive control"
+          aws sts get-caller-identity --output json | jq -r '"sweeping as: \(.Arn)"'
+          region_count="$(aws ec2 describe-regions --output json | jq '.Regions | length')"
+          echo "control: describe-regions returned ${region_count} region(s)"
+          if [ "${region_count}" -lt 1 ]; then
+            echo "::error title=EIP sweep control failed::describe-regions returned 0 regions in ${AWS_REGION}." \
+                 "The enumeration below cannot be trusted, so this is a hard failure rather than a clean sweep."
+            exit 1
+          fi
+          echo "::endgroup::"
+
+          # -- Enumerate --------------------------------------------------------------
+          # Count with default pagination + jq over the raw array. Deliberately NOT
+          # `--query 'length(Addresses)'`, which prints once PER PAGE (100/100/92 reads
+          # as 100, not 292), and NOT `--no-paginate`, which returns only the first page.
+          # DescribeAddresses happens to be unpaginated today; the form is correct
+          # regardless and does not silently under-report if that ever changes.
+          all_addresses="$(aws ec2 describe-addresses --output json)"
+          total="$(printf '%s' "${all_addresses}" | jq '.Addresses | length')"
+          echo "examined ${total} Elastic IP(s) in ${AWS_REGION}"
+
+          mine="$(printf '%s' "${all_addresses}" \
+            | jq --arg rid "${RUN_ID}" \
+                '[.Addresses[] | select(any(.Tags[]?; .Key == "RunId" and .Value == $rid))]')"
+          mine_count="$(printf '%s' "${mine}" | jq 'length')"
+          echo "tagged RunId=${RUN_ID}: ${mine_count}"
+
+          # -- Selector sanity --------------------------------------------------------
+          # If the test job did not finish cleanly, there SHOULD be addresses carrying
+          # this RunId. Matching zero in that situation more likely means the selector
+          # is broken (nat_eip_tags not plumbed, wrong account, wrong region) than that
+          # teardown succeeded. Warn loudly rather than reporting a clean sweep.
+          if [ "${mine_count}" -eq 0 ] && [ "${TERRATEST_RESULT}" != "success" ]; then
+            echo "::warning title=EIP sweep selector may be broken::terratest result was" \
+                 "'${TERRATEST_RESULT}' yet 0 of ${total} addresses carry RunId=${RUN_ID}." \
+                 "Either destroy completed before the job died, or the RunId tag is not" \
+                 "reaching the module - verify the RunId tag is actually being applied."
+          fi
+
+          # -- Still-associated addresses are not this job's problem to release --------
+          # An associated EIP means its NAT gateway still exists, i.e. destroy did not
+          # complete. AWS refuses to release an associated address anyway. Surface it as
+          # a leak needing a real destroy instead of failing on a doomed release call.
+          associated="$(printf '%s' "${mine}" | jq -r '[.[] | select(.AssociationId != null)] | length')"
+          if [ "${associated}" -gt 0 ]; then
+            printf '%s' "${mine}" | jq -r '.[] | select(.AssociationId != null)
+              | "  still associated: \(.AllocationId) \(.PublicIp) assoc=\(.AssociationId)"'
+            echo "::error title=Incomplete teardown::${associated} address(es) from this run are still" \
+                 "associated, so their NAT gateways survive. This needs a real terraform destroy;" \
+                 "release-address cannot free an associated EIP."
+          fi
+
+          # -- Release the orphans ----------------------------------------------------
+          released=0
+          failed=0
+          for alloc in $(printf '%s' "${mine}" | jq -r '.[] | select(.AssociationId == null) | .AllocationId'); do
+            echo "releasing orphan ${alloc}"
+            if err="$(aws ec2 release-address --allocation-id "${alloc}" 2>&1)"; then
+              released=$((released + 1))
+            elif printf '%s' "${err}" | grep -q 'InvalidAllocationID.NotFound'; then
+              # Already gone - a concurrent destroy or an earlier attempt of this sweep
+              # got there first. Idempotent re-run, not a failure.
+              echo "  already released (InvalidAllocationID.NotFound) - treating as success"
+              released=$((released + 1))
+            else
+              echo "::error title=EIP release failed::${alloc}: ${err}"
+              failed=$((failed + 1))
+            fi
+          done
+
+          {
+            echo "## NAT EIP sweep"
+            echo ""
+            echo "| metric | value |"
+            echo "|---|---|"
+            echo "| terratest result | \`${TERRATEST_RESULT}\` |"
+            echo "| addresses examined | ${total} |"
+            echo "| tagged this run | ${mine_count} |"
+            echo "| still associated | ${associated} |"
+            echo "| released | ${released} |"
+            echo "| release failures | ${failed} |"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+          # Fail on anything that left billable state behind. A sweep that exits 0 after
+          # failing to release is the silent-green failure this whole change exists to
+          # remove.
+          if [ "${failed}" -gt 0 ] || [ "${associated}" -gt 0 ]; then
+            exit 1
+          fi
+          echo "sweep clean: examined ${total}, released ${released}, none left behind"
 
   notify-failure:
     needs: terratest
