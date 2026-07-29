@@ -694,6 +694,18 @@ When adding Terratest to a Terraform module repo:
    [`ORG_TERRATEST_PROVISIONING.md`](./ORG_TERRATEST_PROVISIONING.md))
 1. **Add the caller workflow** with `paths` scoping, a `concurrency` block
    (`cancel-in-progress: false`), and the `permissions` block including `id-token: write`
+1. **Decide which opt-in hardening inputs to enable** — all default off, so a caller only gets
+   them by asking. None is required to go green, but each closes a known gap:
+
+   | Input | Enable when | Reference |
+   | --- | --- | --- |
+   | `enable_nat_eip_sweep: true` (+ stamp `RunId` on NAT EIPs) | the module creates NAT gateways (any VPC-with-NAT module) — backstops SIGKILL teardown | [Run-scoped resource tagging](#run-scoped-resource-tagging-and-the-nat-eip-sweep) |
+   | `environment: terratest-gov` | the repo takes external/first-time-contributor PRs, or you want an approval gate on credentialed runs | [Protected-environment gate](#protected-environment-gate-for-credentialed-runs) |
+   | `rerun_fails: 1` | the suite hits transient cloud flakiness; recommended for any scheduled caller | [Flake strategy](#flake-strategy-rerun-and-quarantine) |
+   | a `schedule:` caller | you want provider/cloud drift caught between PRs | [Scheduled/nightly regression runs](#schedulednightly-regression-runs) |
+
+   Telemetry (the durable per-run record feeding `fleet/TERRATEST-POSTURE.md` and metric #9) is
+   **automatic** — no input; every run emits it once this workflow version is pinned.
 1. **Open a PR and shepherd the run to green** — approve any `action_required` gate, prune
    redundant queued applies, never cancel mid-apply
 
