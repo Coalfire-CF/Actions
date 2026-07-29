@@ -404,7 +404,6 @@ jobs:
           gotestsum \
             --format standard-verbose \
             --junitfile "${GITHUB_WORKSPACE}/terratest-results.xml" \
-            --jsonfile "${GITHUB_WORKSPACE}/terratest-results.json" \
             -- -tags terratest -timeout "${TEST_TIMEOUT}" ./... 2>&1 | tee "${GITHUB_WORKSPACE}/terratest_output.txt"
           EXIT_CODE=${PIPESTATUS[0]}
           set -e
@@ -419,15 +418,104 @@ jobs:
 
       # --- Reporting ---
 
+      # Durable per-run telemetry record (#235 / WI-2.2). The old terratest-results.json was
+      # gotestsum's raw event stream, uploaded but read by NOTHING and expiring with the 30-day
+      # artifact. Replace it with a purpose-built record — repo / module / commit SHA / result /
+      # counts / duration — keyed by the tested commit SHA so the MTCS terratest-posture collector
+      # can bind evidence to the exact code tested and it outlives the artifact. Built with
+      # `jq -n` (never string interpolation) so an embedded quote/newline can't corrupt it, and
+      # the counts come from the same JUnit XML the step summary parses (one source of truth).
+      - name: Emit telemetry record
+        if: always()
+        env:
+          RESULT_SHA: ${{ github.sha }}
+          RUN_REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          TEST_MODE: ${{ inputs.test_mode }}
+          TEST_DIR: ${{ inputs.test_directory }}
+          TF_VERSION: ${{ steps.tf-version.outputs.version }}
+          GO_VERSION: ${{ inputs.go_version }}
+          EXIT_CODE: ${{ steps.terratest.outputs.exitcode }}
+        run: |
+          set -euo pipefail
+          XML="${GITHUB_WORKSPACE}/terratest-results.xml"
+
+          # Counts from the JUnit root aggregate (same parse as the step summary). If the XML is
+          # missing, the test binary died before writing it (SIGKILL/timeout) — emit a record with
+          # a null test count and a 'no-report' note rather than silently omitting the run, so a
+          # killed run is still visible in the posture surface instead of vanishing.
+          tests=null; failures=null; errors=null; skipped=null; time=null; have_report=false
+          if [ -f "$XML" ]; then
+            have_report=true
+            root="$(grep -m1 -oE '<testsuites[^>]*>' "$XML" || true)"
+            tests="$(printf '%s' "$root"    | grep -oE ' tests="[0-9]+"'   | grep -oE '[0-9]+' || echo 0)"
+            failures="$(printf '%s' "$root" | grep -oE 'failures="[0-9]+"' | grep -oE '[0-9]+' || echo 0)"
+            errors="$(printf '%s' "$root"   | grep -oE 'errors="[0-9]+"'   | grep -oE '[0-9]+' || echo 0)"
+            time="$(printf '%s' "$root"     | grep -oE 'time="[0-9.]+"'    | grep -oE '[0-9.]+' || echo 0)"
+            skipped="$(grep -oE '<testsuite [^>]*>' "$XML" | grep -oE 'skipped="[0-9]+"' | grep -oE '[0-9]+' | awk '{s+=$1} END{print s+0}')"
+          fi
+
+          # result is derived from the gate exit code, NOT from the presence of the XML — a green
+          # XML with a non-zero exit is still a failure.
+          if [ "${EXIT_CODE}" = "0" ]; then result="pass"; else result="fail"; fi
+
+          jq -n \
+            --arg repo "${RUN_REPO}" \
+            --arg module "${TEST_DIR}" \
+            --arg sha "${RESULT_SHA}" \
+            --arg mode "${TEST_MODE}" \
+            --arg result "${result}" \
+            --arg exit_code "${EXIT_CODE}" \
+            --arg run_id "${RUN_ID}" \
+            --arg run_attempt "${RUN_ATTEMPT}" \
+            --arg run_url "${RUN_URL}" \
+            --arg tf "${TF_VERSION}" \
+            --arg go "${GO_VERSION}" \
+            --argjson have_report "${have_report}" \
+            --argjson tests "${tests}" \
+            --argjson failures "${failures}" \
+            --argjson errors "${errors}" \
+            --argjson skipped "${skipped}" \
+            --argjson time "${time}" \
+            '{
+               schema: "terratest-posture/v1",
+               repo: $repo, module: $module, commit_sha: $sha, mode: $mode,
+               result: $result, exit_code: ($exit_code | tonumber),
+               run_id: $run_id, run_attempt: ($run_attempt | tonumber), run_url: $run_url,
+               terraform_version: $tf, go_version: $go,
+               have_report: $have_report,
+               counts: (if $have_report
+                        then { tests: $tests, failures: $failures, errors: $errors,
+                               skipped: $skipped,
+                               passed: ($tests - $failures - $errors - $skipped) }
+                        else null end),
+               duration_seconds: $time
+             }' > "${GITHUB_WORKSPACE}/terratest-record.json"
+
+          # Fail loud if the record did not serialize to a non-empty object — a zero-byte or
+          # empty record read as "run had no telemetry" downstream, which is the silent-green
+          # trap (a tool that fails quiet rather than loud).
+          if ! jq -e 'type == "object" and (.commit_sha | length > 0)' \
+                 "${GITHUB_WORKSPACE}/terratest-record.json" >/dev/null; then
+            echo "::error title=Telemetry record malformed::terratest-record.json did not serialize"
+            exit 1
+          fi
+          echo "emitted terratest-record.json for ${RUN_REPO}@${RESULT_SHA} result=${result}"
+          cat "${GITHUB_WORKSPACE}/terratest-record.json"
+
       - name: Upload test artifacts
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: terratest-results-${{ github.run_id }}
+          # SHA-stamped (#235 / RPT-04) so an archived run binds to the exact commit tested,
+          # not just an opaque run-id. run_id keeps the name unique across re-runs of one SHA.
+          name: terratest-results-${{ github.sha }}-${{ github.run_id }}
           path: |
             terratest_output.txt
             terratest-results.xml
-            terratest-results.json
+            terratest-record.json
           retention-days: 30
 
       - name: Post results to PR
@@ -602,6 +690,7 @@ jobs:
           GO_VERSION: ${{ inputs.go_version }}
           TF_VERSION: ${{ steps.tf-version.outputs.version }}
           EXIT_CODE: ${{ steps.terratest.outputs.exitcode }}
+          COMMIT_SHA: ${{ github.sha }}
         run: |
           if [ "${EXIT_CODE}" = "0" ]; then
             STATUS="Passed"
@@ -615,6 +704,7 @@ jobs:
             echo "| Property | Value |"
             echo "| --- | --- |"
             echo "| Status | ${STATUS} |"
+            echo "| Commit | \`${COMMIT_SHA}\` |"
             echo "| Mode | \`${TEST_MODE}\` |"
             echo "| Test Directory | \`${TEST_DIR}\` |"
             echo "| Timeout | \`${TEST_TIMEOUT}\` |"
