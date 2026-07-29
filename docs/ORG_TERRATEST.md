@@ -13,8 +13,12 @@
 > roles are scoped to dedicated test accounts/subscriptions with appropriate spending limits.
 
 All caller examples in this document are drawn from the two **proven, green** callers in the
-org and are pinned to the current release **v0.11.3**
-(`9451b979c22b3762b3c8a7d4d9493fefaee7edc5`):
+org. Pin the reusable workflow to the **immutable commit SHA of the latest release** with an
+adjacent `# vX.Y.Z` comment (SHA-preferred pinning, RFC-0008/ADR-0018) — check the
+[releases page](https://github.com/Coalfire-CF/Actions/releases) for the current SHA rather
+than trusting a number frozen in this doc. The snippets below pin **v0.15.0**
+(`0324cf8a90b4b9c523465f53a892a722f613e318`); the `environment` and `enable_nat_eip_sweep`
+inputs ship from the release that lands #237/#273 — pin at or above it to use them.
 
 - **AWS (GovCloud):** [`terraform-aws-vpc-nfw`](https://github.com/Coalfire-CF/terraform-aws-vpc-nfw)
   `.github/workflows/org-terratest.yml` — the canonical **module-repo self-test** (PR #198).
@@ -189,7 +193,7 @@ concurrency:
 
 jobs:
   terratest:
-    uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@33a5e8e2f7fe782ea151eb2bd8c653b5d2778a68 # v0.12.0
+    uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@0324cf8a90b4b9c523465f53a892a722f613e318 # v0.15.0
     with:
       test_mode: pr
       go_version: "1.26"
@@ -237,7 +241,7 @@ concurrency:
 
 jobs:
   terratest-azure:
-    uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@33a5e8e2f7fe782ea151eb2bd8c653b5d2778a68 # v0.12.0
+    uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@0324cf8a90b4b9c523465f53a892a722f613e318 # v0.15.0
     with:
       test_mode: pr
       go_version: "1.26"
@@ -273,7 +277,7 @@ concurrency:
 
 jobs:
   terratest:
-    uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@33a5e8e2f7fe782ea151eb2bd8c653b5d2778a68 # v0.12.0
+    uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@0324cf8a90b4b9c523465f53a892a722f613e318 # v0.15.0
     with:
       test_mode: pr
       go_version: "1.26"
@@ -296,7 +300,7 @@ on:
 
 jobs:
   terratest:
-    uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@33a5e8e2f7fe782ea151eb2bd8c653b5d2778a68 # v0.12.0
+    uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@0324cf8a90b4b9c523465f53a892a722f613e318 # v0.15.0
     with:
       test_mode: release
       go_version: "1.26"
@@ -305,7 +309,7 @@ jobs:
 
   release-clean:
     needs: terratest
-    uses: Coalfire-CF/Actions/.github/workflows/org-release-clean.yml@33a5e8e2f7fe782ea151eb2bd8c653b5d2778a68 # v0.12.0
+    uses: Coalfire-CF/Actions/.github/workflows/org-release-clean.yml@0324cf8a90b4b9c523465f53a892a722f613e318 # v0.15.0
     with:
       tag_name: ${{ github.event.release.tag_name }}
 ```
@@ -326,8 +330,20 @@ allowed to finish. **Cancelling a run while `terraform apply` (or `destroy`) is 
 kills the process before the deferred destroy**, leaking real resources into the test
 account. This is why every caller sets `concurrency.cancel-in-progress: false`.
 
-If a run *is* cancelled mid-apply (or times out mid-apply), **sweep the test account by
-tag/prefix**. For the AWS GovCloud account, check for leaked:
+Two automated backstops cover this gap so it does not depend on manual discipline:
+
+1. **Per-run net — the `if: always()` NAT-EIP sweep** (opt-in `enable_nat_eip_sweep`). Runs
+   in a separate job, on cancellation too, and releases the run's own orphaned NAT Elastic IPs.
+   See [Run-scoped resource tagging](#run-scoped-resource-tagging-and-the-nat-eip-sweep).
+1. **Scheduled reaper — [`terraform-aws-terratest-janitor`](https://github.com/Coalfire-CF/terraform-aws-terratest-janitor)**
+   is the authoritative standing backstop for everything the per-run net does not cover
+   (non-EIP resources, a `SIGKILL` before the sweep job runs, cross-cloud). It is an hourly,
+   account-allowlisted Lambda that sweeps abandoned prefix-cohorts (a cohort is reaped only when
+   **every** timestamped sibling is older than `abandon_hours`, so an active run is never raced)
+   and alerts loudly on both action and failure.
+
+**Break-glass (only if the backstops are unavailable):** manually sweep the test account by
+tag/prefix. For the AWS GovCloud account, check for leaked:
 
 - VPCs and their dependencies (subnets, NAT gateways, EIPs, route tables)
 - KMS **aliases** (the keys go to `PendingDeletion`, but the alias name blocks re-runs)
@@ -337,6 +353,61 @@ tag/prefix**. For the AWS GovCloud account, check for leaked:
 
 For Azure, sweep the ephemeral resource group (`rg-terratest-*`) — deleting the RG reclaims
 everything in it.
+
+### Run-scoped resource tagging and the NAT-EIP sweep
+
+`defer terraform.Destroy()` covers panics and assertion failures but **does not run on
+`SIGKILL`** — which is exactly what a cancelled job, a `timeout-minutes` expiry, or a runner
+eviction sends to the process group. So the guard covers the case that was already safe and
+misses the one that orphans addresses; seven NAT EIPs leaked this way, one triplet for ~15
+months (~$302/yr,
+[terraform-aws-vpc-nfw#214](https://github.com/Coalfire-CF/terraform-aws-vpc-nfw/issues/214)).
+
+To backstop it, opt in with `enable_nat_eip_sweep: true` **and** stamp every NAT Elastic IP with
+the run's identity so the sweep can select only its own orphans:
+
+```hcl
+# in the fixture / module: tag NAT EIPs with the run id passed from CI
+variable "nat_eip_tags" { type = map(string), default = {} }
+# ... aws_eip.this: tags = merge(local.tags, var.nat_eip_tags)
+```
+
+```yaml
+# caller: pass RunId=<run_id>-<run_attempt> through to the fixture, and opt the sweep in
+env:
+  TF_VAR_nat_eip_tags: '{"RunId":"${{ github.run_id }}-${{ github.run_attempt }}"}'
+with:
+  enable_nat_eip_sweep: true
+  aws_role_arn: arn:aws-us-gov:iam::358745275192:role/github-action-test-role
+```
+
+The **attempt suffix matters** — a re-run reuses `GITHUB_RUN_ID`, so `RunId` must include
+`run_attempt` to stay unique per attempt. The sweep releases **only** addresses that are both
+tagged this exact `RunId` **and** unassociated; it treats an already-released address as success
+(idempotent), fails hard on a still-associated address (its NAT gateway survives — that needs a
+real `destroy`, not a doomed release), fails hard on a denied release (e.g. a role missing
+`ec2:ReleaseAddress`), and runs a positive control so an empty enumeration can never read as a
+clean sweep. It requires `ec2:ReleaseAddress` on the terratest role (see the provisioning
+runbook §2).
+
+### Protected-environment gate for credentialed runs
+
+The credentialed job checks out PR-supplied code and runs a real `apply` with cloud write
+credentials. On a private, trusted-member sandbox that is acceptable, but the exposure grows with
+every adopting repo. To gate it, create a GitHub Environment (e.g. `terratest-gov`) with **≥1
+required reviewer** and pass its name as the `environment` input:
+
+```yaml
+with:
+  environment: terratest-gov
+```
+
+When set, the Terratest job pauses for approval **before any cloud step runs**; a PR from a
+non-maintainer waits for a reviewer. Complement it with the org setting *"require approval for
+all outside collaborators / first-time contributors"*. Leave `environment` empty to keep the
+current ungated behavior. **Approval policy:** only repo maintainers / `cs-*-codeowners` team
+members may approve a Terratest run; approving means you have reviewed the PR's Terraform and
+test code for anything that would abuse the cloud credentials.
 
 ### Pending-run auto-cancel is safe (and desirable)
 
@@ -406,6 +477,8 @@ The essentials:
 | `gcp_workload_identity_provider` | No | | GCP Workload Identity Provider |
 | `gcp_service_account` | No | | GCP service account email |
 | `slack_channel_id` | No | | Slack channel for failure notifications |
+| `environment` | No | | GitHub Environment to gate the credentialed job (e.g. `terratest-gov`). Empty = no gate. See [Protected-environment gate](#protected-environment-gate-for-credentialed-runs). |
+| `enable_nat_eip_sweep` | No | `false` | Run an `if: always()` run-scoped NAT Elastic IP sweep after the tests (AWS only; requires `RunId`-tagged EIPs). See [Run-scoped resource tagging](#run-scoped-resource-tagging-and-the-nat-eip-sweep). |
 
 ## Secrets Reference
 
@@ -543,8 +616,13 @@ When adding Terratest to a Terraform module repo:
 If your Terraform modules reference other private modules in the org, the workflow needs
 a GitHub App token to authenticate `go mod download` against private repos.
 
-**Option A (dev-phase, in use today):** alias the existing org private-module pull App into
-the names org-terratest expects, right in the caller's `secrets:` block:
+**Use Option B.** A dedicated Terratest App is the target posture (issue #231): callers back
+`TERRATEST_APP_*` directly from org secrets and pass nothing App-related in their own
+`secrets:` block. Option A below is the retired dev-phase fallback, kept only for context.
+
+**Option A (retired dev-phase fallback — do not use for new callers):** alias the existing org
+private-module pull App into the names org-terratest expects, right in the caller's `secrets:`
+block:
 
 ```yaml
     secrets:
@@ -552,11 +630,11 @@ the names org-terratest expects, right in the caller's `secrets:` block:
       TERRATEST_APP_PRIVATE_KEY: ${{ secrets.CF_TF_PULL_PRIVATE_APP_PRIVATE_KEY }}
 ```
 
-This reuses an already-provisioned App, so no new registration is needed to get a lane green.
-Note these org secrets are **selected-repos scoped** — a brand-new repo may need to be added
-to each secret's repository list before the pull works.
+This reused an already-provisioned App to get lanes green quickly, but couples the Terratest
+token to the plan/apply pull App and inherits its broad, org-wide `Contents:read`. Replaced by
+Option B; drop this alias from callers once the dedicated App backs the org secrets.
 
-**Option B (go-live hardening): a dedicated Terratest App.** Create a purpose-built App so the
+**Option B (target posture): a dedicated Terratest App.** Create a purpose-built App so the
 Terratest token is minimal, separately audited, and independently revocable:
 
 - **Minimal permissions** — the app only needs `Contents: read` to pull module source

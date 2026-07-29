@@ -15,6 +15,8 @@ name: Terratest
 #   - GitHub App token scoped to repo owner for private module access (AC-6, IA-2)
 #   - Test timeout enforced to prevent runaway resource creation (SC-6)
 #   - Step summary and artifacts for audit trail (AU-3)
+#   - Optional protected-environment gate for credentialed runs (#237, AC-6/CM-3)
+#   - Optional if:always() run-scoped NAT-EIP sweep backstops SIGKILL teardown (#273, CP-10)
 
 on:
   workflow_call:
@@ -102,6 +104,24 @@ on:
         required: false
         default: ''
         type: string
+      # Protected-environment gate (#237 / WI-1.6). Opt-in: when set to the name of a
+      # GitHub Environment configured with required reviewers, the credentialed job pauses
+      # for approval before any cloud OIDC step runs. Empty (the default) = no gate, so
+      # every existing caller is unaffected until it deliberately opts in.
+      environment:
+        description: 'GitHub Environment to gate the credentialed job (e.g. terratest-gov). Empty = no gate.'
+        required: false
+        default: ''
+        type: string
+      # if:always() NAT-EIP sweep (#273 / WI-1.3). Opt-in named input, default false, so it
+      # is a no-op for every current caller and lands only when a caller both passes an AWS
+      # role AND flips this true. A caller must also stamp RunId=<run_id>-<run_attempt> on its
+      # NAT EIPs (see docs/ORG_TERRATEST.md) or the sweep has nothing to select.
+      enable_nat_eip_sweep:
+        description: 'Run an if:always() run-scoped NAT Elastic IP sweep after the tests (AWS only; requires RunId-tagged EIPs).'
+        required: false
+        default: false
+        type: boolean
     secrets:
       TERRATEST_APP_CLIENT_ID:
         description: 'GitHub App client ID for private module access'
@@ -165,6 +185,11 @@ jobs:
   terratest:
     name: Terratest
     runs-on: ubuntu-latest
+    # Opt-in protected-environment gate (#237 / WI-1.6). When the caller passes a non-empty
+    # `environment` naming a GitHub Environment with required reviewers, this credentialed job
+    # (it configures cloud OIDC and runs a real apply) pauses for approval before any step runs.
+    # An empty value resolves to no environment, so callers that do not opt in are unaffected.
+    environment: ${{ inputs.environment }}
     # Cap the job so a hung 'terraform apply' cannot burn the 6-hour default while
     # holding cloud resources (the header's 'prevent runaway resource creation' claim).
     timeout-minutes: ${{ inputs.timeout_minutes || 60 }}
@@ -629,6 +654,145 @@ jobs:
         run: |
           echo "::error::Terratest failed with exit code ${EXIT_CODE} — blocking pipeline"
           exit 1
+
+  # if:always() NAT Elastic IP sweep (#273 / WI-1.3). The suite's only teardown guard is a Go
+  # `defer terraform.Destroy(...)`, which covers panics and assertion failures but does NOT run
+  # on SIGKILL — which is exactly what a cancelled job, a `timeout-minutes` expiry, or a runner
+  # eviction does to the process group. So that guard covers the case that was already safe and
+  # misses the one that orphans addresses; seven NAT EIPs leaked this way, one triplet ~15 months,
+  # ~$302/yr (Coalfire-CF/terraform-aws-vpc-nfw#214). This job is the net for that gap.
+  #
+  # It is a SEPARATE runner from the terratest job, so it configures its own OIDC credentials; it
+  # cannot inherit them. It runs `if: always()`, including on cancellation, which is the whole
+  # point. Idempotent by construction: it releases only addresses tagged with THIS run's RunId
+  # that are also unassociated, and treats an already-released address as success — so it usually
+  # runs after a destroy that already succeeded and finds nothing.
+  #
+  # Opt-in twice: only when the caller flips `enable_nat_eip_sweep` true AND passes an AWS role.
+  # An unset role = clean skip, so no existing caller starts running (or failing) this at its next
+  # run. Requires callers to stamp RunId=<run_id>-<run_attempt> on their NAT EIPs; see
+  # docs/ORG_TERRATEST.md "Run-scoped resource tagging".
+  nat-eip-sweep:
+    name: NAT EIP sweep
+    needs: terratest
+    if: ${{ always() && inputs.enable_nat_eip_sweep && inputs.aws_role_arn != '' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # cloud OIDC
+    steps:
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+        with:
+          role-to-assume: ${{ inputs.aws_role_arn }}
+          aws-region: ${{ inputs.aws_region }}
+
+      - name: Sweep NAT EIPs belonging to this run
+        env:
+          # Never interpolate ${{ }} directly into a run: body. These are passed through env and
+          # are trusted (numeric / repo-controlled), but the pattern must not vary by trust level.
+          RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+          TERRATEST_RESULT: ${{ needs.terratest.result }}
+          AWS_REGION: ${{ inputs.aws_region }}
+        run: |
+          set -euo pipefail
+
+          # -- Positive control -------------------------------------------------------
+          # An empty address list is indistinguishable from broken credentials, a wrong
+          # region, or a missing IAM permission: all four print "0 orphans" and exit 0.
+          # describe-regions cannot legitimately return 0 in a working account, so it
+          # separates "the API works and found nothing" from "the API did not work".
+          # Without this the sweep would certify a clean account forever.
+          echo "::group::Positive control"
+          aws sts get-caller-identity --output json | jq -r '"sweeping as: \(.Arn)"'
+          region_count="$(aws ec2 describe-regions --output json | jq '.Regions | length')"
+          echo "control: describe-regions returned ${region_count} region(s)"
+          if [ "${region_count}" -lt 1 ]; then
+            echo "::error title=EIP sweep control failed::describe-regions returned 0 regions in ${AWS_REGION}." \
+                 "The enumeration below cannot be trusted, so this is a hard failure rather than a clean sweep."
+            exit 1
+          fi
+          echo "::endgroup::"
+
+          # -- Enumerate --------------------------------------------------------------
+          # Count with default pagination + jq over the raw array. Deliberately NOT
+          # `--query 'length(Addresses)'`, which prints once PER PAGE (100/100/92 reads
+          # as 100, not 292), and NOT `--no-paginate`, which returns only the first page.
+          # DescribeAddresses happens to be unpaginated today; the form is correct
+          # regardless and does not silently under-report if that ever changes.
+          all_addresses="$(aws ec2 describe-addresses --output json)"
+          total="$(printf '%s' "${all_addresses}" | jq '.Addresses | length')"
+          echo "examined ${total} Elastic IP(s) in ${AWS_REGION}"
+
+          mine="$(printf '%s' "${all_addresses}" \
+            | jq --arg rid "${RUN_ID}" \
+                '[.Addresses[] | select(any(.Tags[]?; .Key == "RunId" and .Value == $rid))]')"
+          mine_count="$(printf '%s' "${mine}" | jq 'length')"
+          echo "tagged RunId=${RUN_ID}: ${mine_count}"
+
+          # -- Selector sanity --------------------------------------------------------
+          # If the test job did not finish cleanly, there SHOULD be addresses carrying
+          # this RunId. Matching zero in that situation more likely means the selector
+          # is broken (nat_eip_tags not plumbed, wrong account, wrong region) than that
+          # teardown succeeded. Warn loudly rather than reporting a clean sweep.
+          if [ "${mine_count}" -eq 0 ] && [ "${TERRATEST_RESULT}" != "success" ]; then
+            echo "::warning title=EIP sweep selector may be broken::terratest result was" \
+                 "'${TERRATEST_RESULT}' yet 0 of ${total} addresses carry RunId=${RUN_ID}." \
+                 "Either destroy completed before the job died, or the RunId tag is not" \
+                 "reaching the module - verify the RunId tag is actually being applied."
+          fi
+
+          # -- Still-associated addresses are not this job's problem to release --------
+          # An associated EIP means its NAT gateway still exists, i.e. destroy did not
+          # complete. AWS refuses to release an associated address anyway. Surface it as
+          # a leak needing a real destroy instead of failing on a doomed release call.
+          associated="$(printf '%s' "${mine}" | jq -r '[.[] | select(.AssociationId != null)] | length')"
+          if [ "${associated}" -gt 0 ]; then
+            printf '%s' "${mine}" | jq -r '.[] | select(.AssociationId != null)
+              | "  still associated: \(.AllocationId) \(.PublicIp) assoc=\(.AssociationId)"'
+            echo "::error title=Incomplete teardown::${associated} address(es) from this run are still" \
+                 "associated, so their NAT gateways survive. This needs a real terraform destroy;" \
+                 "release-address cannot free an associated EIP."
+          fi
+
+          # -- Release the orphans ----------------------------------------------------
+          released=0
+          failed=0
+          for alloc in $(printf '%s' "${mine}" | jq -r '.[] | select(.AssociationId == null) | .AllocationId'); do
+            echo "releasing orphan ${alloc}"
+            if err="$(aws ec2 release-address --allocation-id "${alloc}" 2>&1)"; then
+              released=$((released + 1))
+            elif printf '%s' "${err}" | grep -q 'InvalidAllocationID.NotFound'; then
+              # Already gone - a concurrent destroy or an earlier attempt of this sweep
+              # got there first. Idempotent re-run, not a failure.
+              echo "  already released (InvalidAllocationID.NotFound) - treating as success"
+              released=$((released + 1))
+            else
+              echo "::error title=EIP release failed::${alloc}: ${err}"
+              failed=$((failed + 1))
+            fi
+          done
+
+          {
+            echo "## NAT EIP sweep"
+            echo ""
+            echo "| metric | value |"
+            echo "|---|---|"
+            echo "| terratest result | \`${TERRATEST_RESULT}\` |"
+            echo "| addresses examined | ${total} |"
+            echo "| tagged this run | ${mine_count} |"
+            echo "| still associated | ${associated} |"
+            echo "| released | ${released} |"
+            echo "| release failures | ${failed} |"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+          # Fail on anything that left billable state behind. A sweep that exits 0 after
+          # failing to release is the silent-green failure this whole change exists to
+          # remove.
+          if [ "${failed}" -gt 0 ] || [ "${associated}" -gt 0 ]; then
+            exit 1
+          fi
+          echo "sweep clean: examined ${total}, released ${released}, none left behind"
 
   notify-failure:
     needs: terratest
