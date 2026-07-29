@@ -195,6 +195,7 @@ Issue labels:
 |   |-- ORG_SLACK_NOTIFY.md
 |   |-- ORG_SOURCE_PIN.md
 |   |-- ORG_TERRATEST.md
+|   |-- ORG_TERRATEST_HARDENING_RUNBOOK.md
 |   |-- ORG_TERRATEST_PROVISIONING.md
 |   |-- ORG_VERSION_BAND.md
 |   |-- superpowers
@@ -268,6 +269,7 @@ Issue labels:
     |       |-- pass_sha.yml
     |       |-- warn_tag.yml
     |-- gate-config-resolve.test.sh
+    |-- nat-eip-sweep.test.sh
     |-- pr-green-merge.test.sh
     |-- prompt-build.test.sh
     |-- reconcile-sweeper.test.sh
@@ -276,6 +278,8 @@ Issue labels:
     |-- retry-lib.test.sh
     |-- source-pin-check.test.sh
     |-- stagger-slot.test.sh
+    |-- terratest-rerun.test.sh
+    |-- terratest-telemetry.test.sh
     |-- tree-readme-section.test.sh
     |-- uses-pin-check.test.sh
     |-- version-band-check.test.sh
