@@ -409,6 +409,91 @@ current ungated behavior. **Approval policy:** only repo maintainers / `cs-*-cod
 members may approve a Terratest run; approving means you have reviewed the PR's Terraform and
 test code for anything that would abuse the cloud credentials.
 
+### Flake strategy: rerun and quarantine
+
+Real-infra tests are inherently flaky (eventual consistency, transient cloud API errors). Go's
+`terraform.WithDefaultRetryableErrors` handles known-retryable Terraform errors inside a test;
+this covers the layer above it. Flake reliability is the **primary blocker to promoting
+`org-terratest` to a required check** (ADR-0011: a check can only block if it is reliably green
+on correct code).
+
+**Automatic rerun (opt-in).** Set `rerun_fails` to a low cap (1–2):
+
+```yaml
+with:
+  rerun_fails: 1
+```
+
+`gotestsum` then re-runs **only the tests that failed**, and the run is green if a rerun passes
+— a transient flake no longer fails the whole suite or needs a human re-run, while a test that
+fails every attempt still fails. Keep the cap low: a high cap masks a genuinely broken test as
+"just flaky". `0` (the default) keeps single-attempt behavior.
+
+**Quarantine convention.** A test that is known-flaky and not yet fixed should not gate other
+work while it is being investigated. Move it behind a second build tag:
+
+```go
+//go:build terratest && terratest_quarantine
+```
+
+The reusable workflow runs `-tags terratest`, so a `terratest_quarantine`-tagged file is
+compiled out of the gating run — it does not fail the check. Run quarantined tests deliberately
+(locally or in a dedicated non-gating job with `-tags 'terratest terratest_quarantine'`), and
+keep quarantine membership visible: list quarantined tests in the repo's `test/README.md` (or a
+`test/QUARANTINE.md`) with the issue tracking each one's fix, so a quarantine is a tracked
+exception with an exit, not a silent hole. The flake rate that justifies quarantining (or
+un-quarantining) is surfaced per-module in the MTCS terratest posture scoreboard
+(`fleet/TERRATEST-POSTURE.md`).
+
+### Scheduled/nightly regression runs
+
+PR-triggered runs only catch regressions a human introduces. Nothing re-runs a suite between
+PRs, so provider-API / cloud / upstream drift goes undetected — a module can be "last known
+green" for months while the real behavior it asserts has drifted. Add a **scheduled** caller so
+the suite re-runs on a cadence:
+
+```yaml
+name: Terratest (scheduled)
+
+on:
+  schedule:
+    # Weekly is reasonable given real-infra cost. STAGGER the minute/hour across repos so a
+    # dozen suites don't all apply at once and spike concurrent spend (this repo uses off-the-
+    # hour minutes elsewhere for the same reason — e.g. org-repo-bootstrap.yml).
+    - cron: "37 7 * * 1" # Mondays 07:37 UTC — pick a distinct slot per repo
+  workflow_dispatch:
+
+# Same per-repo concurrency group as the PR caller so a scheduled run never races a PR run.
+concurrency:
+  group: org-terratest-${{ github.repository }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  terratest:
+    uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@0324cf8a90b4b9c523465f53a892a722f613e318 # v0.15.0
+    with:
+      test_directory: test
+      test_timeout: 45m
+      aws_role_arn: arn:aws-us-gov:iam::358745275192:role/github-action-test-role
+      aws_region: us-gov-west-1
+      # Non-gating: a scheduled drift failure alerts, it does not block a branch. Route it to
+      # #cs-alerts via the built-in failure-notify path instead of failing a required check.
+      slack_channel_id: C0A96K23KPF # #cs-alerts (invite the bot first)
+      # A scheduled run is exactly the case where a flake would page someone at night — a low
+      # rerun cap absorbs transient flakes so only a real drift alerts.
+      rerun_fails: 1
+      enable_nat_eip_sweep: true
+    secrets: inherit
+```
+
+A drift that a pinned provider bump introduces is then caught by the Monday run and posted to
+Slack, not left until the next human PR. Because scheduled runs are non-gating, a flake or a
+transient cloud outage is an alert to triage, not a blocked branch.
+
 ### Pending-run auto-cancel is safe (and desirable)
 
 GitHub's concurrency group auto-cancels *superseded pending* runs — a run that is queued but
@@ -479,6 +564,7 @@ The essentials:
 | `slack_channel_id` | No | | Slack channel for failure notifications |
 | `environment` | No | | GitHub Environment to gate the credentialed job (e.g. `terratest-gov`). Empty = no gate. See [Protected-environment gate](#protected-environment-gate-for-credentialed-runs). |
 | `enable_nat_eip_sweep` | No | `false` | Run an `if: always()` run-scoped NAT Elastic IP sweep after the tests (AWS only; requires `RunId`-tagged EIPs). See [Run-scoped resource tagging](#run-scoped-resource-tagging-and-the-nat-eip-sweep). |
+| `rerun_fails` | No | `0` | Max automatic re-runs of *failed* tests (`gotestsum --rerun-fails`). `0` disables. See [Flake strategy](#flake-strategy-rerun-and-quarantine). |
 
 ## Secrets Reference
 

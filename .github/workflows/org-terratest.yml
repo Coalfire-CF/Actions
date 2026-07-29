@@ -51,6 +51,17 @@ on:
         required: false
         default: 60
         type: number
+      # Flake resilience (#236 / WI-3.5). Opt-in automatic re-run of ONLY the failed tests, via
+      # gotestsum --rerun-fails, capped low. 0 (default) keeps the current single-attempt
+      # behavior — no caller changes unless it sets this. Real-infra flakiness (eventual
+      # consistency, transient API errors) is the primary blocker to promoting the check to
+      # required (ADR-0011); a bounded rerun distinguishes a flake from a real failure without
+      # re-running the whole suite. Keep it low (1–2): a high cap masks a genuinely broken test.
+      rerun_fails:
+        description: 'Max automatic re-runs of failed tests (gotestsum --rerun-fails). 0 disables (default).'
+        required: false
+        default: 0
+        type: number
       working_directory:
         description: 'Working directory (repo root by default)'
         required: false
@@ -398,13 +409,32 @@ jobs:
         env:
           TEST_DIR: ${{ inputs.test_directory }}
           TEST_TIMEOUT: ${{ inputs.test_timeout }}
+          RERUN_FAILS: ${{ inputs.rerun_fails }}
         run: |
           set +e
           cd "${TEST_DIR}"
-          gotestsum \
-            --format standard-verbose \
-            --junitfile "${GITHUB_WORKSPACE}/terratest-results.xml" \
-            -- -tags terratest -timeout "${TEST_TIMEOUT}" ./... 2>&1 | tee "${GITHUB_WORKSPACE}/terratest_output.txt"
+
+          # Opt-in flake resilience (#236). gotestsum --rerun-fails re-runs ONLY the tests that
+          # failed, up to the cap, and reports green if a rerun passes — turning a transient infra
+          # flake into a pass without a human re-run, while a test that fails every attempt still
+          # fails. gotestsum requires that in rerun mode the packages come from --packages and are
+          # NOT also passed as positional args after `--` (doing both is an error), so the package
+          # spec `./...` moves into --packages in that mode. When RERUN_FAILS is 0 (default) we
+          # keep the original single-attempt invocation with `./...` positional, so no caller's
+          # behavior changes unless it opts in.
+          if [ "${RERUN_FAILS:-0}" -gt 0 ]; then
+            echo "::notice::flake resilience on — up to ${RERUN_FAILS} rerun(s) of failed tests"
+            gotestsum \
+              --format standard-verbose \
+              --junitfile "${GITHUB_WORKSPACE}/terratest-results.xml" \
+              --rerun-fails="${RERUN_FAILS}" --rerun-fails-max-failures=15 --packages=./... \
+              -- -tags terratest -timeout "${TEST_TIMEOUT}" 2>&1 | tee "${GITHUB_WORKSPACE}/terratest_output.txt"
+          else
+            gotestsum \
+              --format standard-verbose \
+              --junitfile "${GITHUB_WORKSPACE}/terratest-results.xml" \
+              -- -tags terratest -timeout "${TEST_TIMEOUT}" ./... 2>&1 | tee "${GITHUB_WORKSPACE}/terratest_output.txt"
+          fi
           EXIT_CODE=${PIPESTATUS[0]}
           set -e
 
