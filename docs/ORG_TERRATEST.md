@@ -335,12 +335,21 @@ Two automated backstops cover this gap so it does not depend on manual disciplin
 1. **Per-run net — the `if: always()` NAT-EIP sweep** (opt-in `enable_nat_eip_sweep`). Runs
    in a separate job, on cancellation too, and releases the run's own orphaned NAT Elastic IPs.
    See [Run-scoped resource tagging](#run-scoped-resource-tagging-and-the-nat-eip-sweep).
-1. **Scheduled reaper — [`terraform-aws-terratest-janitor`](https://github.com/Coalfire-CF/terraform-aws-terratest-janitor)**
-   is the authoritative standing backstop for everything the per-run net does not cover
-   (non-EIP resources, a `SIGKILL` before the sweep job runs, cross-cloud). It is an hourly,
-   account-allowlisted Lambda that sweeps abandoned prefix-cohorts (a cohort is reaped only when
-   **every** timestamped sibling is older than `abandon_hours`, so an active run is never raced)
-   and alerts loudly on both action and failure.
+1. **Scheduled reaper — [`terratest-janitor`](https://github.com/Coalfire-CF/cs-aws-lab-management/tree/main/tools/terratest-janitor)**
+   (formerly the standalone `terraform-aws-terratest-janitor` repo, now folded into
+   `cs-aws-lab-management/tools/terratest-janitor`) is the authoritative standing backstop for
+   everything the per-run net does not cover (non-EIP resources, a `SIGKILL` before the sweep job
+   runs, cross-cloud). It is an hourly, account-allowlisted Lambda that sweeps abandoned
+   prefix-cohorts (a cohort is reaped only when **every** timestamped sibling is older than
+   `abandon_hours`, so an active run is never raced) and alerts loudly on both action and failure.
+
+   **One class has no prefix fence: ACM Private CAs.** A CA has no prefix-able name, so the cohort
+   rule cannot protect it and the reaper judges it on **age alone** — which is how it deleted a
+   production root CA sharing an allowlisted account, hourly, until fixed. A CA tagged
+   `janitor=false` is now skipped outright (key and value stripped, case-insensitive), and a CA
+   whose tags cannot be read is skipped too (fail closed). **If a long-lived resource shares a
+   janitor-allowlisted account, tag it `janitor=false` — and note that tag is honored for ACM PCA
+   only; every other class is still fenced by the test-prefix rule alone.**
 
 **Break-glass (only if the backstops are unavailable):** manually sweep the test account by
 tag/prefix. For the AWS GovCloud account, check for leaked:
