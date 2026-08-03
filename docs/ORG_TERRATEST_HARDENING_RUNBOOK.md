@@ -105,13 +105,15 @@ unassociated addresses tagged that `RunId`.
 ## 2b. Extend the janitor to the general terratest account (#234)
 
 **This is a sub-project, not a config edit — flag before starting.** The existing
-`terraform-aws-terratest-janitor` Lambda has scope-specific handlers (`security`, `pca`) covering
+`terratest-janitor` Lambda (in `cs-aws-lab-management/tools/terratest-janitor`) has
+scope-specific handlers (`security`, `pca`) covering
 Config/GuardDuty/CloudTrail/IAM/KMS/S3/logs and Security-Hub/ACM-PCA respectively. The general
 terratest account (`358745275192`) creates **VPC + subnets + NAT + route tables + Network
 Firewall + flow-log roles/policies + KMS aliases + log groups + S3** residue — the network
 classes are **not** covered by either existing handler. Extending the janitor therefore means:
 
-1. Author a new scope (e.g. `network`/`general`) handler in `modules/janitor/lambda` that reaps
+1. Author a new scope (e.g. `network`/`general`) handler in
+   `tools/terratest-janitor/modules/janitor/lambda` that reaps
    the VPC-dependency + NFW + flow-log classes, keyed on the same prefix-cohort-abandonment
    safety model (a cohort is swept only when every timestamped sibling is older than
    `abandon_hours`; hard account allowlist twice; loud-on-action-and-failure SNS).
