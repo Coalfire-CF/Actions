@@ -150,10 +150,23 @@ jobs:
             if grep -q "^## ${CHAPTER}\$" "$file_name"; then
               # Replace existing section
               awk -v chapter="$CHAPTER" -v tree="$final_tree" '
-                BEGIN {p=1; found=0}
-                $0 ~ "^## "chapter"$" {print tree; p=0; found=1; next}
-                $0 ~ /^## / && p==0 {print ""; p=1}
-                p==1 {print}
+                # mode 1 = printing; 0 = suppressing old Tree body; 2 = just
+                # closed the old fenced block, normalize one blank separator.
+                BEGIN {mode=1; found=0; fences=0}
+                mode==1 && $0 ~ "^## "chapter"$" {
+                  print tree; found=1; mode=0; fences=0; next
+                }
+                mode==0 {
+                  if ($0 ~ /^```/) { fences++; if (fences==2) mode=2; next }
+                  if ($0 ~ /^## /) { print ""; print; mode=1; next }  # fallback: malformed section, no close fence
+                  next
+                }
+                mode==2 {
+                  mode=1
+                  if ($0 !~ /^[[:space:]]*$/) print ""   # ensure one blank after our fence
+                  print; next
+                }
+                { print }
                 END {if (found==0) print "\n" tree}
               ' "$file_name" > "$file_name.new"
               mv "$file_name.new" "$file_name"

@@ -118,6 +118,37 @@ assert_section_clean "${REP}/README.md" "replace" || exit 1
 grep -q '^## License$' "${REP}/README.md" || fail "replace: following '## License' section was lost"
 echo "OK: replace — regenerated ## Tree section is MD022/MD031-clean and preserves the next section"
 
+# ---- 3b. REPLACE with NON-heading trailing content (issue #278) --------------
+# A terraform-docs block sits directly below the Tree fence: the BEGIN marker is
+# a non-heading line before the next '## '. The pre-fix awk swallowed it.
+REPTF="${TMPD}/replace-tfdocs"; mkdir -p "$REPTF"
+cat > "${REPTF}/README.md" <<'MD'
+# terraform-aws-example
+
+## Tree
+```text
+stale
+```
+<!-- BEGIN_TF_DOCS -->
+## Requirements
+
+No requirements.
+<!-- END_TF_DOCS -->
+MD
+rc="$(run_updater "$REPTF")"
+[ "$rc" = "10" ] || fail "replace-tfdocs: exit code '$rc' (expected 10)"
+assert_section_clean "${REPTF}/README.md" "replace-tfdocs" || exit 1
+grep -q '<!-- BEGIN_TF_DOCS -->' "${REPTF}/README.md" || fail "replace-tfdocs: BEGIN_TF_DOCS marker was stripped"
+grep -q '<!-- END_TF_DOCS -->'   "${REPTF}/README.md" || fail "replace-tfdocs: END_TF_DOCS marker was lost"
+grep -q '^## Requirements$'       "${REPTF}/README.md" || fail "replace-tfdocs: TF_DOCS body was lost"
+# second run must be byte-identical (idempotence with trailing content)
+cp "${REPTF}/README.md" "${TMPD}/replace-tfdocs.before"
+rc="$(run_updater "$REPTF")"
+[ "$rc" = "10" ] || fail "replace-tfdocs rerun: exit '$rc' (expected 10)"
+diff -u "${TMPD}/replace-tfdocs.before" "${REPTF}/README.md" \
+  || fail "replace-tfdocs: second regeneration changed the file (not idempotent)"
+echo "OK: replace-tfdocs — Tree regen preserves BEGIN/END markers + TF_DOCS body, idempotent"
+
 # ---- 4. APPEND case: README with NO ## Tree section --------------------------
 APP="${TMPD}/append"; mkdir -p "$APP"
 cat > "${APP}/README.md" <<'MD'
@@ -191,8 +222,9 @@ awk '
   /final_tree="## \$\{CHAPTER\}/ { getline nxt; if (nxt ~ /^[[:space:]]*$/) ok=1 }
   END { exit !ok }
 ' "$WF" || fail "drift — final_tree no longer has a blank line between the heading and the fence"
-grep -q 'p==0 {print ""; p=1}' "$WF" \
-  || fail "drift — the replace-awk no longer emits a blank line before the next heading (MD022/MD031)"
+# shellcheck disable=SC2016 # literal awk source (no shell expansion intended)
+grep -qF 'if ($0 !~ /^[[:space:]]*$/) print ""' "$WF" \
+  || fail "drift — the replace-awk no longer normalizes a single blank line after the Tree fence (MD031)"
 echo "OK: drift guard — workflow template + awk retain the blank-line framing"
 
 echo "ALL TESTS PASSED"
