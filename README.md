@@ -234,6 +234,7 @@ Issue labels:
     |-- auto-merge-decide.test.sh
     |-- cache-integrity.test.sh
     |-- cache-read.test.sh
+    |-- dependabot-refresh.test.sh
     |-- example-pin-check.test.sh
     |-- fixtures
     |   |-- auto-merge-decide
