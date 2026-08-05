@@ -178,11 +178,36 @@ if not (fences[1] < b < r):
     print(f"NOT OK: [self-heal] BEGIN at {b} not between close-fence {fences[1]} and Requirements {r}"); sys.exit(1)
 print("self-heal-placement-ok")
 PY
-# idempotence: with BEGIN restored, a second run must not add a second BEGIN
+# idempotence: with BEGIN restored, a second run must not add a second BEGIN,
+# must exit 10 (updater still refreshes the Tree body), and must be byte-identical
+# except for that expected regeneration (no further heal-related mutation).
+cp "${HEAL}/README.md" "${TMPD}/self-heal.before"
 rc="$(run_updater "$HEAL")"
+[ "$rc" = "10" ] || fail "self-heal rerun: exit '$rc' (expected 10)"
 [ "$(grep -c '<!-- BEGIN_TF_DOCS -->' "${HEAL}/README.md")" = "1" ] \
   || fail "self-heal: second run duplicated the BEGIN marker"
+diff -u "${TMPD}/self-heal.before" "${HEAL}/README.md" \
+  || fail "self-heal: second regeneration changed the file (not idempotent)"
 echo "OK: self-heal — restores BEGIN_TF_DOCS after the Tree fence, idempotent"
+
+# ---- 3d. NO-HEAL guard: END present, BEGIN absent, but NO Tree section -------
+# Not the #278 signature (the bug only strips BEGIN when it sits below the Tree
+# fence). Self-heal must NOT inject a marker here — it would land after END and
+# permanently wedge terraform-docs. Append adds a Tree section at EOF; still no BEGIN.
+NOHEAL="${TMPD}/no-heal"; mkdir -p "$NOHEAL"
+cat > "${NOHEAL}/README.md" <<'MD'
+# terraform-aws-example
+
+## Requirements
+
+No requirements.
+<!-- END_TF_DOCS -->
+MD
+rc="$(run_updater "$NOHEAL")"
+[ "$rc" = "10" ] || fail "no-heal: exit '$rc' (expected 10 — append adds Tree)"
+grep -q '<!-- BEGIN_TF_DOCS -->' "${NOHEAL}/README.md" \
+  && fail "no-heal: BEGIN was injected though no Tree section precedes END"
+echo "OK: no-heal — END without a preceding Tree section is left untouched (no misplaced BEGIN)"
 
 # ---- 4. APPEND case: README with NO ## Tree section --------------------------
 APP="${TMPD}/append"; mkdir -p "$APP"

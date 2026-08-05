@@ -178,12 +178,16 @@ jobs:
             # Self-heal (issue #278): the pre-fix updater stripped the opening
             # <!-- BEGIN_TF_DOCS --> marker and left the closing one, so
             # terraform-docs fails "begin comment is missing" on every push. If
-            # END exists with no BEGIN and a Tree section is present, re-insert
-            # BEGIN right after the Tree closing fence — exactly where the bug
-            # removed it. Guarded so it is a no-op once the marker is present.
-            if grep -q '<!-- END_TF_DOCS -->' "$file_name" \
-               && ! grep -q '<!-- BEGIN_TF_DOCS -->' "$file_name" \
-               && grep -q "^## ${CHAPTER}\$" "$file_name"; then
+            # END exists with no BEGIN and a Tree section PRECEDES the END marker,
+            # re-insert BEGIN right after the Tree closing fence — exactly where
+            # the bug removed it. Requiring the Tree heading to precede END avoids
+            # injecting a marker after END (which would wedge terraform-docs and
+            # suppress future re-healing). Guarded so it is a no-op once BEGIN is
+            # present.
+            heal_end_ln="$(grep -n '<!-- END_TF_DOCS -->' "$file_name" | head -n1 | cut -d: -f1 || true)"
+            heal_tree_ln="$(grep -n "^## ${CHAPTER}\$" "$file_name" | head -n1 | cut -d: -f1 || true)"
+            if [[ -n "$heal_end_ln" && -n "$heal_tree_ln" && "$heal_tree_ln" -lt "$heal_end_ln" ]] \
+               && ! grep -q '<!-- BEGIN_TF_DOCS -->' "$file_name"; then
               echo "Self-heal: restoring stripped BEGIN_TF_DOCS marker in $file_name"
               awk -v chapter="$CHAPTER" '
                 BEGIN {inTree=0; fences=0; injected=0}
