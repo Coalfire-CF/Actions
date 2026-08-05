@@ -174,6 +174,33 @@ jobs:
               # Append if missing
               printf "\n%s\n" "$final_tree" >> "$file_name"
             fi
+
+            # Self-heal (issue #278): the pre-fix updater stripped the opening
+            # <!-- BEGIN_TF_DOCS --> marker and left the closing one, so
+            # terraform-docs fails "begin comment is missing" on every push. If
+            # END exists with no BEGIN and a Tree section is present, re-insert
+            # BEGIN right after the Tree closing fence — exactly where the bug
+            # removed it. Guarded so it is a no-op once the marker is present.
+            if grep -q '<!-- END_TF_DOCS -->' "$file_name" \
+               && ! grep -q '<!-- BEGIN_TF_DOCS -->' "$file_name" \
+               && grep -q "^## ${CHAPTER}\$" "$file_name"; then
+              echo "Self-heal: restoring stripped BEGIN_TF_DOCS marker in $file_name"
+              awk -v chapter="$CHAPTER" '
+                BEGIN {inTree=0; fences=0; injected=0}
+                {
+                  print
+                  if (!injected && $0 ~ "^## "chapter"$") { inTree=1; fences=0; next }
+                  if (inTree && $0 ~ /^```/) {
+                    fences++
+                    if (fences==2) {
+                      print ""; print "<!-- BEGIN_TF_DOCS -->"
+                      inTree=0; injected=1
+                    }
+                  }
+                }
+              ' "$file_name" > "$file_name.heal"
+              mv "$file_name.heal" "$file_name"
+            fi
             changed=1
           done
 

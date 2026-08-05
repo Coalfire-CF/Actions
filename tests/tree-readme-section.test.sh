@@ -149,6 +149,41 @@ diff -u "${TMPD}/replace-tfdocs.before" "${REPTF}/README.md" \
   || fail "replace-tfdocs: second regeneration changed the file (not idempotent)"
 echo "OK: replace-tfdocs — Tree regen preserves BEGIN/END markers + TF_DOCS body, idempotent"
 
+# ---- 3c. SELF-HEAL a stripped BEGIN marker (issue #278 recovery) -------------
+# README already broken on main: END present, BEGIN gone, Tree section present.
+HEAL="${TMPD}/self-heal"; mkdir -p "$HEAL"
+cat > "${HEAL}/README.md" <<'MD'
+# terraform-aws-example
+
+## Tree
+```text
+stale
+```
+## Requirements
+
+No requirements.
+<!-- END_TF_DOCS -->
+MD
+rc="$(run_updater "$HEAL")"
+[ "$rc" = "10" ] || fail "self-heal: exit '$rc' (expected 10)"
+grep -q '<!-- BEGIN_TF_DOCS -->' "${HEAL}/README.md" || fail "self-heal: BEGIN_TF_DOCS was not restored"
+# BEGIN must sit AFTER the Tree closing fence and BEFORE '## Requirements'
+python3 - "${HEAL}/README.md" <<'PY' || exit 1
+import sys
+lines = open(sys.argv[1]).read().split("\n")
+b = next(i for i,l in enumerate(lines) if l.strip() == "<!-- BEGIN_TF_DOCS -->")
+r = next(i for i,l in enumerate(lines) if l.strip() == "## Requirements")
+fences = [i for i,l in enumerate(lines) if l.startswith("```")]
+if not (fences[1] < b < r):
+    print(f"NOT OK: [self-heal] BEGIN at {b} not between close-fence {fences[1]} and Requirements {r}"); sys.exit(1)
+print("self-heal-placement-ok")
+PY
+# idempotence: with BEGIN restored, a second run must not add a second BEGIN
+rc="$(run_updater "$HEAL")"
+[ "$(grep -c '<!-- BEGIN_TF_DOCS -->' "${HEAL}/README.md")" = "1" ] \
+  || fail "self-heal: second run duplicated the BEGIN marker"
+echo "OK: self-heal — restores BEGIN_TF_DOCS after the Tree fence, idempotent"
+
 # ---- 4. APPEND case: README with NO ## Tree section --------------------------
 APP="${TMPD}/append"; mkdir -p "$APP"
 cat > "${APP}/README.md" <<'MD'
