@@ -279,6 +279,7 @@ Issue labels:
     |-- retry-lib.test.sh
     |-- source-pin-check.test.sh
     |-- stagger-slot.test.sh
+    |-- supply-chain-osv-range.test.sh
     |-- terratest-rerun.test.sh
     |-- terratest-telemetry.test.sh
     |-- tree-readme-section.test.sh
