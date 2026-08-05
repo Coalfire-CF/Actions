@@ -16,8 +16,8 @@ All caller examples in this document are drawn from the two **proven, green** ca
 org. Pin the reusable workflow to the **immutable commit SHA of the latest release** with an
 adjacent `# vX.Y.Z` comment (SHA-preferred pinning, RFC-0008/ADR-0018) — check the
 [releases page](https://github.com/Coalfire-CF/Actions/releases) for the current SHA rather
-than trusting a number frozen in this doc. The snippets below pin **v0.15.0**
-(`0324cf8a90b4b9c523465f53a892a722f613e318`); the `environment` and `enable_nat_eip_sweep`
+than trusting a number frozen in this doc. The snippets below pin **v0.16.0**
+(`23aae589e2eb9c009fad0da45899db6ae59e8d02`); the `environment` and `enable_nat_eip_sweep`
 inputs ship from the release that lands #237/#273 — pin at or above it to use them.
 
 - **AWS (GovCloud):** [`terraform-aws-vpc-nfw`](https://github.com/Coalfire-CF/terraform-aws-vpc-nfw)
@@ -193,7 +193,7 @@ concurrency:
 
 jobs:
   terratest:
-    uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@0324cf8a90b4b9c523465f53a892a722f613e318 # v0.15.0
+    uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@23aae589e2eb9c009fad0da45899db6ae59e8d02 # v0.16.0
     with:
       test_mode: pr
       go_version: "1.26"
@@ -241,7 +241,7 @@ concurrency:
 
 jobs:
   terratest-azure:
-    uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@0324cf8a90b4b9c523465f53a892a722f613e318 # v0.15.0
+    uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@23aae589e2eb9c009fad0da45899db6ae59e8d02 # v0.16.0
     with:
       test_mode: pr
       go_version: "1.26"
@@ -277,7 +277,7 @@ concurrency:
 
 jobs:
   terratest:
-    uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@0324cf8a90b4b9c523465f53a892a722f613e318 # v0.15.0
+    uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@23aae589e2eb9c009fad0da45899db6ae59e8d02 # v0.16.0
     with:
       test_mode: pr
       go_version: "1.26"
@@ -300,7 +300,7 @@ on:
 
 jobs:
   terratest:
-    uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@0324cf8a90b4b9c523465f53a892a722f613e318 # v0.15.0
+    uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@23aae589e2eb9c009fad0da45899db6ae59e8d02 # v0.16.0
     with:
       test_mode: release
       go_version: "1.26"
@@ -309,7 +309,7 @@ jobs:
 
   release-clean:
     needs: terratest
-    uses: Coalfire-CF/Actions/.github/workflows/org-release-clean.yml@0324cf8a90b4b9c523465f53a892a722f613e318 # v0.15.0
+    uses: Coalfire-CF/Actions/.github/workflows/org-release-clean.yml@23aae589e2eb9c009fad0da45899db6ae59e8d02 # v0.16.0
     with:
       tag_name: ${{ github.event.release.tag_name }}
 ```
@@ -483,7 +483,7 @@ permissions:
 
 jobs:
   terratest:
-    uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@0324cf8a90b4b9c523465f53a892a722f613e318 # v0.15.0
+    uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@23aae589e2eb9c009fad0da45899db6ae59e8d02 # v0.16.0
     with:
       test_directory: test
       test_timeout: 45m
