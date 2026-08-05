@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.16.1](https://github.com/Coalfire-CF/Actions/compare/v0.16.0...v0.16.1) (2026-08-05)
+
+
+### Bug Fixes
+
+* **dependabot:** collapse per-directory module fan-out with group-by ([#282](https://github.com/Coalfire-CF/Actions/issues/282)) ([9b531de](https://github.com/Coalfire-CF/Actions/commit/9b531deeb4f7874c16b1c28fb1b0ff5b5d00c559))
+* **supply-chain:** evaluate OSV GitHub Actions range advisories locally ([#153](https://github.com/Coalfire-CF/Actions/issues/153)) ([#284](https://github.com/Coalfire-CF/Actions/issues/284)) ([f469955](https://github.com/Coalfire-CF/Actions/commit/f4699556af4630248e5503bc4f1ef4b9852daafa))
+* **tree-readme:** stop stripping BEGIN_TF_DOCS marker, self-heal broken READMEs ([#278](https://github.com/Coalfire-CF/Actions/issues/278)) ([#283](https://github.com/Coalfire-CF/Actions/issues/283)) ([93f5d78](https://github.com/Coalfire-CF/Actions/commit/93f5d780774a737da2dc3ae388c8a6456e7b0e5b))
+
+
+### Miscellaneous
+
+* **ci:** create-github-app-token app-id -&gt; client-id (input deprecated in v3) ([#277](https://github.com/Coalfire-CF/Actions/issues/277)) ([555cc07](https://github.com/Coalfire-CF/Actions/commit/555cc077bd3e86daf4b19856c680e78588ca7e3c))
+* **deps:** bump Coalfire-CF/Actions/actions/gitleaks ([#281](https://github.com/Coalfire-CF/Actions/issues/281)) ([1250687](https://github.com/Coalfire-CF/Actions/commit/1250687afdd56e9c86c8e6e4602e66da8a851c8c))
+
+
+### Documentation
+
+* re-point terratest-janitor to its new home, document the janitor=false tag ([#279](https://github.com/Coalfire-CF/Actions/issues/279)) ([80a7670](https://github.com/Coalfire-CF/Actions/commit/80a767090f9c620bc33c878259ac237d49d18bd4))
+
 ## [0.16.0](https://github.com/Coalfire-CF/Actions/compare/v0.15.0...v0.16.0) (2026-07-29)
 
 
