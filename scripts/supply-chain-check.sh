@@ -61,6 +61,85 @@ AGG_SC_PASS="true"
 AGG_SC_SCORE=""
 AGG_CACHE_HIT="true"
 
+# osv_range_verdict <dep> <osv_ecosystem> <version> — issue #153 fallback.
+# The versioned /v1/query is blind to GitHub Actions advisories that encode
+# affected versions as a RANGE with an empty versions[] array. This re-queries
+# OSV WITHOUT a version and evaluates affected[].ranges locally against
+# <version>. It mutates OSV_CLEAR / OSV_VULNS / CHECK_ERRORS in check_one:
+#   affected      -> OSV_CLEAR=false, OSV_VULNS = matching advisories (hard block)
+#   clear         -> no change (only older versions were in range)
+#   indeterminate -> CHECK_ERRORS++ (a range we can't order — e.g. a SHA/pre-release
+#                    target, or a GIT-type range — routes to manual review, fail closed)
+# Version ordering handles numeric git tags (0, 41, 46.0.1), which is what OSV
+# GitHub Actions ranges use; anything non-numeric is treated as unevaluable.
+osv_range_verdict() {
+  local dep="$1" eco="$2" ver="$3" pkg_payload pkg_response result verdict ids
+  pkg_payload=$(jq -n --arg pkg "$dep" --arg eco "$eco" \
+    '{package: {name: $pkg, ecosystem: $eco}}')
+  if ! pkg_response=$(with_retry "$RETRY_MAX" "$RETRY_BASE" "$RETRY_CAP" -- \
+    http_retryable --max-time 30 \
+    -X POST "https://api.osv.dev/v1/query" \
+    -H "Content-Type: application/json" \
+    -d "$pkg_payload"); then
+    echo "::warning::OSV package-only query FAILED for ${dep} — failing closed"
+    CHECK_ERRORS=$((CHECK_ERRORS + 1))
+    return
+  fi
+  result=$(printf '%s' "$pkg_response" | jq -c --arg ver "$ver" --arg pkg "$dep" --arg eco "$eco" '
+    def parts($s):
+      ($s | ltrimstr("v")) as $c
+      | if ($c | test("^[0-9]+(\\.[0-9]+)*$")) then ($c | split(".") | map(tonumber)) else null end;
+    ($ver | parts(.)) as $vp
+    | def hit($r):
+        if ($r.type != "ECOSYSTEM" and $r.type != "SEMVER") then "indeterminate"
+        elif $vp == null then "indeterminate"
+        else
+          ((([$r.events[] | .introduced | values])[0]) // "0") as $introS
+          | (([$r.events[] | .fixed | values])[0]) as $fixedS
+          | (([$r.events[] | .last_affected | values])[0]) as $laS
+          | parts($introS) as $intro
+          | (if $fixedS == null then null else parts($fixedS) end) as $fixed
+          | (if $laS == null then null else parts($laS) end) as $la
+          | if ($intro == null) or ($fixedS != null and $fixed == null) or ($laS != null and $la == null)
+              then "indeterminate"
+            elif ($vp >= $intro)
+                 and ( ($fixed != null and $vp < $fixed)
+                       or ($la != null and $vp <= $la)
+                       or ($fixed == null and $la == null) )
+              then "affected"
+            else "clear" end
+        end;
+      [ .vulns[] as $v
+        | ($v.affected // [])[]
+        | select(.package.name == $pkg and .package.ecosystem == $eco)
+        | { id: $v.id,
+            hits: ( [ (.ranges // [])[] | hit(.) ]
+                    + [ if ((.versions // []) | any(. == $ver)) then "affected" else empty end ] ) }
+      ] as $per
+      | [ $per[].hits[] ] as $all
+      | if ($all | any(. == "affected"))
+          then { verdict: "affected", ids: [ $per[] | select(.hits | any(. == "affected")) | .id ] }
+        elif ($all | any(. == "indeterminate"))
+          then { verdict: "indeterminate", ids: [] }
+        else { verdict: "clear", ids: [] } end
+  ' 2>/dev/null) || result=""
+  verdict=$(printf '%s' "$result" | jq -r '.verdict // "indeterminate"' 2>/dev/null || echo "indeterminate")
+  case "$verdict" in
+    affected)
+      OSV_CLEAR="false"
+      ids=$(printf '%s' "$result" | jq -c '.ids')
+      OSV_VULNS=$(printf '%s' "$pkg_response" | jq --argjson ids "$ids" \
+        '[.vulns[] | select(.id as $i | $ids | index($i))]')
+      echo "::warning::Found range-based known vulnerabilities for ${dep}@${ver} (ids: $(printf '%s' "$result" | jq -r '.ids | join(",")'))"
+      ;;
+    clear) : ;;
+    *)
+      echo "::warning::OSV range advisory for ${dep} could not be evaluated for version ${ver} — failing closed to manual review"
+      CHECK_ERRORS=$((CHECK_ERRORS + 1))
+      ;;
+  esac
+}
+
 check_one() {
 local DEP_NAME="$1" TO_VERSION="$2"
 # Per-dependency error baseline (#194/H1): if THIS dependency's checks error, we
@@ -135,6 +214,7 @@ if [ "$CACHE_HIT" = "false" ]; then
       --arg ver "$TO_VERSION" \
       --arg eco "$OSV_ECOSYSTEM" \
       '{package: {name: $pkg, ecosystem: $eco}, version: $ver}')
+    OSV_QUERY_OK="true"
     if ! OSV_RESPONSE=$(with_retry "$RETRY_MAX" "$RETRY_BASE" "$RETRY_CAP" -- \
       http_retryable --max-time 30 \
       -X POST "https://api.osv.dev/v1/query" \
@@ -143,12 +223,24 @@ if [ "$CACHE_HIT" = "false" ]; then
       echo "::warning::OSV query FAILED for ${DEP_NAME}@${TO_VERSION} — failing closed"
       CHECK_ERRORS=$((CHECK_ERRORS + 1))
       OSV_RESPONSE='{"vulns":[]}'
+      OSV_QUERY_OK="false"
     fi
     OSV_VULNS=$(echo "$OSV_RESPONSE" | jq '.vulns // []')
     VULN_COUNT=$(echo "$OSV_VULNS" | jq 'length')
     if [ "$VULN_COUNT" -gt 0 ]; then
       OSV_CLEAR="false"
       echo "::warning::Found ${VULN_COUNT} known vulnerabilities for ${DEP_NAME}@${TO_VERSION}"
+    elif [ "$OSV_QUERY_OK" = "true" ] && [ "$OSV_ECOSYSTEM" = "GitHub Actions" ]; then
+      # Issue #153: the versioned /v1/query above is BLIND to GitHub Actions
+      # advisories that encode affected versions as a RANGE with an empty
+      # versions[] array (e.g. GHSA-mrrh-fwg8-r2c3, the tj-actions/changed-files
+      # compromise). OSV can't order git-tag versions server-side, so a
+      # version-included query never matches that class and the gate stays
+      # clear on a known-bad bump. Re-query WITHOUT the version and evaluate the
+      # ranges locally. Scoped to GitHub Actions: ecosystems OSV can order
+      # (npm/PyPI/Go/...) already get correct server-side range matching from
+      # the fast path, so they keep the single-call behaviour.
+      osv_range_verdict "$DEP_NAME" "$OSV_ECOSYSTEM" "$TO_VERSION"
     fi
   else
     echo "No OSV ecosystem mapping for '${ECOSYSTEM}' — skipping OSV check"
