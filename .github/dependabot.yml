@@ -22,13 +22,25 @@ updates:
         update-types: ["minor", "patch"]
   # npm (#204): this repo ships package.json + package-lock.json (markdownlint-cli2),
   # which org-dependabot.yml maps to the npm ecosystem — so the dogfood must declare
-  # it too, or advisories against the pinned tree open no bump PRs. The generator
-  # emits groups only for github-actions (the Coalfire-CF/* first-party split does
-  # not apply to npm), so npm is a plain block; majors arrive as singleton PRs.
+  # it too, or advisories against the pinned tree open no bump PRs. Mirrors the
+  # generator's non-actions shape: directories: (plural) + group-by: dependency-name,
+  # so a dependency spanning multiple dirs collapses into one PR instead of one PR
+  # per directory. No update-types -> majors are included; group-by keeps each PR to
+  # a single dependency, so a major only blocks its own PR at the auto-merge gate.
   - package-ecosystem: "npm"
-    directory: "/"
+    directories:
+      - "/"
     schedule:
       interval: "daily"
     commit-message:
       prefix: "chore"
       include: "scope"
+    groups:
+      npm:
+        applies-to: version-updates
+        group-by: dependency-name
+        patterns: ["*"]
+      npm-security:
+        applies-to: security-updates
+        group-by: dependency-name
+        patterns: ["*"]
