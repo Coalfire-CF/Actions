@@ -118,6 +118,97 @@ assert_section_clean "${REP}/README.md" "replace" || exit 1
 grep -q '^## License$' "${REP}/README.md" || fail "replace: following '## License' section was lost"
 echo "OK: replace — regenerated ## Tree section is MD022/MD031-clean and preserves the next section"
 
+# ---- 3b. REPLACE with NON-heading trailing content (issue #278) --------------
+# A terraform-docs block sits directly below the Tree fence: the BEGIN marker is
+# a non-heading line before the next '## '. The pre-fix awk swallowed it.
+REPTF="${TMPD}/replace-tfdocs"; mkdir -p "$REPTF"
+cat > "${REPTF}/README.md" <<'MD'
+# terraform-aws-example
+
+## Tree
+```text
+stale
+```
+<!-- BEGIN_TF_DOCS -->
+## Requirements
+
+No requirements.
+<!-- END_TF_DOCS -->
+MD
+rc="$(run_updater "$REPTF")"
+[ "$rc" = "10" ] || fail "replace-tfdocs: exit code '$rc' (expected 10)"
+assert_section_clean "${REPTF}/README.md" "replace-tfdocs" || exit 1
+grep -q '<!-- BEGIN_TF_DOCS -->' "${REPTF}/README.md" || fail "replace-tfdocs: BEGIN_TF_DOCS marker was stripped"
+grep -q '<!-- END_TF_DOCS -->'   "${REPTF}/README.md" || fail "replace-tfdocs: END_TF_DOCS marker was lost"
+grep -q '^## Requirements$'       "${REPTF}/README.md" || fail "replace-tfdocs: TF_DOCS body was lost"
+# second run must be byte-identical (idempotence with trailing content)
+cp "${REPTF}/README.md" "${TMPD}/replace-tfdocs.before"
+rc="$(run_updater "$REPTF")"
+[ "$rc" = "10" ] || fail "replace-tfdocs rerun: exit '$rc' (expected 10)"
+diff -u "${TMPD}/replace-tfdocs.before" "${REPTF}/README.md" \
+  || fail "replace-tfdocs: second regeneration changed the file (not idempotent)"
+echo "OK: replace-tfdocs — Tree regen preserves BEGIN/END markers + TF_DOCS body, idempotent"
+
+# ---- 3c. SELF-HEAL a stripped BEGIN marker (issue #278 recovery) -------------
+# README already broken on main: END present, BEGIN gone, Tree section present.
+HEAL="${TMPD}/self-heal"; mkdir -p "$HEAL"
+cat > "${HEAL}/README.md" <<'MD'
+# terraform-aws-example
+
+## Tree
+```text
+stale
+```
+## Requirements
+
+No requirements.
+<!-- END_TF_DOCS -->
+MD
+rc="$(run_updater "$HEAL")"
+[ "$rc" = "10" ] || fail "self-heal: exit '$rc' (expected 10)"
+grep -q '<!-- BEGIN_TF_DOCS -->' "${HEAL}/README.md" || fail "self-heal: BEGIN_TF_DOCS was not restored"
+# BEGIN must sit AFTER the Tree closing fence and BEFORE '## Requirements'
+python3 - "${HEAL}/README.md" <<'PY' || exit 1
+import sys
+lines = open(sys.argv[1]).read().split("\n")
+b = next(i for i,l in enumerate(lines) if l.strip() == "<!-- BEGIN_TF_DOCS -->")
+r = next(i for i,l in enumerate(lines) if l.strip() == "## Requirements")
+fences = [i for i,l in enumerate(lines) if l.startswith("```")]
+if not (fences[1] < b < r):
+    print(f"NOT OK: [self-heal] BEGIN at {b} not between close-fence {fences[1]} and Requirements {r}"); sys.exit(1)
+print("self-heal-placement-ok")
+PY
+# idempotence: with BEGIN restored, a second run must not add a second BEGIN,
+# must exit 10 (updater still refreshes the Tree body), and must be byte-identical
+# except for that expected regeneration (no further heal-related mutation).
+cp "${HEAL}/README.md" "${TMPD}/self-heal.before"
+rc="$(run_updater "$HEAL")"
+[ "$rc" = "10" ] || fail "self-heal rerun: exit '$rc' (expected 10)"
+[ "$(grep -c '<!-- BEGIN_TF_DOCS -->' "${HEAL}/README.md")" = "1" ] \
+  || fail "self-heal: second run duplicated the BEGIN marker"
+diff -u "${TMPD}/self-heal.before" "${HEAL}/README.md" \
+  || fail "self-heal: second regeneration changed the file (not idempotent)"
+echo "OK: self-heal — restores BEGIN_TF_DOCS after the Tree fence, idempotent"
+
+# ---- 3d. NO-HEAL guard: END present, BEGIN absent, but NO Tree section -------
+# Not the #278 signature (the bug only strips BEGIN when it sits below the Tree
+# fence). Self-heal must NOT inject a marker here — it would land after END and
+# permanently wedge terraform-docs. Append adds a Tree section at EOF; still no BEGIN.
+NOHEAL="${TMPD}/no-heal"; mkdir -p "$NOHEAL"
+cat > "${NOHEAL}/README.md" <<'MD'
+# terraform-aws-example
+
+## Requirements
+
+No requirements.
+<!-- END_TF_DOCS -->
+MD
+rc="$(run_updater "$NOHEAL")"
+[ "$rc" = "10" ] || fail "no-heal: exit '$rc' (expected 10 — append adds Tree)"
+grep -q '<!-- BEGIN_TF_DOCS -->' "${NOHEAL}/README.md" \
+  && fail "no-heal: BEGIN was injected though no Tree section precedes END"
+echo "OK: no-heal — END without a preceding Tree section is left untouched (no misplaced BEGIN)"
+
 # ---- 4. APPEND case: README with NO ## Tree section --------------------------
 APP="${TMPD}/append"; mkdir -p "$APP"
 cat > "${APP}/README.md" <<'MD'
@@ -191,8 +282,9 @@ awk '
   /final_tree="## \$\{CHAPTER\}/ { getline nxt; if (nxt ~ /^[[:space:]]*$/) ok=1 }
   END { exit !ok }
 ' "$WF" || fail "drift — final_tree no longer has a blank line between the heading and the fence"
-grep -q 'p==0 {print ""; p=1}' "$WF" \
-  || fail "drift — the replace-awk no longer emits a blank line before the next heading (MD022/MD031)"
+# shellcheck disable=SC2016 # literal awk source (no shell expansion intended)
+grep -qF 'if ($0 !~ /^[[:space:]]*$/) print ""' "$WF" \
+  || fail "drift — the replace-awk no longer normalizes a single blank line after the Tree fence (MD031)"
 echo "OK: drift guard — workflow template + awk retain the blank-line framing"
 
 echo "ALL TESTS PASSED"

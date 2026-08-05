@@ -23,7 +23,7 @@ VER="$(jq -r '."."' "${REPO_ROOT}/.release-please-manifest.json" 2>/dev/null)"
 [ -n "$VER" ] && [ "$VER" != "null" ] || fail "could not read version from .release-please-manifest.json"
 WANT="v${VER}"
 
-FILES=(README.md docs/ORG_DEPENDABOT_AUTO_MERGE.md)
+FILES=(README.md docs/ORG_DEPENDABOT_AUTO_MERGE.md docs/ORG_TERRATEST.md)
 # Lines that pin an Actions reusable workflow (or actions_ref) with a version tag comment.
 PIN_RE='(/Actions/\.github/workflows/[^@]*@[0-9a-fA-F]{40}|actions_ref:[[:space:]]*[0-9a-fA-F]{40})[[:space:]]*#[[:space:]]*v[0-9]+\.[0-9]+\.[0-9]+'
 
