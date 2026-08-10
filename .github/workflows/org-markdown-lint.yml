@@ -69,7 +69,6 @@ jobs:
             // relaxation for authored + machine-generated docs.
             "default": true,
             // -- style pins (single style where consistency matters) --
-            "MD029": { "style": "one" },
             "MD035": { "style": "---" },
             "MD046": { "style": "fenced" },
             "MD048": { "style": "backtick" },

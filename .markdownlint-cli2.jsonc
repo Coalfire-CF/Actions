@@ -15,8 +15,8 @@
     "MD034": false,
     // Disable table column style — terraform-docs generated tables don't conform
     "MD060": false,
-    // Ordered list style: use "one" (1. 1. 1.) for easier reordering
-    "MD029": { "style": "one" },
+    // Allow any ordered list numbering style (1/1/1, 1/2/3, etc.) — too noisy to enforce
+    "MD029": false,
     // Horizontal rule style
     "MD035": { "style": "---" },
     // Code block style: fenced
