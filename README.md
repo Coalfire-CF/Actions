@@ -215,6 +215,7 @@ Issue labels:
 |   |-- cache-lib.sh
 |   |-- gate-config-resolve.sh
 |   |-- pr-green-merge.sh
+|   |-- pr-template-sweep.sh
 |   |-- prompt-lib.sh
 |   |-- release-patch-merge.sh
 |   |-- repo-bootstrap.sh
