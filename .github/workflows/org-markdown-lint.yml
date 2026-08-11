@@ -69,7 +69,6 @@ jobs:
             // relaxation for authored + machine-generated docs.
             "default": true,
             // -- style pins (single style where consistency matters) --
-            "MD029": { "style": "one" },
             "MD035": { "style": "---" },
             "MD046": { "style": "fenced" },
             "MD048": { "style": "backtick" },
@@ -81,6 +80,7 @@ jobs:
             "MD010": { "code_blocks": false }, // tabs inside code fences are legitimate (Go/Makefile/TF)
             "MD012": false,                    // multiple blank lines (release-please, authored docs)
             "MD013": false,                    // line length
+            "MD022": false,                    // blanks around headings — no GitHub render impact
             "MD024": false,                    // duplicate headings (changelogs, per-env sections)
             "MD025": false,                    // multiple H1 (terraform-docs merged READMEs)
             "MD026": false,                    // trailing punctuation in headings
@@ -89,6 +89,7 @@ jobs:
             "MD036": false,                    // bold-line-as-heading (common authored pattern)
             "MD040": false,                    // fence language tag optional
             "MD041": false,                    // first line need not be a heading
+            "MD047": false,                    // single trailing newline — no render impact
             "MD049": false,                    // _em_ vs *em* style
             "MD050": false,                    // __strong__ vs **strong** style
             "MD051": false,                    // anchor fragments — lychee owns link checking
