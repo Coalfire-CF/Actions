@@ -75,20 +75,44 @@ for name in "${REPO_LIST[@]}"; do
     opened=$((opened+1)); continue
   fi
 
-  # Default branch head sha, create branch, update file, open PR.
+  # ---- Idempotent, branch-aware delivery: converge whatever partial state exists. ----
   base="$(gh api "repos/${repo}" --jq '.default_branch')"
-  base_sha="$(gh api "repos/${repo}/git/ref/heads/${base}" --jq '.object.sha')"
-  gh api -X POST "repos/${repo}/git/refs" -f ref="refs/heads/${BRANCH}" -f sha="${base_sha}" >/dev/null 2>&1 \
-    || log "  branch ${BRANCH} may already exist on ${repo}; continuing"
 
-  if ! gh api -X PUT "repos/${repo}/contents/${TARGET_PATH}" \
-        -f message="chore: refresh PR template" \
-        -f content="${NEW_B64}" \
-        -f sha="${file_sha}" \
-        -f branch="${BRANCH}" >/dev/null 2>&1; then
-    log "ERROR ${repo} — contents PUT failed"; errors=$((errors+1)); continue
+  # If the working branch already exists, update the file against ITS current sha
+  # (a re-run after a partial sweep); otherwise create the branch off the default head.
+  br_meta="$(gh api "repos/${repo}/contents/${TARGET_PATH}?ref=${BRANCH}" --jq '{sha:.sha, content:(.content|gsub("\n";""))}' 2>/dev/null || true)"
+  br_file_sha="$(printf '%s' "$br_meta" | jq -r '.sha // empty' 2>/dev/null || true)"
+  if [ -n "$br_file_sha" ]; then
+    # Branch exists. Skip the PUT if it already carries the canonical content.
+    br_norm="$(printf '%s' "$br_meta" | jq -r '.content // empty' | base64 -d 2>/dev/null | base64 | tr -d '\n')"
+    if [ "$br_norm" = "$NEW_B64" ]; then
+      put_sha="SKIP"
+    else
+      put_sha="$br_file_sha"
+    fi
+  else
+    base_sha="$(gh api "repos/${repo}/git/ref/heads/${base}" --jq '.object.sha')"
+    if ! gh api -X POST "repos/${repo}/git/refs" -f ref="refs/heads/${BRANCH}" -f sha="${base_sha}" >/dev/null 2>&1; then
+      log "ERROR ${repo} — could not create branch ${BRANCH}"; errors=$((errors+1)); continue
+    fi
+    put_sha="$file_sha"   # sha of the file on the default branch
   fi
 
+  if [ "$put_sha" != "SKIP" ]; then
+    if ! gh api -X PUT "repos/${repo}/contents/${TARGET_PATH}" \
+          -f message="chore: refresh PR template" \
+          -f content="${NEW_B64}" \
+          -f sha="${put_sha}" \
+          -f branch="${BRANCH}" >/dev/null 2>&1; then
+      log "ERROR ${repo} — contents PUT failed"; errors=$((errors+1)); continue
+    fi
+  fi
+
+  # Open a PR only if one is not already open for this branch (idempotent re-runs).
+  existing_pr="$(gh pr list --repo "${repo}" --head "${BRANCH}" --state open --json number --jq '.[0].number' 2>/dev/null || true)"
+  if [ -n "$existing_pr" ]; then
+    log "UPDATED ${repo} — refreshed existing PR #${existing_pr}"; opened=$((opened+1)); continue
+  fi
   if gh pr create --repo "${repo}" --base "${base}" --head "${BRANCH}" \
        --title "${PR_TITLE}" \
        --body "Standardizes \`${TARGET_PATH}\` to the current org default (summary-first, trimmed checklist). Opened by scripts/pr-template-sweep.sh." >/dev/null 2>&1; then
