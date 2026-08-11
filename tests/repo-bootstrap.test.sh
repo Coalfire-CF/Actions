@@ -142,22 +142,22 @@ run_helper() {
 }
 
 # ---- Case 1: dry-run, generic public, nothing exists → WOULD-BOOTSTRAP with the
-#      common file set (8 files), ZERO write calls (mock also rejects). ----
+#      common file set (9 files), ZERO write calls (mock also rejects). ----
 run_helper "$META_PUB" "$LANGS_NONE" "$PRS_NONE" "" true 1
 [ "$LAST_RC" -eq 0 ] || fail "dry-run should exit 0 (got $LAST_RC)"
-echo "$OUT" | grep -q "WOULD-BOOTSTRAP Coalfire-CF/new-repo (8 files)" || fail "generic dry-run should propose 8 files (got: $OUT)"
+echo "$OUT" | grep -q "WOULD-BOOTSTRAP Coalfire-CF/new-repo (9 files)" || fail "generic dry-run should propose 9 files (got: $OUT)"
 echo "$TRACE" | grep -qE "$WRITE_RE" && fail "dry-run issued a WRITE: $(echo "$TRACE" | grep -E "$WRITE_RE")"
-echo "OK: dry-run generic public → WOULD-BOOTSTRAP (8 files), zero mutating calls"
+echo "OK: dry-run generic public → WOULD-BOOTSTRAP (9 files), zero mutating calls"
 
-# ---- Case 2: dry-run, terraform private → common(8) + terraform(3) + private(1) = 12. ----
+# ---- Case 2: dry-run, terraform private → common(9) + terraform(3) + private(1) = 13. ----
 # NOTE: this count is DERIVED FROM THE TEMPLATE INVENTORY on disk, i.e. the number
 # of *.tmpl files under templates/bootstrap/{common,terraform,private}. If you add
 # or delete a template, update this number in the SAME change. A failure here means
 # the inventory moved, not that the bootstrapper broke — the assertion is a tripwire
 # for accidental template loss, so keep it an exact count rather than a lower bound.
 run_helper "$META_PRIV" "$LANGS_HCL" "$PRS_NONE" "" true 1
-echo "$OUT" | grep -q "WOULD-BOOTSTRAP Coalfire-CF/new-repo (12 files)" || fail "terraform+private dry-run should propose 12 files (got: $OUT)"
-echo "OK: dry-run terraform private → WOULD-BOOTSTRAP (12 files)"
+echo "$OUT" | grep -q "WOULD-BOOTSTRAP Coalfire-CF/new-repo (13 files)" || fail "terraform+private dry-run should propose 13 files (got: $OUT)"
+echo "OK: dry-run terraform private → WOULD-BOOTSTRAP (13 files)"
 
 # ---- Case 3: adopted repo (org-release.yml present) → SKIP (compliant). ----
 run_helper "$META_PUB" "$LANGS_NONE" "$PRS_NONE" ".github/workflows/org-release.yml" true 1
@@ -188,8 +188,8 @@ echo "OK: pr-open / declined block; merged history does not"
 # ---- Case 6: partial adoption — existing files are dropped, never overwritten. ----
 run_helper "$META_PUB" "$LANGS_NONE" "$PRS_NONE" ".github/dependabot.yml
 release-please-config.json" true 1
-echo "$OUT" | grep -q "WOULD-BOOTSTRAP Coalfire-CF/new-repo (6 files)" || fail "partial adoption should drop existing files, 8-2=6 (got: $OUT)"
-echo "OK: partial adoption → existing files dropped (6 files)"
+echo "$OUT" | grep -q "WOULD-BOOTSTRAP Coalfire-CF/new-repo (7 files)" || fail "partial adoption should drop existing files, 9-2=7 (got: $OUT)"
+echo "OK: partial adoption → existing files dropped (7 files)"
 
 # ---- Case 7: live delivery — BOOTSTRAPPED, exactly one pr create + one push,
 #      rendered files fully substituted. ----
@@ -201,9 +201,12 @@ echo "$OUT" | grep -q "BOOTSTRAPPED Coalfire-CF/new-repo PR#7" || fail "live sho
 # rendered tree: no placeholder survives; pin + stagger slot rendered
 RENDERED="$(find "$CLONE_DIR" -type f \( -name '*.yml' -o -name '*.json' \) 2>/dev/null)"
 [ -n "$RENDERED" ] || fail "live delivery should render files into the clone dir"
+# shellcheck disable=SC2086 # $RENDERED is a newline-separated file list; must word-split into grep
 grep -rl "__ACTIONS_SHA__\|__ACTIONS_VERSION__\|__STAGGER_SLOT__" $RENDERED && fail "placeholders survived rendering"
+# shellcheck disable=SC2086 # $RENDERED is a newline-separated file list; must word-split into grep
 grep -q "@${SHA_OK} # v0.12.1" "$(dirname "$(echo "$RENDERED" | head -1)")"/../workflows/org-release.yml 2>/dev/null || \
   grep -rq "@${SHA_OK} # v0.12.1" $RENDERED || fail "rendered callers must carry the SHA pin"
+# shellcheck disable=SC2086 # $RENDERED is a newline-separated file list; must word-split into grep
 grep -rqE 'time: "[0-2][0-9]:[0-5][0-9]"' $RENDERED || fail "dependabot seed must carry a rendered HH:MM stagger slot"
 # .tmpl suffix must be stripped in delivery
 find "$CLONE_DIR" -name '*.tmpl' | grep -q . && fail ".tmpl suffix must be stripped on delivery"
