@@ -47,17 +47,26 @@ jobs:
         # routinely violates blank-line rules (MD012) — lint authored docs only.
         FILES=$(git diff --name-only --diff-filter=d origin/main... | grep '\.md$' | grep -vE '(^|/)CHANGELOG\.md$' || true)
         if [ -z "$FILES" ]; then
-          echo "has_files=false" >> $GITHUB_OUTPUT
+          echo "has_files=false" >> "$GITHUB_OUTPUT"
         else
-          echo "has_files=true" >> $GITHUB_OUTPUT
+          echo "has_files=true" >> "$GITHUB_OUTPUT"
           echo "$FILES" > /tmp/md_files.txt
         fi
 
-    - name: Create markdownlint config
+    - name: Enforce org markdownlint policy (ignore repo-local configs)
       if: steps.get-md-files.outputs.has_files == 'true'
       run: |
-        if [ ! -f .markdownlint-cli2.jsonc ] && [ ! -f .markdownlint-cli2.yaml ] && [ ! -f .markdownlint.jsonc ] && [ ! -f .markdownlint.json ]; then
-          cat > .markdownlint-cli2.jsonc <<'JSONC'
+        # Enforce the org policy fleet-wide: delete any repo-local markdownlint
+        # config (root OR nested) so a caller repo cannot silently diverge, then
+        # write the canonical org config at the repo root. markdownlint-cli2's
+        # --config does NOT override nested .markdownlint-cli2.* files, so the
+        # local configs must be removed, not merely overridden.
+        find . -type f \( \
+            -name '.markdownlint.jsonc'         -o -name '.markdownlint.json' \
+            -o -name '.markdownlint.yaml'       -o -name '.markdownlint.yml' \
+            -o -name '.markdownlint-cli2.jsonc' -o -name '.markdownlint-cli2.yaml' \
+            -o -name '.markdownlint-cli2.cjs' \) -delete
+        cat > .markdownlint-cli2.jsonc <<'JSONC'
         {
           "ignores": ["CHANGELOG.md", "**/CHANGELOG.md"],
           "config": {
@@ -97,7 +106,6 @@ jobs:
           }
         }
         JSONC
-        fi
 
     - name: Lint Markdown files
       if: steps.get-md-files.outputs.has_files == 'true'
