@@ -84,7 +84,12 @@ jobs:
         - name: Detect drift
           id: drift
           run: |
-            if git diff --quiet; then
+            # Compare against HEAD, not the index. The action's entrypoint runs
+            # `git add` on the rendered file for inject|replace modes whether or
+            # not git-push is set, so a plain `git diff` compares the worktree
+            # against an already-staged copy, finds nothing, and the check passes
+            # on a stale README. Caught by the kms pilot.
+            if git diff --quiet HEAD --; then
               echo "drift=false" >> "$GITHUB_OUTPUT"
               echo "terraform-docs: README.md is current."
             else
@@ -107,7 +112,7 @@ jobs:
               echo "pre-commit run --all-files"
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
-            git --no-pager diff -- .
+            git --no-pager diff HEAD -- .
             exit 1
 
         # Bots cannot run a local hook, and version tables DO move on provider
@@ -127,7 +132,7 @@ jobs:
               echo "### terraform-docs README drift (not auto-pushed)"
               echo ""
               echo '```'
-              git diff --stat
+              git diff --stat HEAD --
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
 
