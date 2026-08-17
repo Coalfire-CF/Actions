@@ -24,11 +24,11 @@ Called by downstream repos on pull requests.
 | Gitleaks | `org-gitleaks-pr.yml` | Secret detection on PR commits |
 | Terraform Validate | `org-terraform-validate.yml` | `terraform init` + `terraform validate` with PR comment. Takes `working_directory` (default `.`) — **repos with no root module must set or matrix it**, or the gate validates an empty directory |
 | Terraform fmt | `org-terraform-fmt.yml` | Format check and auto-fix for Terraform files |
-| Terraform Docs | `org-terraform-docs.yml` | Auto-generate and commit terraform-docs output (check-only on Dependabot PRs — read-only token can't push; drift surfaced as a warning, [#149](https://github.com/Coalfire-CF/Actions/issues/149)) |
+| Terraform Docs | `org-terraform-docs.yml` | Verifies `README.md` matches the module; never pushes. Authors regenerate locally with the pinned pre-commit hook. Drift fails human PRs with the diff and warns on Dependabot PRs ([docs](docs/ORG_TERRAFORM_DOCS.md)) |
 | Terraform Plan | `org-terraform-plan.yml` | Terraform plan with PR comment |
 | Terraform Apply | `org-terraform-apply.yml` | Terraform apply (manual trigger or post-merge) |
 | Markdown Lint | `org-markdown-lint.yml` | Lint changed markdown files with markdownlint-cli2 |
-| Tree README | `org-tree-readme.yml` | Auto-generate and commit directory tree in README (check-only on Dependabot PRs — read-only token can't push; drift surfaced as a warning, [#149](https://github.com/Coalfire-CF/Actions/issues/149)) |
+| Tree README | `org-tree-readme.yml` | **Deprecated and disabled.** A no-op that keeps its `workflow_call` interface so callers stay green while their caller files are removed ([docs](docs/ORG_TERRAFORM_DOCS.md#tree-workflow-retirement)) |
 | Dependabot Refresh | `org-dependabot.yml` | Auto-detect ecosystems and regenerate dependabot.yml |
 | Dependabot Auto-Merge | `org-dependabot-auto-merge.yml` | Evaluate and auto-merge non-terraform Dependabot PRs ([docs](docs/ORG_DEPENDABOT_AUTO_MERGE.md)) |
 | Label Sync | `org-label-sync.yml` | Sync Dependabot auto-merge label taxonomy to downstream repos ([taxonomy](docs/ORG_LABEL_TAXONOMY.md)) |
@@ -64,7 +64,7 @@ Called on merge to main.
 |----------|------|-------------|
 | Local Release | `release.yml` | Release workflow for the Actions repo itself |
 | Sync Auto-Merge Labels | `label-sync.yml` | Self-caller: syncs the auto-merge label taxonomy on this repo (weekly + manual) |
-| README Tree | `tree-readme.yml` | Self-caller: regenerates the README `## Tree` section on this repo's PRs |
+| README Tree | `tree-readme.yml` | Self-caller for the deprecated tree generator. Now a no-op; deleted last, once no external callers remain |
 | Dependabot Auto-Merge (self) | `dependabot-auto-merge.yml` | Self-caller: runs auto-merge evaluation on this repo's own Dependabot PRs |
 
 ## Usage
