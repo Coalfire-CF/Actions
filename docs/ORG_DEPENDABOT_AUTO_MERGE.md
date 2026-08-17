@@ -224,7 +224,7 @@ Run the label sync workflow on each repo before enabling auto-merge:
 ```yaml
 jobs:
   sync-labels:
-    uses: <YOUR_ORG>/Actions/.github/workflows/org-label-sync.yml@43274fdf0406920dfa1e5fd05cac5d8d10951c96 # v0.17.0
+    uses: <YOUR_ORG>/Actions/.github/workflows/org-label-sync.yml@162d71ff9bace6c2994b3b8d9e5bfc33f6b54eed # v0.18.0
     secrets: inherit
 ```
 
@@ -251,7 +251,7 @@ jobs:
     if: >-
       github.event_name == 'check_suite' ||
       github.event.pull_request.user.login == 'dependabot[bot]'
-    uses: <YOUR_ORG>/Actions/.github/workflows/org-dependabot-auto-merge.yml@43274fdf0406920dfa1e5fd05cac5d8d10951c96 # v0.17.0
+    uses: <YOUR_ORG>/Actions/.github/workflows/org-dependabot-auto-merge.yml@162d71ff9bace6c2994b3b8d9e5bfc33f6b54eed # v0.18.0
     secrets: inherit
 ```
 
@@ -283,9 +283,9 @@ pass `actions_ref`:
 jobs:
   auto-merge:
     if: github.actor == 'dependabot[bot]'
-    uses: <YOUR_ORG>/Actions/.github/workflows/org-dependabot-auto-merge.yml@43274fdf0406920dfa1e5fd05cac5d8d10951c96 # v0.17.0
+    uses: <YOUR_ORG>/Actions/.github/workflows/org-dependabot-auto-merge.yml@162d71ff9bace6c2994b3b8d9e5bfc33f6b54eed # v0.18.0
     with:
-      actions_ref: 43274fdf0406920dfa1e5fd05cac5d8d10951c96 # v0.17.0
+      actions_ref: 162d71ff9bace6c2994b3b8d9e5bfc33f6b54eed # v0.18.0
     secrets: inherit
 ```
 
