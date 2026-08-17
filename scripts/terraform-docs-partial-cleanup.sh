@@ -91,7 +91,15 @@ for f in "$@"; do
   esac
 
   in_lines="$(wc -l < "$f" | tr -d ' ')"
-  out_lines="$(printf '%s\n' "$out" | wc -l | tr -d ' ')"
+  # An empty result is 0 lines, not 1. `printf '%s\n' ""` emits a single newline,
+  # which made a legitimately EMPTY partial look like growth and tripped the
+  # removal-only guard. Measured on the empty _footer.md of
+  # terraform-aws-inventorylambda, managed-ad and trenddsm.
+  if [ -z "$out" ]; then
+    out_lines=0
+  else
+    out_lines="$(printf '%s\n' "$out" | wc -l | tr -d ' ')"
+  fi
   if [ "$out_lines" -gt "$in_lines" ]; then
     echo "REFUSING ${f}: output ${out_lines} > input ${in_lines}, must be removal-only" >&2
     rc=1; continue
