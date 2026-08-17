@@ -354,8 +354,12 @@ migrate_repo() {
   # canonical config sets recursive.enabled: false, so nested dirs get no config
   # and terraform-docs never touches them. Starting to generate them is a
   # separate decision, not this migration's.
-  local nested
-  nested="$(cd "$dir" && grep -rl --include=README.md "^${BEGIN_MARK}\$" . 2>/dev/null | grep -cv '^\./README.md$' || true)"
+  # No `cd` here: `cd X && cmd || true` masks a failed cd as "found nothing",
+  # which would report 0 nested READMEs for a directory it never entered.
+  local nested nested_list
+  nested_list="$(grep -rl --include=README.md "^${BEGIN_MARK}\$" "$dir" 2>/dev/null || true)"
+  nested="$(printf '%s\n' "$nested_list" | grep -v '^$' | grep -cvxF "${dir}/README.md" || true)"
+  [ -n "$nested" ] || nested=0
   if [ "$nested" -gt 0 ]; then
     log "      ${name}: ${nested} nested marker README(s) left untouched"
     if grep -qE '^ *recursive: *true' "${dir}/${CALLER}"; then
