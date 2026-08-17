@@ -181,6 +181,21 @@ render_set common
 [ "$IS_TERRAFORM" = "true" ] && render_set terraform
 [ "$VISIBILITY" = "private" ] && render_set private
 
+# ---- Docs-migration guard: never ship empty partials next to a real README ----
+# The terraform set ships .terraform-docs.yml (output.mode: replace) plus stub
+# _header.md/_footer.md. That is only safe in a repo with no README.md. Next to
+# an EXISTING README, the first terraform-docs run replaces that README from the
+# stubs and the authored prose is gone (measured: a nested README rendered with
+# empty partials keeps only the generated sections). Splitting real prose into
+# the partials is the docs sweep's job, not the bootstrapper's.
+if [ "$IS_TERRAFORM" = "true" ] && probe_path "README.md"; then
+  log "dropping terraform-docs baseline — README.md exists; the docs sweep owns migration"
+  rm -f "${RENDER_DIR}/.terraform-docs.yml" \
+        "${RENDER_DIR}/.pre-commit-config.yaml" \
+        "${RENDER_DIR}/_header.md" \
+        "${RENDER_DIR}/_footer.md"
+fi
+
 # ---- Never overwrite: drop any rendered path that already exists remotely ----
 FILES=()
 while IFS= read -r -d '' f; do

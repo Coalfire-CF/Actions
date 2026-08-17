@@ -198,6 +198,7 @@ Issue labels:
 |   |-- ORG_TERRATEST_HARDENING_RUNBOOK.md
 |   |-- ORG_TERRATEST_PROVISIONING.md
 |   |-- ORG_VERSION_BAND.md
+|   |-- RESEARCH_terraform-docs-markdownlint-patterns.md
 |   |-- superpowers
 |       |-- specs
 |           |-- 2026-07-14-self-dogfood-reusable-workflows-design.md
@@ -227,10 +228,13 @@ Issue labels:
 |   |-- version-band-check.sh
 |-- templates
 |   |-- bootstrap
-|       |-- common
-|       |   |-- release-please-config.json.tmpl
-|       |-- private
-|       |-- terraform
+|   |   |-- common
+|   |   |   |-- release-please-config.json.tmpl
+|   |   |-- private
+|   |   |-- terraform
+|   |       |-- _footer.md.tmpl
+|   |       |-- _header.md.tmpl
+|   |-- terraform-docs
 |-- tests
     |-- auto-merge-decide.test.sh
     |-- cache-integrity.test.sh
