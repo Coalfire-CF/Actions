@@ -149,5 +149,18 @@ cmp -s "${TMP}/g.orig" "${TMP}/g.md" || fail "CHECK=true wrote to the file"
 checks=$((checks + 1))
 echo "OK: CHECK=true reports without writing"
 
-[ "$checks" -ge 17 ] || fail "expected at least 17 checks, ran ${checks}"
+# ---------------------------------------------------------------------------
+# 8. An EMPTY partial is legal (a README whose BEGIN marker is on line 1 yields a
+#    0-byte _header.md). It must not be treated as growth by the removal-only
+#    guard, which is what `printf '%s\n' ""` emitting one newline caused.
+# ---------------------------------------------------------------------------
+: > "${TMP}/empty.md"
+out="$(bash "$CLEANUP" "${TMP}/empty.md" 2>&1)" \
+  || fail "cleanup refused an empty partial: ${out}"
+grep -q "REFUSING" <<<"$out" && fail "cleanup REFUSED an empty partial: ${out}"
+[ -s "${TMP}/empty.md" ] && fail "cleanup wrote content into an empty partial"
+checks=$((checks + 2))
+echo "OK: an empty partial is accepted and left empty"
+
+[ "$checks" -ge 19 ] || fail "expected at least 19 checks, ran ${checks}"
 echo "ALL TESTS PASSED (${checks} checks)"
