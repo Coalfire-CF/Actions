@@ -34,6 +34,9 @@ set -uo pipefail
 CHECK="${CHECK:-false}"
 [ "$#" -gt 0 ] || { echo "usage: $0 [CHECK=true] <file>..." >&2; exit 2; }
 
+# The `$0` and `$1` below are awk fields, not shell parameters, so the single
+# quotes are required and SC2016 does not apply.
+# shellcheck disable=SC2016
 AWK_PROG='
 function flush_pending() { for (i = 1; i <= np; i++) print pending[i]; np = 0 }
 BEGIN { mode = "copy"; np = 0; nrem = 0 }
