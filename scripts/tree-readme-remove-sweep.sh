@@ -42,10 +42,17 @@ PR_TITLE="${PR_TITLE:-chore: remove README Tree workflow}"
 BRANCH="${BRANCH:-chore/remove-tree-readme}"
 DRY_RUN="${DRY_RUN:-true}"
 
-# The two files that make a repo a tree-readme consumer.
-CALLER_PATH=".github/workflows/tree-readme.yml"
+# The files that make a repo a tree-readme consumer.
+#
+# The caller is named `org-tree-readme.yml` in this fleet, NOT `tree-readme.yml`.
+# Measured 2026-08-17 across the 167 marker repos: 14 repos call the reusable and
+# 2 carry an inlined fork of the updater, and ALL 16 use `org-tree-readme.yml`.
+# Zero repos have `tree-readme.yml`. Targeting only that name deleted nothing.
+# Both names are listed so the Actions repo's own self-caller is also covered.
+CALLER_PATH=".github/workflows/org-tree-readme.yml"
+LEGACY_CALLER_PATH=".github/workflows/tree-readme.yml"
 CONFIG_PATH=".github/readmetreerc.yml"
-TARGET_PATHS=("$CALLER_PATH" "$CONFIG_PATH")
+TARGET_PATHS=("$CALLER_PATH" "$LEGACY_CALLER_PATH" "$CONFIG_PATH")
 
 log() { echo "$@" >&2; }
 
@@ -67,9 +74,21 @@ mapfile -t REPO_LIST < <(printf '%s' "$RAW_REPOS" | tr '[:space:]' '\n' | grep -
 log "Targeting ${#REPO_LIST[@]} repo(s) in ${ORG} (DRY_RUN=${DRY_RUN})"
 (( ${#REPO_LIST[@]} > 0 )) || { log "No target repos resolved — aborting."; exit 1; }
 
-# Return the blob sha of $path on ref $2 in repo $1, or empty if absent.
+# Return the blob sha of $path on ref $3 in repo $1, or empty if absent.
+#
+# The EXIT STATUS decides, not the output. `gh api --jq` writes its error JSON to
+# STDOUT, so the previous `|| true` form returned `{"message":"Not Found",...}`
+# for a missing file and every path read as PRESENT. That made the dry run report
+# "19 of 19, 0 skipped" while `tree-readme.yml` existed in no repo at all.
+# A sha is also sanity-checked as hex, so an unexpected body can never be passed
+# to a DELETE as if it were a blob sha.
 file_sha_on_ref() {
-  gh api "repos/$1/contents/$2?ref=$3" --jq '.sha' 2>/dev/null || true
+  local out
+  out="$(gh api "repos/$1/contents/$2?ref=$3" --jq '.sha' 2>/dev/null)" || return 1
+  case "$out" in
+    ""|*[!0-9a-f]*) return 1 ;;
+    *) printf '%s' "$out" ;;
+  esac
 }
 
 opened=0 skipped=0 errors=0
@@ -84,7 +103,7 @@ for name in "${REPO_LIST[@]}"; do
   # What is actually present on the default branch? (Assert presence, don't assume.)
   present=()
   for p in "${TARGET_PATHS[@]}"; do
-    [ -n "$(file_sha_on_ref "$repo" "$p" "$base")" ] && present+=("$p")
+    if file_sha_on_ref "$repo" "$p" "$base" >/dev/null; then present+=("$p"); fi
   done
   if (( ${#present[@]} == 0 )); then
     log "SKIP ${repo} — neither file present on ${base} (already removed)"
@@ -109,7 +128,7 @@ for name in "${REPO_LIST[@]}"; do
   # already gone from the branch is skipped, not re-deleted).
   del_err=0
   for p in "${TARGET_PATHS[@]}"; do
-    bsha="$(file_sha_on_ref "$repo" "$p" "$BRANCH")"
+    bsha="$(file_sha_on_ref "$repo" "$p" "$BRANCH")" || continue
     [ -n "$bsha" ] || continue
     if ! gh api -X DELETE "repos/${repo}/contents/${p}" \
           -f message="chore: remove README Tree workflow (${p##*/})" \
