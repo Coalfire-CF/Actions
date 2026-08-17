@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.17.0](https://github.com/Coalfire-CF/Actions/compare/v0.16.1...v0.17.0) (2026-08-17)
+
+
+### Features
+
+* **md-lint:** enforce org policy fleet-wide, ignore repo-local configs ([#294](https://github.com/Coalfire-CF/Actions/issues/294)) ([6904e23](https://github.com/Coalfire-CF/Actions/commit/6904e23640a80d7c63c6dff4256ff4e777efbe5f))
+* **terraform-docs:** add the fleet migration sweep ([#297](https://github.com/Coalfire-CF/Actions/issues/297)) ([6b8d982](https://github.com/Coalfire-CF/Actions/commit/6b8d982e9d290a4134d442f823f8d1cf10efb28f))
+* **terraform-docs:** generate README from partials, verify instead of push ([#296](https://github.com/Coalfire-CF/Actions/issues/296)) ([9a787bf](https://github.com/Coalfire-CF/Actions/commit/9a787bfaf6b5a797c775ab9a18abd1dfc959cd5e))
+
+
+### Bug Fixes
+
+* **markdown-lint:** tune policy to render-correctness, kill cosmetic noise ([#286](https://github.com/Coalfire-CF/Actions/issues/286)) ([9f86e50](https://github.com/Coalfire-CF/Actions/commit/9f86e505a32ee9bded1f25008aaeab317976f668))
+* **pr-template:** keep lines &lt;=100 for strict-MD013 consumers ([#293](https://github.com/Coalfire-CF/Actions/issues/293)) ([3d9f127](https://github.com/Coalfire-CF/Actions/commit/3d9f127011cd0f40cc0b3e9aeca9d0acc3873679))
+
+
+### Miscellaneous
+
+* **deps:** bump azure/login in the third-party group ([#285](https://github.com/Coalfire-CF/Actions/issues/285)) ([a18d245](https://github.com/Coalfire-CF/Actions/commit/a18d245bf8a773c0f661a09f4a33028e84b86406))
+* **deps:** bump Coalfire-CF/Actions/actions/gitleaks ([#287](https://github.com/Coalfire-CF/Actions/issues/287)) ([666c01a](https://github.com/Coalfire-CF/Actions/commit/666c01a9140426324297c4a33eace944bfe2f859))
+* refresh PR template and roll out org-wide ([#288](https://github.com/Coalfire-CF/Actions/issues/288)) ([57854ea](https://github.com/Coalfire-CF/Actions/commit/57854eaa228121ffafc6271fca2ae3988326c4f2))
+* **tree-readme:** disable reusable workflow fleet-wide (no-op) ([#295](https://github.com/Coalfire-CF/Actions/issues/295)) ([9d62e1c](https://github.com/Coalfire-CF/Actions/commit/9d62e1c0002bf342710ad9af684676c95d9b2ee1))
+
+
+### Documentation
+
+* **examples:** refresh caller pins to v0.16.1 ([#221](https://github.com/Coalfire-CF/Actions/issues/221)) ([#291](https://github.com/Coalfire-CF/Actions/issues/291)) ([cab184a](https://github.com/Coalfire-CF/Actions/commit/cab184a362c29d3759e6f3bc786a2269b254dedb))
+* **pr-template:** add bracketed tips, point link to Release Process ([#292](https://github.com/Coalfire-CF/Actions/issues/292)) ([aeecfff](https://github.com/Coalfire-CF/Actions/commit/aeecfffaa91edfb9642ffe1fcca8eb16859c1647))
+
 ## [0.16.1](https://github.com/Coalfire-CF/Actions/compare/v0.16.0...v0.16.1) (2026-08-05)
 
 
