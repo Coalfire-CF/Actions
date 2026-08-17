@@ -25,7 +25,16 @@
 #   PR_TITLE  default "chore: remove README Tree workflow"
 #   BRANCH    default "chore/remove-tree-readme"
 #   DRY_RUN   "true" (default) prints intended actions; "false" opens PRs
-#   REPOS     optional space/newline list of repo names to limit the sweep
+#   REPOS     REQUIRED space/newline list of repo names to sweep
+#   REPOS_FILE  alternative to REPOS: a file with one repo name per line
+#
+# The caller list is REQUIRED and must come from a measured enumeration. An
+# earlier version defaulted to `gh api search/code`, which is not trustworthy on
+# this fleet: it 503s mid-survey and has returned "1 unique repo" for a query
+# matching hundreds, so the sweep would report success having skipped most
+# targets. Enumerate by walking /repos/{o}/{r}/contents/.github/workflows and
+# reading each file (note /git/trees 404s on private repos here), then pass the
+# result in. Assert the count before running with DRY_RUN=false.
 set -euo pipefail
 
 ORG="${ORG:-Coalfire-CF}"
@@ -40,17 +49,21 @@ TARGET_PATHS=("$CALLER_PATH" "$CONFIG_PATH")
 
 log() { echo "$@" >&2; }
 
-# ---- Resolve target repos (repos carrying the caller workflow), minus Actions ----
+# ---- Resolve target repos from the caller list supplied by the operator ----
+# Actions is filtered out here as well as documented above: its own caller is
+# removed last, in a dedicated PR, so the reusable never loses its last caller
+# while it still exists.
 if [ -n "${REPOS:-}" ]; then
-  mapfile -t REPO_LIST < <(printf '%s' "$REPOS" | tr '[:space:]' '\n' | grep -v '^$' | grep -vx 'Actions' | sort -u)
+  RAW_REPOS="$REPOS"
+elif [ -n "${REPOS_FILE:-}" ]; then
+  [ -f "$REPOS_FILE" ] || { log "REPOS_FILE not found: ${REPOS_FILE}"; exit 2; }
+  RAW_REPOS="$(cat "$REPOS_FILE")"
 else
-  mapfile -t REPO_LIST < <(
-    gh api -X GET search/code \
-      -f q="org:${ORG} path:.github/workflows filename:tree-readme" \
-      -f per_page=100 --paginate --jq '.items[].repository.name' \
-      | grep -vx 'Actions' | sort -u
-  )
+  log "Set REPOS or REPOS_FILE to a measured list of tree-readme caller repos."
+  log "Code search is not a valid source here (see the header comment)."
+  exit 2
 fi
+mapfile -t REPO_LIST < <(printf '%s' "$RAW_REPOS" | tr '[:space:]' '\n' | grep -v '^$' | grep -vx 'Actions' | sort -u)
 log "Targeting ${#REPO_LIST[@]} repo(s) in ${ORG} (DRY_RUN=${DRY_RUN})"
 (( ${#REPO_LIST[@]} > 0 )) || { log "No target repos resolved — aborting."; exit 1; }
 
