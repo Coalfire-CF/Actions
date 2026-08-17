@@ -212,9 +212,16 @@ patch_caller() {
     mv "$tmp" "$f"
   fi
 
-  # Drop contents: write. The verify-only workflow needs no write access.
+  # Downgrade contents: write -> contents: read. It must be DOWNGRADED, never
+  # deleted: once a workflow sets any permission explicitly, every unlisted one
+  # defaults to `none`, and a called workflow cannot hold more than its caller
+  # granted. The reusable declares `contents: read` for checkout, so deleting the
+  # line makes the whole run fail at startup with no job and no log.
+  # Measured on terraform-aws-config PR #190: deleting it gave
+  # `startup_failure`, while terraform-aws-kms, whose caller says
+  # `contents: read`, ran green.
   # `pull-requests: write` is left alone; it is not this migration's business.
-  sed -i.bak '/^ *contents: *write *$/d' "$f" && rm -f "${f}.bak"
+  sed -i.bak -E 's/^([[:space:]]*)contents:[[:space:]]*write[[:space:]]*$/\1contents: read/' "$f" && rm -f "${f}.bak"
 
   # Re-pin. Rewrite the whole uses: line so a stale trailing comment cannot
   # survive next to a new SHA.
@@ -246,6 +253,18 @@ migrate_repo() {
   # ---- Idempotency / already compliant ----
   if [ -f "${dir}/.terraform-docs.yml" ] && [ -f "${dir}/_header.md" ]; then
     outcome "$name" COMPLIANT "config and partials already present"
+    return
+  fi
+
+  # ---- An existing rollout branch is reported, never overwritten ----
+  # Re-running after a script change would otherwise reach the push and fail
+  # non-fast-forward, which reads like an infrastructure error. Force-pushing it
+  # instead is not acceptable: someone may have reviewed or amended it. Delete
+  # the branch deliberately if you want the sweep to rebuild it.
+  if [ "$DRY_RUN" = "false" ] && gh api "repos/${repo}/git/ref/heads/${BRANCH}" >/dev/null 2>&1; then
+    local pr_num
+    pr_num="$(gh pr list --repo "$repo" --head "$BRANCH" --state open --json number --jq '.[0].number' 2>/dev/null || true)"
+    outcome "$name" BRANCH-EXISTS "${BRANCH} already on the remote${pr_num:+, PR #${pr_num}}; delete it to rebuild"
     return
   fi
 
@@ -326,6 +345,15 @@ migrate_repo() {
     || { outcome "$name" MANUAL "caller patch failed"; return; }
   if grep -qE '^ *contents: *write *$' "${dir}/${CALLER}"; then
     outcome "$name" MANUAL "contents: write survived"; return
+  fi
+  # A caller that declares ANY permission must still grant contents: read, or the
+  # reusable cannot check out and the run dies at startup with no job and no log.
+  # Callers with no permissions: block at all are fine; they inherit the repo
+  # default, which includes contents read.
+  if grep -qE '^permissions:' "${dir}/${CALLER}" \
+     && ! grep -qE '^ *contents: *read *$' "${dir}/${CALLER}"; then
+    outcome "$name" MANUAL "permissions: block grants no contents: read; the run would startup_failure"
+    return
   fi
 
   # ---- Render with the pinned container ----
