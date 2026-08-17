@@ -8,6 +8,24 @@ regenerate locally, and CI only verifies. This removes the churn that came from
 two generators splicing into one hand-authored README on PR branches and both
 pushing commits back.
 
+## Status
+
+Deployed. 167 repos are migrated and verified on their default branch: the four
+standard files present, `contents: read` in the caller, the caller pinned to the
+released SHA, and a re-render producing zero drift. The tree workflow is deleted.
+MD033, MD034 and MD060 are enabled.
+
+Documented exceptions, each needing an owner decision rather than a script:
+
+| Repo | Why |
+| ---- | --- |
+| `terraform-aws-airlock` | README duplicated end to end; which copy is canonical? |
+| `terraform-aws-keycloak` | a second generated block appended after the footer |
+| `terraform-aws-backup` | CRLF on the marker line, so marker detection fails |
+| `terraform-aws-eks` | terraform-docs 0.20.0 mangles its blockquoted code fences |
+| `terraform-google-iap-ingress` | caller sets `recursive: true`, needs nested partials |
+| `terraform-aws-inventorylambda` | hand-written sections duplicate the generated ones by name |
+
 ## Scope
 
 Applies to every Coalfire-CF repo that calls
@@ -188,6 +206,14 @@ An earlier comment in the workflow claimed a Dependabot run receives a read-only
 permissions the caller declares (measured on run 31428925380, `contents: write`).
 Pushing is withheld by choice, not by token capability.
 
+**This branch is not yet proven end to end.** The `Report drift (Dependabot PRs)`
+step is gated on `github.actor == 'dependabot[bot]'`, so only a real
+Dependabot-created PR exercises it, and a human-pushed `dependabot/*` branch does
+not (different actor and event context). Repos pin the newest release, so
+Dependabot has nothing to offer until the release after the one they are on.
+Verify it on the first real Dependabot PR against a migrated repo: confirm the
+warning step ran, the check stayed green, and auto-merge still resolved.
+
 ## Pinning
 
 Callers pin the reusable workflow to an immutable released SHA with the version as
@@ -287,6 +313,9 @@ count does not equal the targeted count.
 # the sweep's own unit tests, each mutation-proved
 bash tests/terraform-docs-sweep.test.sh
 
+# the partial-cleanup tool, including its false-positive guard
+bash tests/terraform-docs-partial-cleanup.test.sh
+
 # the bootstrapper, including the existing-README guard
 bash tests/repo-bootstrap.test.sh
 
@@ -303,27 +332,90 @@ git diff --quiet HEAD -- && echo current || echo stale
 
 Generated tables contain inline HTML anchors, bare URLs and unpadded table
 delimiters, which is why MD033, MD034 and MD060 were disabled fleet-wide. The
-pragmas inside the generated block now exempt exactly that content, so the rules
-are enforced again for authored prose.
+pragmas inside the generated block exempt exactly that content, so **all three
+are enabled again** and apply to authored prose only.
+
+Two of them need settings rather than a bare `true`:
+
+```jsonc
+// A bare "default": true implies a stricter MD060 style and reports 280 findings
+// across 19 repos. "consistent" reports zero across the whole fleet.
+"MD060": { "style": "consistent" },
+
+// Markdown cannot centre an image, and cannot render small text. Three repos use
+// <div align="center"><img ...> for their logo, and the org PR template uses
+// <sub>. Everything else is still flagged.
+"MD033": { "allowed_elements": ["div", "img", "sub"] },
+```
+
+Reaching zero also needed content fixes, which are already merged: 24 repos had
+bare URLs wrapped as autolinks, and 6 had a stale duplicate generated block
+removed from their partials with
+`scripts/terraform-docs-partial-cleanup.sh`.
 
 The policy exists in two places and they must stay in sync:
 
 - `.markdownlint-cli2.jsonc`
 - the heredoc in `.github/workflows/org-markdown-lint.yml`
 
+They had already drifted once, with `MD029` missing from the workflow copy. Check
+them mechanically rather than by eye:
+
+```bash
+sed -n "/cat > .markdownlint-cli2.jsonc <<'JSONC'/,/^        JSONC$/p" \
+  .github/workflows/org-markdown-lint.yml | sed '1d;$d' | sed 's/^        //' > /tmp/pw.jsonc
+strip() { sed 's#//.*##' "$1" | grep -oE '"MD[0-9]+"[^,]*' | sed 's/[[:space:]]*$//' | sort; }
+diff <(strip /tmp/pw.jsonc) <(strip .markdownlint-cli2.jsonc)
+```
+
 CI runs `markdownlint-cli2` 0.23.0. Census with that version, not the 0.23.2 that
 `package.json` pins, or the result does not describe CI.
 
+### Known remaining debt
+
+`org-markdown-lint` lints only CHANGED files, so pre-existing violations stay
+invisible until a PR touches the file. The migration touched every README and
+surfaced **85 findings across 25 repos** in rules unrelated to this work
+(MD031, MD032, MD030, MD010, MD059, MD045, MD056, MD055). These are not
+regressions: the same findings are present in those repos' pre-migration READMEs.
+They are owed a separate cleanup.
+
 ## Tree workflow retirement
 
-`org-tree-readme.yml` was the second writer. It is now a no-op that preserves its
-`workflow_call` interface so callers stay green while their caller files are
-removed by `scripts/tree-readme-remove-sweep.sh`. The reusable and the Actions
-self-caller are deleted only after the caller count is re-measured at zero.
+**Complete.** `org-tree-readme.yml` was the second writer and is now deleted,
+along with the Actions self-caller and `.github/readmetreerc.yml`. The repo file
+tree is visible in the GitHub file browser and every IDE.
 
 The `## Tree` section is dropped from `_header.md` during the split, so migrated
-repos lose it as an expected side effect. The repo file tree is visible in the
-GitHub file browser and every IDE.
+repos lose it as an expected side effect.
+
+The order that mattered, and why:
+
+1. Neuter the reusable to a no-op preserving `workflow_call`, so callers stay
+   green (PR #295).
+2. Remove all 21 external callers with
+   `scripts/tree-readme-remove-sweep.sh` (16 in the marker set, 5 outside it).
+3. Re-census the whole org and prove zero.
+4. Delete the reusable, the self-caller and the config **in one commit**
+   (PR #303). Deleting the reusable first would leave the self-caller pointing at
+   a file that no longer exists.
+
+Neutering alone was not enough: callers pinned to a pre-v0.17.0 SHA keep running
+the OLD writer, which rewrites `README.md` after terraform-docs renders it. That
+produced genuine drift and failed the docs check on 6 repos mid-rollout. **For any
+repo that still has a tree writer, remove it before migrating its docs.**
+
+There were three classes of tree writer, and only the first is visible if you
+classify by filename:
+
+| Class | What | Stopped by neutering? |
+| ----- | ---- | --------------------- |
+| A | calls the org reusable | no, if pinned to an older SHA |
+| B | an inlined fork of the updater that calls nothing | never |
+| C | no tree writer | n/a |
+
+Two repos were class B. Classify by workflow **content**, and note the caller file
+is named `org-tree-readme.yml` in this fleet, not `tree-readme.yml`.
 
 ## Ownership and maintenance
 
