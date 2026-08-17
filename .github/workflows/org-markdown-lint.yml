@@ -81,6 +81,11 @@ jobs:
             "MD035": { "style": "---" },
             "MD046": { "style": "fenced" },
             "MD048": { "style": "backtick" },
+            // MD060 must name its style. Under a bare "default": true the
+            // implied style is stricter and reports 280 findings across 19
+            // repos; "consistent" reports ZERO across all 334 authored partials
+            // in the fleet, censused with 0.23.0, the version run below.
+            "MD060": { "style": "consistent" },
             // -- cosmetic rules relaxed: formatted well, not perfect --
             "MD001": false,                    // heading levels may skip; renders fine
             "MD004": false,                    // mixed -/* bullets across generated+authored sections
@@ -93,16 +98,22 @@ jobs:
             "MD024": false,                    // duplicate headings (changelogs, per-env sections)
             "MD025": false,                    // multiple H1 (terraform-docs merged READMEs)
             "MD026": false,                    // trailing punctuation in headings
-            "MD033": false,                    // inline HTML
-            "MD034": false,                    // bare URLs
+            "MD029": false,                    // ordered-list numbering style — noisy, no render impact
+            // MD033 and MD034 are ENABLED now. terraform-docs output is exempted
+            // by the markdownlint pragmas inside the generated block, so these
+            // rules apply to authored prose only. `div`, `img` and `sub` stay
+            // allowed because markdown cannot express them and the org uses them
+            // deliberately: three repos centre their logo with
+            // <div align="center"><img ...>, and the org PR template, which is in
+            // 119 repos, uses <sub> for its footer tip.
+            "MD033": { "allowed_elements": ["div", "img", "sub"] },
             "MD036": false,                    // bold-line-as-heading (common authored pattern)
             "MD040": false,                    // fence language tag optional
             "MD041": false,                    // first line need not be a heading
             "MD047": false,                    // single trailing newline — no render impact
             "MD049": false,                    // _em_ vs *em* style
             "MD050": false,                    // __strong__ vs **strong** style
-            "MD051": false,                    // anchor fragments — lychee owns link checking
-            "MD060": false
+            "MD051": false                     // anchor fragments — lychee owns link checking
           }
         }
         JSONC

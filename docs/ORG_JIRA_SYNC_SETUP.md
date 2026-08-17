@@ -25,7 +25,7 @@ Navigate to your repository Settings → Secrets and variables → Actions → S
 - **Description**: Your Jira Cloud API token for authentication
 - **How to get it**:
   1. Log into your Jira account
-  1. Go to https://id.atlassian.com/manage-profile/security/api-tokens
+  1. Go to <https://id.atlassian.com/manage-profile/security/api-tokens>
   1. Click "Create API token"
   1. Give it a name (e.g., "GitHub Actions")
   1. Copy the token and save it as a secret
