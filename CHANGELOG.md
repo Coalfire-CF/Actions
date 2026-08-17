@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.18.0](https://github.com/Coalfire-CF/Actions/compare/v0.17.0...v0.18.0) (2026-08-17)
+
+
+### Features
+
+* **terraform-docs:** remove orphaned generated content from partials ([#304](https://github.com/Coalfire-CF/Actions/issues/304)) ([3db7b1f](https://github.com/Coalfire-CF/Actions/commit/3db7b1fe7d2b9fa324d6ee50926c62b4158f1f25))
+
+
+### Bug Fixes
+
+* **partial-cleanup:** an empty partial is 0 lines, not 1 ([#305](https://github.com/Coalfire-CF/Actions/issues/305)) ([79518bc](https://github.com/Coalfire-CF/Actions/commit/79518bcfad65aaf1721b34c2ce93f174f313cb47))
+* **terraform-docs-sweep:** downgrade contents to read, never delete it ([#299](https://github.com/Coalfire-CF/Actions/issues/299)) ([3e6932b](https://github.com/Coalfire-CF/Actions/commit/3e6932b38eb269a0de780fd4c0f52fb15532301b))
+* **tree-readme-sweep:** check exit status, target the real filename ([#302](https://github.com/Coalfire-CF/Actions/issues/302)) ([784a9e7](https://github.com/Coalfire-CF/Actions/commit/784a9e744f6bb570aca2d61972b4e1e3c7cffec8))
+
+
+### Miscellaneous
+
+* **md-lint:** re-enable MD033, MD034 and MD060 ([#306](https://github.com/Coalfire-CF/Actions/issues/306)) ([06d0474](https://github.com/Coalfire-CF/Actions/commit/06d0474b851fe5f0bbb504982cef573d06b4d2e4))
+* **tree-readme:** delete the retired workflow, config and self-caller ([#303](https://github.com/Coalfire-CF/Actions/issues/303)) ([af56d55](https://github.com/Coalfire-CF/Actions/commit/af56d55775242b4bbcc44b85b726051d22695488))
+
+
+### Documentation
+
+* **contributing:** name the docs check as it actually appears ([#308](https://github.com/Coalfire-CF/Actions/issues/308)) ([2d58c38](https://github.com/Coalfire-CF/Actions/commit/2d58c3878088a6e3acfd16cce1ad9fdc4ce3715b))
+* **examples:** refresh caller pins to v0.17.0 ([#298](https://github.com/Coalfire-CF/Actions/issues/298)) ([7072e74](https://github.com/Coalfire-CF/Actions/commit/7072e74eb8f790c08ca3add62fdd6259735dc4b5))
+* **terraform-docs:** document the standard, add CONTRIBUTING ([#300](https://github.com/Coalfire-CF/Actions/issues/300)) ([c728113](https://github.com/Coalfire-CF/Actions/commit/c72811364097b38bf876daef8f272b18673c6039))
+* **terraform-docs:** finalize against the implemented state ([#307](https://github.com/Coalfire-CF/Actions/issues/307)) ([a4aaffe](https://github.com/Coalfire-CF/Actions/commit/a4aaffeebfd18630c6281d63c03ea38bf64a33de))
+
 ## [0.17.0](https://github.com/Coalfire-CF/Actions/compare/v0.16.1...v0.17.0) (2026-08-17)
 
 
