@@ -17,7 +17,7 @@ pre-commit run --all-files
 ```
 
 Then commit the regenerated `README.md` with your change. If you skip this, the
-`Terraform-Docs` check fails on your PR with the exact diff.
+`terraform-docs / docs` check fails on your PR with the exact diff.
 
 Never edit `README.md` by hand: the next render overwrites it. Edit `_header.md`
 or `_footer.md`.
