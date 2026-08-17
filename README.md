@@ -28,7 +28,6 @@ Called by downstream repos on pull requests.
 | Terraform Plan | `org-terraform-plan.yml` | Terraform plan with PR comment |
 | Terraform Apply | `org-terraform-apply.yml` | Terraform apply (manual trigger or post-merge) |
 | Markdown Lint | `org-markdown-lint.yml` | Lint changed markdown files with markdownlint-cli2 |
-| Tree README | `org-tree-readme.yml` | **Deprecated and disabled.** A no-op that keeps its `workflow_call` interface so callers stay green while their caller files are removed ([docs](docs/ORG_TERRAFORM_DOCS.md#tree-workflow-retirement)) |
 | Dependabot Refresh | `org-dependabot.yml` | Auto-detect ecosystems and regenerate dependabot.yml |
 | Dependabot Auto-Merge | `org-dependabot-auto-merge.yml` | Evaluate and auto-merge non-terraform Dependabot PRs ([docs](docs/ORG_DEPENDABOT_AUTO_MERGE.md)) |
 | Label Sync | `org-label-sync.yml` | Sync Dependabot auto-merge label taxonomy to downstream repos ([taxonomy](docs/ORG_LABEL_TAXONOMY.md)) |
@@ -64,7 +63,6 @@ Called on merge to main.
 |----------|------|-------------|
 | Local Release | `release.yml` | Release workflow for the Actions repo itself |
 | Sync Auto-Merge Labels | `label-sync.yml` | Self-caller: syncs the auto-merge label taxonomy on this repo (weekly + manual) |
-| README Tree | `tree-readme.yml` | Self-caller for the deprecated tree generator. Now a no-op; deleted last, once no external callers remain |
 | Dependabot Auto-Merge (self) | `dependabot-auto-merge.yml` | Self-caller: runs auto-merge evaluation on this repo's own Dependabot PRs |
 
 ## Usage
@@ -172,122 +170,3 @@ Issue labels:
 - Documentation
 - Code
 
-## Tree
-
-```text
-.
-|-- CHANGELOG.md
-|-- README.md
-|-- actions
-|   |-- gitleaks
-|       |-- action.yml
-|-- docs
-|   |-- CODEBASE_ANALYSIS.md
-|   |-- GATE_CONFIG.md
-|   |-- GATE_PROMOTION.md
-|   |-- ORG_DEPENDABOT_AUTO_MERGE.md
-|   |-- ORG_JIRA_SYNC_SETUP.md
-|   |-- ORG_LABEL_TAXONOMY.md
-|   |-- ORG_OPA.md
-|   |-- ORG_RELEASE_AUTO_PATCH.md
-|   |-- ORG_RELEASE_CLEAN.md
-|   |-- ORG_REPO_BOOTSTRAP.md
-|   |-- ORG_SLACK_NOTIFY.md
-|   |-- ORG_SOURCE_PIN.md
-|   |-- ORG_TERRATEST.md
-|   |-- ORG_TERRATEST_HARDENING_RUNBOOK.md
-|   |-- ORG_TERRATEST_PROVISIONING.md
-|   |-- ORG_VERSION_BAND.md
-|   |-- RESEARCH_terraform-docs-markdownlint-patterns.md
-|   |-- superpowers
-|       |-- specs
-|           |-- 2026-07-14-self-dogfood-reusable-workflows-design.md
-|           |-- 2026-07-15-automerge-bypass-direct-merge.md
-|           |-- 2026-07-15-org-repo-bootstrap-design.md
-|-- gate-config.yml
-|-- package-lock.json
-|-- package.json
-|-- release-please-config.json
-|-- renovate
-|   |-- terraform-ref-pins.json5
-|-- scripts
-|   |-- auto-merge-decide.sh
-|   |-- breaking-change-check.sh
-|   |-- cache-lib.sh
-|   |-- gate-config-resolve.sh
-|   |-- pr-green-merge.sh
-|   |-- pr-template-sweep.sh
-|   |-- prompt-lib.sh
-|   |-- release-patch-merge.sh
-|   |-- repo-bootstrap.sh
-|   |-- retry-lib.sh
-|   |-- source-pin-check.sh
-|   |-- stagger-slot.sh
-|   |-- supply-chain-check.sh
-|   |-- uses-pin-check.sh
-|   |-- version-band-check.sh
-|-- templates
-|   |-- bootstrap
-|   |   |-- common
-|   |   |   |-- release-please-config.json.tmpl
-|   |   |-- private
-|   |   |-- terraform
-|   |       |-- _footer.md.tmpl
-|   |       |-- _header.md.tmpl
-|   |-- terraform-docs
-|-- tests
-    |-- auto-merge-decide.test.sh
-    |-- cache-integrity.test.sh
-    |-- cache-read.test.sh
-    |-- dependabot-refresh.test.sh
-    |-- example-pin-check.test.sh
-    |-- fixtures
-    |   |-- auto-merge-decide
-    |   |   |-- first_party_waiver.env
-    |   |   |-- major_blocked.env
-    |   |   |-- osv_blocked.env
-    |   |   |-- parse_error_manual.env
-    |   |-- cache-read
-    |   |   |-- complete_clean.json
-    |   |   |-- legacy_no_schema.json
-    |   |   |-- missing_fields.json
-    |   |   |-- string_booleans.json
-    |   |   |-- unknown_schema.json
-    |   |   |-- vuln.json
-    |   |   |-- wrong_producer.json
-    |   |-- release-patch
-    |   |   |-- changelog.base.md
-    |   |   |-- changelog.patch.md
-    |   |   |-- manifest.base.json
-    |   |   |-- manifest.patch.json
-    |   |   |-- snapshot.happy.json
-    |   |-- source-pin
-    |   |   |-- fail_branch.tf
-    |   |   |-- fail_floating.tf
-    |   |   |-- fail_sha.tf
-    |   |   |-- pass.tf
-    |   |   |-- pass_renovate.tf
-    |   |   |-- warn_tag.tf
-    |   |-- uses-pin
-    |       |-- fail_main.yml
-    |       |-- fail_sha_nocomment.yml
-    |       |-- pass_local.yml
-    |       |-- pass_sha.yml
-    |       |-- warn_tag.yml
-    |-- gate-config-resolve.test.sh
-    |-- nat-eip-sweep.test.sh
-    |-- pr-green-merge.test.sh
-    |-- prompt-build.test.sh
-    |-- reconcile-sweeper.test.sh
-    |-- release-patch-merge.test.sh
-    |-- repo-bootstrap.test.sh
-    |-- retry-lib.test.sh
-    |-- source-pin-check.test.sh
-    |-- stagger-slot.test.sh
-    |-- supply-chain-osv-range.test.sh
-    |-- terratest-rerun.test.sh
-    |-- terratest-telemetry.test.sh
-    |-- tree-readme-section.test.sh
-    |-- uses-pin-check.test.sh
-    |-- version-band-check.test.sh
-```
