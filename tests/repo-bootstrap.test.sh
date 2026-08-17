@@ -156,8 +156,19 @@ echo "OK: dry-run generic public → WOULD-BOOTSTRAP (9 files), zero mutating ca
 # the inventory moved, not that the bootstrapper broke — the assertion is a tripwire
 # for accidental template loss, so keep it an exact count rather than a lower bound.
 run_helper "$META_PRIV" "$LANGS_HCL" "$PRS_NONE" "" true 1
-echo "$OUT" | grep -q "WOULD-BOOTSTRAP Coalfire-CF/new-repo (13 files)" || fail "terraform+private dry-run should propose 13 files (got: $OUT)"
-echo "OK: dry-run terraform private → WOULD-BOOTSTRAP (13 files)"
+echo "$OUT" | grep -q "WOULD-BOOTSTRAP Coalfire-CF/new-repo (17 files)" || fail "terraform+private dry-run should propose 17 files (got: $OUT)"
+echo "OK: dry-run terraform private → WOULD-BOOTSTRAP (17 files)"
+
+# ---- Case 2b: terraform repo that ALREADY has a README.md → the terraform-docs
+#      baseline (.terraform-docs.yml, .pre-commit-config.yaml, _header.md,
+#      _footer.md) must be dropped, leaving 17 - 4 = 13. Shipping stub partials
+#      next to a real README would make the first terraform-docs run replace it
+#      from the stubs and destroy the authored prose; migrating an existing
+#      README belongs to the docs sweep. ----
+run_helper "$META_PRIV" "$LANGS_HCL" "$PRS_NONE" "README.md" true 1
+echo "$OUT" | grep -q "WOULD-BOOTSTRAP Coalfire-CF/new-repo (13 files)" || fail "existing README should drop the 4 docs files, leaving 13 (got: $OUT)"
+echo "$OUT" | grep -q "_header.md" && fail "stub partials must not be proposed when README.md exists"
+echo "OK: existing README.md → terraform-docs baseline dropped (13 files)"
 
 # ---- Case 3: adopted repo (org-release.yml present) → SKIP (compliant). ----
 run_helper "$META_PUB" "$LANGS_NONE" "$PRS_NONE" ".github/workflows/org-release.yml" true 1

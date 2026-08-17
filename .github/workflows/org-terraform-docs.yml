@@ -29,18 +29,24 @@ on:
         description: 'Slack bot token for failure notifications (required if slack_channel_id is set)'
         required: false
 
+# Read-only: this workflow no longer writes to any branch. Authors regenerate
+# locally with the pinned pre-commit hook; CI only verifies.
 permissions:
-  contents: write
+  contents: read
 
-# Serialize per PR (or per ref for a post-merge regen). Cancel superseded PR runs,
-# but NEVER cancel a post-merge push:main regen mid-flight (it writes to main).
+# Serialize per PR. Cancelling a superseded run is always safe now that nothing
+# is written back to a branch.
 concurrency:
   group: terraform-docs-${{ github.repository }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: true
 
 jobs:
     docs:
         runs-on: ubuntu-latest
+        outputs:
+          # Lets notify-failure tell "author forgot to regenerate" apart from a
+          # real failure, so Slack is not paged for an authoring step.
+          drift: ${{ steps.drift.outputs.drift }}
         steps:
         - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
           with:
@@ -48,45 +54,93 @@ jobs:
             # regen mode (issue #149 re-pin-wave opt-in), not only on PR events.
             ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
 
-        - name: Render terraform docs inside the README.md and push changes back to PR branch
+        - name: Verify README.md matches the module (no push)
           uses: terraform-docs/gh-actions@6de6da0cefcc6b4b7a5cbea4d79d97060733093c # v1.4.1
           with:
+            # The repo's .terraform-docs.yml owns formatter, sections, sort and
+            # the markdownlint pragmas. It must declare `markdown table`: the
+            # action passes the formatter as a subcommand, and terraform-docs
+            # ignores the config `formatter` key whenever a subcommand is given.
+            config-file: .terraform-docs.yml
             find-dir: ${{ inputs.find-dir }}
-            # ACTOR-gate the push (issue #149): a Dependabot-actor run gets a
-            # read-only GITHUB_TOKEN, so git-push would false-red. Render still
-            # runs; only the push is suppressed. String ternary — the action
-            # input is a string. Gated on github.actor (token capability), NOT
-            # pull_request.user.login: a human push to a Dependabot branch gets a
-            # write token and SHOULD push.
-            git-push: ${{ github.actor != 'dependabot[bot]' && 'true' || 'false' }}
+            # Never push. Authors regenerate locally via the pinned pre-commit
+            # hook, so a PR branch is never mutated by CI and required checks are
+            # never skipped by a GITHUB_TOKEN commit.
+            git-push: 'false'
+            # Deliberately NOT using fail-on-diff. It reports only "<file> is out
+            # of date" with no diff, and it is documented as ignored whenever
+            # git-push is set. The steps below detect drift from git instead, so
+            # the author gets the actual diff and a stale README stays
+            # distinguishable from a genuine job failure (see notify-failure).
+            fail-on-diff: 'false'
             output-file: README.md
-            output-method: inject
+            # Must stay inject|replace: the action only stages the output file for
+            # those two modes, and `replace` is what the canonical config uses.
+            output-method: replace
             recursive: ${{ inputs.recursive }}
             recursive-path: ${{ inputs.recursive-path }}
             working-dir: ${{ inputs.working-dir }}
 
-        # Drift-critical: README version tables DO change on provider bumps, so a
-        # Dependabot run that can't push must still surface the drift. The
-        # read-only token can't comment, so warn + summarize the diffstat.
-        - name: Report terraform-docs drift (Dependabot read-only token)
-          if: ${{ github.actor == 'dependabot[bot]' }}
+        - name: Detect drift
+          id: drift
           run: |
-            if git diff --quiet; then
-              echo "terraform-docs: no README drift."
+            # Compare against HEAD, not the index. The action's entrypoint runs
+            # `git add` on the rendered file for inject|replace modes whether or
+            # not git-push is set, so a plain `git diff` compares the worktree
+            # against an already-staged copy, finds nothing, and the check passes
+            # on a stale README. Caught by the kms pilot.
+            if git diff --quiet HEAD --; then
+              echo "drift=false" >> "$GITHUB_OUTPUT"
+              echo "terraform-docs: README.md is current."
             else
-              echo "::warning::terraform-docs README is out of date on this Dependabot PR and could not be auto-pushed (read-only Dependabot token). A maintainer push — or @dependabot rebase after a human commit — will refresh it (issue #149)."
-              {
-                echo "### terraform-docs README drift (not auto-pushed)"
-                echo ""
-                echo '```'
-                git diff --stat || true
-                echo '```'
-              } >> "$GITHUB_STEP_SUMMARY"
+              echo "drift=true" >> "$GITHUB_OUTPUT"
             fi
+
+        # Humans own regeneration: the pinned pre-commit hook produces exactly
+        # these bytes locally, so a stale README is an authoring step that was
+        # skipped, not an infrastructure failure.
+        - name: Fail on drift (human PRs)
+          if: ${{ steps.drift.outputs.drift == 'true' && github.actor != 'dependabot[bot]' }}
+          run: |
+            echo "::error::README.md is out of date. Regenerate it locally with 'pre-commit run --all-files' and commit the result."
+            {
+              echo "### README.md is out of date"
+              echo ""
+              echo "Regenerate locally, then commit:"
+              echo ""
+              echo '```bash'
+              echo "pre-commit run --all-files"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            git --no-pager diff HEAD -- .
+            exit 1
+
+        # Bots cannot run a local hook, and version tables DO move on provider
+        # bumps, so surface the drift without reddening a PR that auto-merge is
+        # expected to land. A maintainer commit, or @dependabot rebase after one,
+        # refreshes it.
+        #
+        # NOTE: the older comment here claimed a Dependabot run gets a read-only
+        # GITHUB_TOKEN. That is stale — a Dependabot-triggered run does receive the
+        # permissions the caller declares (measured on run 31428925380: contents
+        # write). Pushing is withheld by choice now, not by token capability.
+        - name: Report drift (Dependabot PRs)
+          if: ${{ steps.drift.outputs.drift == 'true' && github.actor == 'dependabot[bot]' }}
+          run: |
+            echo "::warning::terraform-docs README.md is out of date on this Dependabot PR. A maintainer commit — or @dependabot rebase after one — will refresh it."
+            {
+              echo "### terraform-docs README drift (not auto-pushed)"
+              echo ""
+              echo '```'
+              git diff --stat HEAD --
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
 
     notify-failure:
       needs: docs
-      if: failure() && inputs.slack_channel_id != ''
+      # A stale README is a local regeneration the author skipped, not an
+      # incident. Only genuine failures (checkout, render, action error) notify.
+      if: ${{ failure() && needs.docs.outputs.drift != 'true' && inputs.slack_channel_id != '' }}
       uses: ./.github/workflows/org-slack-notify.yml
       secrets:
         SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
