@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.1](https://github.com/Coalfire-CF/Actions/compare/v0.18.0...v0.18.1) (2026-08-17)
+
+
+### Documentation
+
+* **examples:** refresh caller pins to v0.18.0 ([#309](https://github.com/Coalfire-CF/Actions/issues/309)) ([6782e10](https://github.com/Coalfire-CF/Actions/commit/6782e10a9de33455595d683aa28d9bb7cd5e0a65))
+
 ## [0.18.0](https://github.com/Coalfire-CF/Actions/compare/v0.17.0...v0.18.0) (2026-08-17)
 
 
