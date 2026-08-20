@@ -56,6 +56,7 @@ Called on merge to main.
 | Jira Sync | `org-jira-sync.yml` | Syncs GitHub issues to Jira (Cloud or Data Center) |
 | Terraform Version Check | `org-terraform-version-check.yml` | Scheduled check for new Terraform versions, auto-creates PRs |
 | Repo Bootstrap | `org-repo-bootstrap.yml` | Daily sweeper that opens baseline-adoption PRs (pinned caller bundle from `templates/bootstrap/`) on org repos that never adopted the standard workflows ([docs](docs/ORG_REPO_BOOTSTRAP.md)) |
+| Fleet Audit | `org-actions-fleet-audit.yml` | Weekly read-only org sweep: Actions pin lag, Dependabot auto-merge gaps, release/tag shape. Standing issue + artifact ([docs](docs/ORG_ACTIONS_FLEET_AUDIT.md)) |
 
 ### Legacy / Internal
 
