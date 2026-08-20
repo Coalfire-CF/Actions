@@ -1,0 +1,130 @@
+name: Org Actions Fleet Audit
+
+# Read-only Coalfire-CF fleet health sweep. Classifies consumer pin lag,
+# Dependabot auto-merge gaps, and release/tag shape. Writes an artifact plus
+# (full-org runs only) the standing issue "Actions fleet audit" on this repo.
+# Never pushes, opens PRs, merges, or labels consumer repos.
+
+on:
+  schedule:
+    - cron: '47 8 * * 1'   # weekly Monday 08:47 UTC — offset off the hour
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: 'Optional single repo (owner/name) canary. Empty = whole org. Canary does not overwrite the standing issue.'
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: actions-fleet-audit-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    name: Classify org repos
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Generate GitHub App token (org-wide reads)
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.AUTOMERGE_CLIENT_ID }}
+          private-key: ${{ secrets.AUTOMERGE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
+      - name: Sweep and report
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          ISSUE_TOKEN: ${{ github.token }}
+          OWNER: ${{ github.repository_owner }}
+          REPO_SCOPE: ${{ inputs.repo || '' }}
+        run: |
+          set -euo pipefail
+          : "${GH_TOKEN:?missing app token}"
+          if [ -n "$REPO_SCOPE" ] && ! printf '%s' "$REPO_SCOPE" | grep -qE '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$'; then
+            echo "::error::repo must be owner/name"
+            exit 2
+          fi
+
+          # shellcheck source=scripts/retry-lib.sh
+          . "${GITHUB_WORKSPACE}/scripts/retry-lib.sh"
+
+          # shellcheck disable=SC2329
+          _latest_release() {
+            gh release view --repo "${OWNER}/Actions" --json tagName --jq .tagName 2>/dev/null || return "$RETRY_TRANSIENT_RC"
+          }
+          if ! ACTIONS_VERSION="$(with_retry 3 2 20 -- _latest_release)"; then
+            echo "::error::could not resolve latest Actions release"
+            exit 1
+          fi
+          # shellcheck disable=SC2329
+          _tag_obj() {
+            gh api "repos/${OWNER}/Actions/git/ref/tags/${ACTIONS_VERSION}" --jq '[.object.type, .object.sha] | @tsv' 2>/dev/null || return "$RETRY_TRANSIENT_RC"
+          }
+          if ! TAG_TSV="$(with_retry 3 2 20 -- _tag_obj)"; then
+            echo "::error::could not resolve tag ${ACTIONS_VERSION}"
+            exit 1
+          fi
+          TAG_TYPE="$(printf '%s' "$TAG_TSV" | cut -f1)"
+          ACTIONS_SHA="$(printf '%s' "$TAG_TSV" | cut -f2)"
+          if [ "$TAG_TYPE" = "tag" ]; then
+            # shellcheck disable=SC2329
+            _deref() {
+              gh api "repos/${OWNER}/Actions/git/tags/${ACTIONS_SHA}" --jq '.object.sha' 2>/dev/null || return "$RETRY_TRANSIENT_RC"
+            }
+            if ! ACTIONS_SHA="$(with_retry 3 2 20 -- _deref)"; then
+              echo "::error::could not dereference annotated tag ${ACTIONS_VERSION}"
+              exit 1
+            fi
+          fi
+          echo "Fleet audit — owner=${OWNER} scope=${REPO_SCOPE:-<org>} pin=${ACTIONS_VERSION}@${ACTIONS_SHA}"
+
+          mkdir -p "${RUNNER_TEMP}/fleet-audit"
+          export ACTIONS_SHA ACTIONS_VERSION ORG="$OWNER" REPO="$REPO_SCOPE"
+          set +e
+          bash "${GITHUB_WORKSPACE}/scripts/fleet-audit.sh" \
+            > "${RUNNER_TEMP}/fleet-audit/repos.ndjson"
+          audit_rc=$?
+          set -e
+          ACTIONS_VERSION="$ACTIONS_VERSION" ACTIONS_SHA="$ACTIONS_SHA" \
+            bash "${GITHUB_WORKSPACE}/scripts/fleet-audit-report.sh" \
+            < "${RUNNER_TEMP}/fleet-audit/repos.ndjson" \
+            > "${RUNNER_TEMP}/fleet-audit/report.md"
+
+          cat "${RUNNER_TEMP}/fleet-audit/report.md" >> "$GITHUB_STEP_SUMMARY"
+
+          if [ -z "$REPO_SCOPE" ]; then
+            export GH_TOKEN="$ISSUE_TOKEN"
+            TITLE="Actions fleet audit"
+            existing="$(gh issue list --repo "${OWNER}/Actions" --state open --limit 50 \
+              --json number,title --jq ".[] | select(.title==\"${TITLE}\") | .number" | head -n1 || true)"
+            if [ -n "$existing" ]; then
+              gh issue edit "$existing" --repo "${OWNER}/Actions" \
+                --body-file "${RUNNER_TEMP}/fleet-audit/report.md"
+              echo "Updated standing issue #${existing}"
+            else
+              gh issue create --repo "${OWNER}/Actions" --title "$TITLE" \
+                --body-file "${RUNNER_TEMP}/fleet-audit/report.md"
+              echo "Opened standing issue"
+            fi
+          else
+            echo "Canary scope ${REPO_SCOPE} — standing issue not updated"
+          fi
+
+          exit "$audit_rc"
+
+      - name: Upload audit artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fleet-audit-report
+          path: ${{ runner.temp }}/fleet-audit/
+          if-no-files-found: warn
