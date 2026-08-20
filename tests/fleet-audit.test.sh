@@ -452,6 +452,30 @@ printf '%s' "$MD" | grep -q "pin-lag" || fail "report pin-lag section"
 printf '%s' "$MD" | grep -q "Coalfire-CF/lag-repo" || fail "report names repo"
 ok "report markdown"
 
+# ---- truncation cuts on a line boundary (MD055: no half-written table row) ----
+: > "$WORK/many.ndjson"
+i=0
+while [ "$i" -lt 60 ]; do
+  SNAP="$WORK/bulk"; rm -rf "$SNAP"; mkdir -p "$SNAP/workflows"
+  write_meta "$SNAP" "Coalfire-CF/bulk-repo-${i}"
+  empty_json_files "$SNAP"
+  cat > "$SNAP/workflows/org-release.yml" <<EOF
+jobs:
+  release:
+    uses: Coalfire-CF/Actions/.github/workflows/org-release.yml@${OLD_SHA} # v0.12.1
+EOF
+  run_snap "$SNAP" >> "$WORK/many.ndjson"
+  i=$((i + 1))
+done
+TRUNC="$(FLEET_AUDIT_MAX_BYTES=2000 bash "$REPORT" < "$WORK/many.ndjson")"
+printf '%s' "$TRUNC" | grep -q "truncated" || fail "expected truncation marker"
+while IFS= read -r line; do
+  case "$line" in
+    "|"*) printf '%s' "$line" | grep -qE '\|[[:space:]]*$' || fail "truncated table row: $line" ;;
+  esac
+done <<< "$TRUNC"
+ok "truncation preserves whole table rows"
+
 # ---- live enumerate: mock gh, reject writes ----
 BIN="$WORK/bin"; mkdir -p "$BIN"
 cat > "$BIN/gh" <<'MOCK'

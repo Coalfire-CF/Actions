@@ -99,7 +99,13 @@ counts="$(jq -s '{
 body="$(cat "${TMP}.md")"
 bytes="$(printf '%s' "$body" | wc -c | tr -d ' ')"
 if [ "$bytes" -gt "$MAX" ]; then
-  printf '%s\n' "${body:0:$((MAX - 80))}"
+  # Cut whole lines only. A mid-line cut emits a half-written table row, which
+  # markdownlint rejects as MD055 (missing trailing pipe).
+  LC_ALL=C awk -v max="$((MAX - 120))" '
+    { n = length($0) + 1 }
+    used + n > max { exit }
+    { print; used += n }
+  ' "${TMP}.md"
   echo
   echo "... truncated (${bytes} bytes). Full report is the workflow artifact."
 else

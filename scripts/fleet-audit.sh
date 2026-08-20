@@ -38,8 +38,7 @@ fi
 ACTIONS_SHA="${ACTIONS_SHA:-0000000000000000000000000000000000000000}"
 ACTIONS_VERSION="${ACTIONS_VERSION:-v0.0.0}"
 
-# Used via with_retry in live enumerate (shellcheck cannot see the call).
-# shellcheck disable=SC2329
+# shellcheck disable=SC2317,SC2329  # invoked indirectly via `with_retry -- _gh_read_once` (SC2317/SC2329 are the version-dependent codes for the same "unreachable/unused function" false positive)
 _gh_read_once() {
   local out rc
   set +e
@@ -506,8 +505,7 @@ if [ -n "$REPO" ]; then
   printf '%s' "$REPO" | grep -qE '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$' || usage_exit "REPO must be owner/name"
   REPOS="$REPO"
 else
-  # Invoked through with_retry; shellcheck misses the indirect call.
-  # shellcheck disable=SC2329
+  # shellcheck disable=SC2317,SC2329  # invoked indirectly via `with_retry -- _list_repos` (SC2317/SC2329 are the version-dependent codes for the same "unreachable/unused function" false positive)
   _list_repos() {
     gh repo list "$ORG" --limit 1000 --no-archived \
       --json nameWithOwner,isFork \

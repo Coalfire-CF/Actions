@@ -490,6 +490,5 @@ Pin: `v0.18.1` @ `23c6c8bc526102ed041f2e08a363e5ea2c2f0ec4`
 | `Coalfire-CF/terraform-google-palo-alto` | fail | v0.16.1@9e201c39 vs v0.18.1@23c6c8bc |
 | `Coalfire-CF/terraform-google-palo-alto` | fail | v0.17.0@43274fdf vs v0.18.1@23c6c8bc |
 | `Coalfire-CF/terraform-google-cloud-sql` | fail | v0.16.1@9e201c39 vs v0.18.1@23c6c8bc |
-| `Coalfire-CF/terraform-google-cloud-sql` | fail | v0.17.0@43274fdf vs v
 
 ... truncated (120792 bytes). Full report is the workflow artifact.
