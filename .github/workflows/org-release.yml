@@ -151,9 +151,10 @@ on:
         default: false
       actions_ref:
         description: >-
-          Git ref of Coalfire-CF/Actions to load scripts/release-patch-merge.sh
-          from. Defaults to 'main' — the same central model the other org
-          workflows use for scripts/. Pin to a release SHA to freeze the logic.
+          Git ref of Coalfire-CF/Actions to load scripts/ helpers from
+          (release-tag-precheck.sh, release-patch-merge.sh). Defaults to 'main'
+          — the same central model the other org workflows use for scripts/.
+          Pin to a release SHA to freeze the logic.
         required: false
         type: string
         default: 'main'
@@ -242,18 +243,14 @@ jobs:
           client-id: ${{ secrets.RELEASE_APP_ID }}
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
 
-      # Load scripts/ from the same SHA as this reusable workflow so a consumer
-      # pin cannot pick up a floating scripts/main that does not match the YAML.
       - name: Checkout Actions repo (precheck script)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: Coalfire-CF/Actions
-          ref: ${{ github.job_workflow_sha }}
-          token: ${{ steps.app-token.outputs.token || github.token }}
+          ref: ${{ inputs.actions_ref || 'main' }}
           path: actions-tools
           persist-credentials: false
           sparse-checkout: scripts
-          sparse-checkout-cone-mode: true
 
       - name: Pre-check existing release tag
         id: precheck
