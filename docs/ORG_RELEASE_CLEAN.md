@@ -25,8 +25,10 @@ release (release-please, or a loud tag-collision precheck)
 ```
 
 A pre-existing tag is not allowed to skip the tarball, checksum, cosign
-bundles, or scans. The Release job still fails so the collision is visible; the
-jobs above keep running when a GitHub Release already exists for that tag.
+bundles, or scans **when it points at the same commit this run would have
+tagged**. The Release job still fails so the collision is visible. If the
+existing tag points at a **different** commit, those jobs stay skipped so
+cosign cannot sign one tree while Trivy/Gitleaks scan another.
 
 The `release-clean` job:
 

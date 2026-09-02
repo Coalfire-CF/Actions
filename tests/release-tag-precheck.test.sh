@@ -152,22 +152,30 @@ printf '%s' "$OUT" | grep -qE '^COLLISION ' || fail "adding a release must colli
 [ "$(out_key collision)" = "true" ] || fail "collision output not true"
 echo "OK: mutation — existing GitHub Release flips CLEAR to COLLISION"
 
-# ---- COLLISION: release exists, same or different SHA; skip RP; supply-chain ----
+# ---- COLLISION: release exists at a DIFFERENT commit — skip RP, no supply-chain ----
 MOCK_COMMIT_MSG="chore(main): release 4.4.0"
 MOCK_PULLS="$RELEASE_PR"
 MOCK_TAG_EXISTS=1
 MOCK_RELEASE_EXISTS=1
-run "collision-release-exists"
+run "collision-release-mismatch-sha"
 [ "$RC" -eq 0 ] || fail "script must exit 0 (workflow owns the fail)"
 printf '%s' "$OUT" | grep -q "tag=v4.4.0" || fail "collision missing tag: $OUT"
 printf '%s' "$OUT" | grep -q "tag_sha=${TAG_SHA}" || fail "collision missing tag_sha: $OUT"
 printf '%s' "$OUT" | grep -q "head_sha=${HEAD_SHA}" || fail "collision missing head_sha: $OUT"
 printf '%s' "$OUT" | grep -q "release_exists=true" || fail "collision missing release_exists: $OUT"
 [ "$(out_key skip_release_please)" = "true" ] || fail "collision must skip release-please"
-[ "$(out_key supply_chain)" = "true" ] || fail "existing GitHub Release must enable supply-chain"
+[ "$(out_key supply_chain)" = "false" ] || fail "mismatched tag SHA must NOT enable supply-chain (would mix trees)"
 [ "$(out_key tag_name)" = "v4.4.0" ] || fail "tag_name should be v4.4.0"
 [ "$(out_key pr_number)" = "338" ] || fail "pr_number should be 338"
 echo "OK: COLLISION names tag, existing commit, and would-tag commit"
+
+# mutation: aligning the tag SHA with HEAD must enable supply-chain
+MOCK_TAG_SHA="$HEAD_SHA"
+run "collision-release-same-sha"
+printf '%s' "$OUT" | grep -qE '^COLLISION ' || fail "same-SHA existing release is still a collision, got: $OUT"
+[ "$(out_key supply_chain)" = "true" ] || fail "same-SHA GitHub Release must enable supply-chain"
+echo "OK: mutation — tag SHA == HEAD enables supply-chain on an existing GitHub Release"
+MOCK_TAG_SHA="$TAG_SHA"
 
 # ---- labels: APPLY_LABELS=false must not mutate ----
 printf '%s' "$TRACE" | grep -qE 'issues/.*/labels' && fail "APPLY_LABELS=false must not hit labels API: $TRACE"

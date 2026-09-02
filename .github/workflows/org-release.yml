@@ -22,7 +22,8 @@ name: Release Please
 # labelled the PR `autorelease: tagged`, which wedges that version and skips
 # every supply-chain job. A precheck skips release-please in that case, fails
 # with the existing tag commit and the commit that would have been tagged, and
-# still runs clean/Trivy/Gitleaks against the existing release.
+# still runs clean/Trivy/Gitleaks against the existing release only when that
+# tag points at the same commit as this run (so cosign and scans attest one tree).
 #
 # Clean Release:
 #   By default, a cleaned tarball (<repo>-<tag>-clean.tar.gz) is uploaded to each
@@ -347,8 +348,8 @@ jobs:
   release-clean:
     name: Clean Release Archive
     needs: release
-    # Run when release-please created a release, or when a hand-cut GitHub
-    # Release already exists for this version (tag collision). always() is
+    # Run when release-please created a release, or when a colliding GitHub
+    # Release already exists at the SAME commit as this run. always() is
     # required so a failing release job still exposes precheck outputs.
     if: >-
       always() &&

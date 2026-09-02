@@ -8,7 +8,9 @@
 # already_exists, which wedges that version permanently. This script runs first,
 # never calls release-please, and emits skip/collision/supply-chain outputs so
 # the workflow can fail loudly, keep labels retryable when no GitHub release
-# exists, and still attach signed artifacts when one does.
+# exists, and still attach signed artifacts when a colliding release points at
+# the same commit as this run. A release/tag at a different commit is fail-closed:
+# no cosign/scans, so attestations cannot mix two trees.
 #
 # Inputs (environment):
 #   REPO              required — owner/name
@@ -251,8 +253,15 @@ if [ "$publish_attempt" = "true" ] && [ "$release_exists" = "true" ]; then
   # The 422 case: GitHub Release already exists for this version.
   skip_release_please=true
   collision=true
-  supply_chain=true
   verdict=COLLISION
+  # Cosign signs the tag tree; Trivy/Gitleaks check out github.sha. Only attach
+  # artifacts when those are the same commit — otherwise a hand-cut tag at a
+  # different SHA would mix two trees on one release.
+  if [ -n "$tag_sha" ] && [ "$tag_sha" = "$HEAD_SHA" ]; then
+    supply_chain=true
+  else
+    supply_chain=false
+  fi
   # Unstick so later versions can proceed; the published release is real.
   apply_labels "${pr_number}" "autorelease: tagged" "autorelease: pending"
 elif [ "$publish_attempt" = "true" ] && [ "$tag_exists" = "true" ] && [ "$tag_sha" != "$HEAD_SHA" ]; then
@@ -260,12 +269,10 @@ elif [ "$publish_attempt" = "true" ] && [ "$tag_exists" = "true" ] && [ "$tag_sh
   # to the wrong tree. Fail closed and do not run release-please.
   skip_release_please=true
   collision=true
-  supply_chain=$release_exists
+  supply_chain=false
   verdict=COLLISION
   # No GitHub Release yet — keep pending so deleting the tag self-heals.
-  if [ "$release_exists" != "true" ]; then
-    apply_labels "${pr_number}" "autorelease: pending" "autorelease: tagged"
-  fi
+  apply_labels "${pr_number}" "autorelease: pending" "autorelease: tagged"
 elif [ "$publish_attempt" != "true" ] && [ -n "$stuck_pr" ] && [ "$release_exists" = "true" ]; then
   skip_release_please=true
   collision=false
@@ -307,7 +314,9 @@ if [ "$verdict" = "COLLISION" ]; then
   msg="${msg} GitHub Release exists: ${release_exists}."
   msg="${msg} Skipping release-please (avoids 422 already_exists and autorelease: tagged-then-error)."
   if [ "$supply_chain" = "true" ]; then
-    msg="${msg} Clean tarball, cosign, Trivy, and Gitleaks will still run against ${tag}."
+    msg="${msg} Clean tarball, cosign, Trivy, and Gitleaks will still run against ${tag} (tag commit matches this run)."
+  elif [ "$release_exists" = "true" ]; then
+    msg="${msg} GitHub Release ${tag} points at a different commit than this run — supply-chain jobs will NOT run (cosign would sign the tag tree while scans would see HEAD). Retarget or delete the tag/release, then retry."
   else
     msg="${msg} No GitHub Release for ${tag} — supply-chain jobs cannot attach assets. Delete the tag (and retry) or create a release for it."
   fi
@@ -322,6 +331,7 @@ if [ "$verdict" = "COLLISION" ]; then
       echo "| Existing tag commit | \`${tag_sha:-unknown}\` |"
       echo "| Commit this run would tag | \`${HEAD_SHA}\` |"
       echo "| GitHub Release exists | \`${release_exists}\` |"
+      echo "| Supply-chain jobs | \`${supply_chain}\` |"
       echo "| Associated PR | \`${pr_number:-none}\` |"
       echo
       echo "A tag/release created outside org-release collided with the version"
