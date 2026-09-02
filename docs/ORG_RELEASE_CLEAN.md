@@ -10,17 +10,25 @@
 >
 > **Your repository, branches, and tags are never modified.** Only the tarball asset is affected.
 
-When release-please creates a new release, `org-release.yml` triggers several parallel jobs:
+When release-please creates a new release — or when the version it would cut
+already has a GitHub Release (a hand-cut tag) — `org-release.yml` triggers
+several parallel jobs:
 
 ```text
-release (release-please creates the tag and release)
+release (release-please, or a loud tag-collision precheck)
   |
   ├── release-clean   -- Builds a cleaned tarball (THIS FEATURE)
   ├── trivy-scan      -- Trivy security scan (full repo)
   ├── gitleaks-scan   -- Secret detection across full repo history
-  ├── notify-release  -- Slack release notification (if configured)
+  ├── notify-release  -- Slack release notification (if configured; skipped on collision)
   └── notify-failure  -- Slack failure notification (if any job fails)
 ```
+
+A pre-existing tag is not allowed to skip the tarball, checksum, cosign
+bundles, or scans **when it points at the same commit this run would have
+tagged**. The Release job still fails so the collision is visible. If the
+existing tag points at a **different** commit, those jobs stay skipped so
+cosign cannot sign one tree while Trivy/Gitleaks scan another.
 
 The `release-clean` job:
 
