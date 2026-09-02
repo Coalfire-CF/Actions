@@ -124,8 +124,10 @@ version_from_title() {
   printf '%s' "$1" | sed -nE 's/.*release[[:space:]]+v?([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' | head -n1
 }
 
+# release-please publish subjects always include a semver (e.g. "chore(main):
+# release 4.4.0"). A bare "chore: release notes" must not count as a publish.
 is_release_title() {
-  printf '%s' "$1" | grep -qiE '^chore(\([^)]+\))?(!)?:[[:space:]]+release[[:space:]]'
+  printf '%s' "$1" | grep -qiE '^chore(\([^)]+\))?(!)?:[[:space:]]+release[[:space:]]+v?[0-9]+\.[0-9]+\.[0-9]+'
 }
 
 apply_labels() {
@@ -190,7 +192,7 @@ pulls="$(gh_read api "repos/${REPO}/commits/${HEAD_SHA}/pulls" --jq '.' 2>/dev/n
 # First matching associated PR wins for label repair.
 pr_number="$(printf '%s' "$pulls" | jq -r '
   [.[] | select(
-    ((.title // "") | test("^chore(\\([^)]+\\))?(!)?:[[:space:]]+release[[:space:]]"; "i"))
+    ((.title // "") | test("^chore(\\([^)]+\\))?(!)?:[[:space:]]+release[[:space:]]+v?[0-9]+\\.[0-9]+\\.[0-9]+"; "i"))
     or ([.labels[]?.name] | any(. == "autorelease: pending" or . == "autorelease: tagged"))
   ) | .number] | first // empty
 ')"

@@ -227,7 +227,27 @@ printf '%s' "$OUT" | grep -qE '^NO_PUBLISH tag=v4.4.0$' || fail "expected NO_PUB
 [ "$(out_key collision)" = "false" ] || fail "NO_PUBLISH must not be a collision"
 echo "OK: existing tag on a non-release commit is NO_PUBLISH, not a collision"
 
+# Bugbot: "chore: release …" without a semver is not a release-please publish.
+# After v4.4.0 exists, "chore: release notes" must not collide or skip RP.
+MOCK_COMMIT_MSG="chore: release notes"
+MOCK_PULLS='[{"number":99,"title":"chore: release notes","labels":[]}]'
+MOCK_PENDING_PRS='[]'
+run "release-notes-not-publish"
+printf '%s' "$OUT" | grep -qE '^NO_PUBLISH tag=v4.4.0$' || fail "expected NO_PUBLISH for 'chore: release notes', got: $OUT"
+[ "$(out_key collision)" = "false" ] || fail "'chore: release notes' must not be a collision"
+[ "$(out_key skip_release_please)" = "false" ] || fail "'chore: release notes' must not skip release-please"
+echo "OK: 'chore: release notes' is not a publish attempt"
+
+# mutation: a real release-please title on the same tree must collide
+MOCK_COMMIT_MSG="chore(main): release 4.4.0"
+MOCK_PULLS="$RELEASE_PR"
+run "release-notes-mutates-to-collision"
+printf '%s' "$OUT" | grep -qE '^COLLISION ' || fail "semver release title must collide, got: $OUT"
+echo "OK: mutation — adding a semver to the title flips NO_PUBLISH to COLLISION"
+
 # mutation: pending merged PR on that later push → UNSTICK, skip RP
+MOCK_COMMIT_MSG="feat: add widgets"
+MOCK_PULLS="$FEAT_PR"
 MOCK_PENDING_PRS='[{"number":338,"title":"chore(main): release 4.4.0"}]'
 run "unstick-later-push"
 printf '%s' "$OUT" | grep -qE '^UNSTICK tag=v4.4.0 pr=338$' || fail "expected UNSTICK, got: $OUT"
