@@ -56,6 +56,9 @@ if [ "$1" = "api" ] && printf '%s' "$*" | grep -q 'check-runs'; then
   fi
   cat "$MOCK_CHECKS_JSON"; exit 0
 fi
+if [ "$1" = "api" ] && printf '%s' "$*" | grep -q '/reviews'; then
+  cat "$MOCK_REVIEWS_JSON"; exit 0
+fi
 # The REAL merge path: REST endpoint via `gh api --method PUT .../pulls/N/merge`
 # (NOT `gh pr merge`, which cannot exercise ruleset bypass). Treated as a write.
 if [ "$1" = "api" ] && printf '%s' "$*" | grep -qE 'pulls/[0-9]+/merge'; then
@@ -90,8 +93,9 @@ run_helper() {
   local pv="$1" checks="$2" dry="$3" reject="$4" fail_first="${5:-0}" fail_all="${6:-0}"
   printf '%s' "$pv" > "$WORK/pr.json"
   printf '%s' "$checks" > "$WORK/checks.json"
+  printf '[{"user":{"login":"app/ci-automerge-app"},"state":"APPROVED","commit_id":"%s"}]' "$SHA" > "$WORK/reviews.json"
   : > "$WORK/trace"; : > "$WORK/viewcount"
-  PATH="$BIN:$PATH" GH_TRACE="$WORK/trace" MOCK_PR_JSON="$WORK/pr.json" MOCK_CHECKS_JSON="$WORK/checks.json" \
+  PATH="$BIN:$PATH" GH_TRACE="$WORK/trace" MOCK_PR_JSON="$WORK/pr.json" MOCK_CHECKS_JSON="$WORK/checks.json" MOCK_REVIEWS_JSON="$WORK/reviews.json" \
       MOCK_REJECT_WRITES="$reject" MOCK_FAIL_FIRST="$fail_first" MOCK_FAIL_ALL="$fail_all" MOCK_CHECKS_FAIL="${CF:-0}" MOCK_VIEW_COUNT="$WORK/viewcount" \
     PR_NUMBER=123 REPO="Coalfire-CF/some-repo" MERGE_METHOD=squash DRY_RUN="$dry" BYPASS_REVIEW="${BR:-false}" RETRY_MAX=2 \
     bash "$HELPER" > "$WORK/out" 2>/dev/null
@@ -249,5 +253,18 @@ BR=true run_helper "$PV_REVREQ" "$CK_SELF_PEND" false 0
 echo "$OUT" | grep -q "SKIP #123 (checks-PENDING)" || fail "real pending check must still block (got: $OUT)"
 echo "$TRACE" | grep -qE "$WRITE_VERBS_RE" && fail "must not merge while a real check is pending"
 echo "OK: real repo check pending (terraform) → SKIP (exclusion is scoped to auto-merge/*)"
+
+# ---- Case 14: stale approval from prior Dependabot head cannot authorize this head. ----
+printf '%s' "$PV_OPEN" > "$WORK/pr.json"
+printf '%s' "$CK_GREEN" > "$WORK/checks.json"
+printf '%s' '[{"user":{"login":"app/ci-automerge-app"},"state":"APPROVED","commit_id":"old-head"}]' > "$WORK/stale-reviews.json"
+: > "$WORK/trace"
+PATH="$BIN:$PATH" GH_TRACE="$WORK/trace" MOCK_PR_JSON="$WORK/pr.json" MOCK_CHECKS_JSON="$WORK/checks.json" MOCK_REVIEWS_JSON="$WORK/stale-reviews.json" \
+  PR_NUMBER=123 REPO="Coalfire-CF/some-repo" MERGE_METHOD=squash DRY_RUN=false BYPASS_REVIEW=true RETRY_MAX=2 \
+  bash "$HELPER" > "$WORK/out" 2>/dev/null
+OUT="$(cat "$WORK/out")"; TRACE="$(cat "$WORK/trace")"
+echo "$OUT" | grep -q "SKIP #123 (approval-head-mismatch)" || fail "stale policy approval must not authorize current head (got: $OUT)"
+echo "$TRACE" | grep -qE "$WRITE_VERBS_RE" && fail "stale policy approval issued a merge"
+echo "OK: stale policy approval from prior head → SKIP (no merge)"
 
 echo "ALL TESTS PASSED"

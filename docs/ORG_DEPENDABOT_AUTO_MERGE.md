@@ -252,6 +252,8 @@ jobs:
       github.event_name == 'check_suite' ||
       github.event.pull_request.user.login == 'dependabot[bot]'
     uses: <YOUR_ORG>/Actions/.github/workflows/org-dependabot-auto-merge.yml@23c6c8bc526102ed041f2e08a363e5ea2c2f0ec4 # v0.18.1
+    with:
+      actions_ref: 23c6c8bc526102ed041f2e08a363e5ea2c2f0ec4 # v0.18.1
     secrets: inherit
 ```
 
@@ -270,14 +272,11 @@ The supply-chain, breaking-change, and decision steps run committed scripts
 (`scripts/supply-chain-check.sh`, `breaking-change-check.sh`,
 `auto-merge-decide.sh`) rather than inline heredocs. Because this is a reusable
 workflow that runs in **your** repo's checkout, each of those jobs self-checks-out
-`Coalfire-CF/Actions` and invokes the script from there. By default that checkout
-uses `main` — the same central model the gate workflows (`org-opa`,
-`org-terraform-source-pin`, `org-terraform-version-band`) already use for
-`scripts/` and `gate-config.yml`. **Pinning the `uses:` line by SHA does not by
-itself pin the decision scripts** — they resolve at `actions_ref`.
+`Coalfire-CF/Actions` and invokes the script from there. **Pinning the `uses:`
+line by SHA does not by itself pin the decision scripts** — they resolve at the
+required `actions_ref`, which must be an immutable 40-hex commit SHA.
 
-To freeze the decision logic to the same immutable ref you pin the workflow to,
-pass `actions_ref`:
+Pass the same immutable SHA to `actions_ref`:
 
 ```yaml
 jobs:
@@ -300,7 +299,7 @@ jobs:
 | `auto_merge_method` | No | `squash` | Merge method: merge, squash, or rebase |
 | `bedrock_model_id` | No | `us.anthropic.claude-haiku-4-5-20251001-v1:0` | Bedrock model ID for changelog analysis |
 | `cache_ttl_days` | No | `30` | Days before cached analysis expires |
-| `actions_ref` | No | `main` | Ref of `Coalfire-CF/Actions` the decision scripts (`scripts/*.sh`) are loaded from. Defaults to `main` (same central model as the gate workflows). Pin to a release SHA to freeze the decision logic — see [Pinning the decision logic](#pinning-the-decision-logic) |
+| `actions_ref` | **Yes** | - | Immutable 40-hex commit SHA of `Coalfire-CF/Actions` from which decision scripts are loaded. Use the same SHA as the reusable workflow pin. |
 | `slack_channel_id` | No | - | Slack channel for failure alerts |
 
 ## Secrets

@@ -93,6 +93,10 @@ IGNORE_CHECK_PREFIX="${IGNORE_CHECK_PREFIX:-auto-merge / }"
 # org-repo-bootstrap sweeper authors baseline-adoption PRs as the App and labels
 # them merge/approved for this same green-gated pipeline to land.
 AUTHOR_ALLOWLIST="${AUTHOR_ALLOWLIST:-app/dependabot dependabot[bot] app/ci-automerge-app ci-automerge-app[bot]}"
+# Dependabot policy authorization is carried by the auto-merge App's APPROVED
+# review, whose commit_id binds the decision to one immutable PR head. Labels are
+# lifecycle/UI state only and never sufficient merge authorization.
+REVIEWER_ALLOWLIST="${REVIEWER_ALLOWLIST:-app/ci-automerge-app ci-automerge-app[bot]}"
 
 # log to STDERR so a retry message never contaminates a $(gh_read ...) capture.
 log() { echo "[pr-green-merge] $*" >&2; }
@@ -168,6 +172,45 @@ if [ "$author_ok" != "true" ]; then
   exit 0
 fi
 
+# Dependabot approval must be bound to this exact head. A merge/approved label
+# survives synchronize events, so it cannot prove that OSV/Scorecard/breaking-
+# change analysis ran for the current dependency commit. The App review created
+# by the decision job includes commit_id and is dismissed on a head change; read
+# all review pages and require an allowlisted APPROVED review for HEAD_SHA.
+case "$AUTHOR" in
+  app/dependabot|dependabot\[bot\])
+    if ! REVIEWS_PAGES="$(gh_read api --paginate "repos/${REPO}/pulls/${PR_NUMBER}/reviews?per_page=100")"; then
+      log "SKIP #${PR_NUMBER} (could not read reviews — failing closed, no merge)"
+      echo "SKIP #${PR_NUMBER} (reviews-unavailable)"
+      exit 0
+    fi
+    if ! REVIEWS_JSON="$(printf '%s' "$REVIEWS_PAGES" | jq -sc '
+      if length > 0 and all(.[]; type == "array")
+      then [ .[][] ]
+      else error("unexpected reviews page shape") end
+    ')"; then
+      log "SKIP #${PR_NUMBER} (invalid paginated reviews response — failing closed, no merge)"
+      echo "SKIP #${PR_NUMBER} (reviews-invalid)"
+      exit 0
+    fi
+    read -ra _reviewers <<< "$REVIEWER_ALLOWLIST"
+    approval_ok=false
+    for reviewer in "${_reviewers[@]}"; do
+      if printf '%s' "$REVIEWS_JSON" | jq -e --arg reviewer "$reviewer" --arg head "$HEAD_SHA" '
+        any(.[]; .user.login == $reviewer and .state == "APPROVED" and .commit_id == $head)
+      ' >/dev/null; then
+        approval_ok=true
+        break
+      fi
+    done
+    if [ "$approval_ok" != "true" ]; then
+      log "SKIP #${PR_NUMBER} (no trusted policy approval for head ${HEAD_SHA})"
+      echo "SKIP #${PR_NUMBER} (approval-head-mismatch)"
+      exit 0
+    fi
+    ;;
+esac
+
 # Review-decision gate. reviewDecision is null when the repo requires no reviews
 # (the common wedged-PR case — allowed), APPROVED when a required review is
 # satisfied (allowed).
@@ -189,8 +232,8 @@ if [ "$REVIEW" = "REVIEW_REQUIRED" ] && [ "$BYPASS_REVIEW" != "true" ]; then
   exit 0
 fi
 
-# Green gate: read the head commit's check runs via REST (checks:read) and
-# classify FAIL > PENDING > GREEN, EXCLUDING check runs named with
+# Green gate: read every page of the head commit's check runs via REST
+# (checks:read) and classify FAIL > PENDING > GREEN, EXCLUDING check runs named with
 # IGNORE_CHECK_PREFIX (the auto-merge workflow's own jobs — see var comment; when
 # the decide job merges inline, its own check is IN_PROGRESS and would otherwise
 # wedge the gate PENDING forever). No (remaining) check runs classifies GREEN — the
@@ -204,17 +247,29 @@ if [ -z "$HEAD_SHA" ]; then
   echo "SKIP #${PR_NUMBER} (no-head-sha)"
   exit 0
 fi
-if ! CHECKS_JSON="$(gh_read api "repos/${REPO}/commits/${HEAD_SHA}/check-runs?per_page=100")"; then
+if ! CHECKS_PAGES="$(gh_read api --paginate "repos/${REPO}/commits/${HEAD_SHA}/check-runs?per_page=100")"; then
   log "SKIP #${PR_NUMBER} (could not read check-runs — failing closed, no merge)"
   echo "SKIP #${PR_NUMBER} (check-runs-unavailable)"
+  exit 0
+fi
+# `gh api --paginate` emits one JSON document per page. Slurp them into one
+# object and fail closed if any page has an unexpected shape.
+if ! CHECKS_JSON="$(printf '%s' "$CHECKS_PAGES" | jq -sc '
+  if length > 0 and all(.[]; (.check_runs | type) == "array")
+  then {check_runs: [.[].check_runs[]]}
+  else error("unexpected check-runs page shape") end
+')"; then
+  log "SKIP #${PR_NUMBER} (invalid paginated check-runs response — failing closed, no merge)"
+  echo "SKIP #${PR_NUMBER} (check-runs-invalid)"
   exit 0
 fi
 CHECK_STATE="$(printf '%s' "$CHECKS_JSON" | jq -r --arg ign "$IGNORE_CHECK_PREFIX" '
   [ .check_runs[]?
     | select(($ign == "") or ((.name // "") | startswith($ign) | not))
     | ((.conclusion // .status // "") | ascii_upcase) ] as $c
-  | if   ($c | map(select(. == "FAILURE" or . == "ERROR" or . == "TIMED_OUT" or . == "CANCELLED" or . == "ACTION_REQUIRED" or . == "STARTUP_FAILURE")) | length) > 0 then "FAIL"
+  | if   ($c | map(select(. == "FAILURE" or . == "ERROR" or . == "TIMED_OUT" or . == "CANCELLED" or . == "ACTION_REQUIRED" or . == "STARTUP_FAILURE" or . == "STALE")) | length) > 0 then "FAIL"
     elif ($c | map(select(. == "QUEUED" or . == "IN_PROGRESS" or . == "PENDING" or . == "WAITING" or . == "REQUESTED" or . == "")) | length) > 0 then "PENDING"
+    elif ($c | map(select(. != "SUCCESS" and . != "SKIPPED")) | length) > 0 then "FAIL"
     else "GREEN" end')"
 
 if [ "$CHECK_STATE" != "GREEN" ]; then
