@@ -21,7 +21,8 @@ name: Dependabot Reconcile Sweeper
 # tail-catcher for PRs whose CI outlasts the PR-time merge (check_suite events
 # never fire for Actions-created suites, so no event-driven path exists for
 # Actions-gated repos). Every merge is still gated per-PR by pr-green-merge.sh:
-# green CI, dependabot author, merge/approved label, never over CHANGES_REQUESTED.
+# green CI, trusted exact-head policy approval, automation author, and never over
+# CHANGES_REQUESTED. The merge/approved label selects candidates only.
 # Manual dispatch stays dry-run by DEFAULT (safe canaries; scope with the `repo`
 # input) — pass dry_run=false explicitly to make a dispatched run merge.
 #

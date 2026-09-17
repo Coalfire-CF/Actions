@@ -20,6 +20,10 @@ fail() { echo "NOT OK: $1"; exit 1; }
 WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
 BIN="$WORK/bin"; mkdir -p "$BIN"
 HEAD_SHA="headsha111"
+APPROVED_REVIEWS="$WORK/reviews.approved.json"
+printf '[{"user":{"login":"app/ci-automerge-app"},"state":"APPROVED","commit_id":"%s"}]' "$HEAD_SHA" > "$APPROVED_REVIEWS"
+STALE_REVIEWS="$WORK/reviews.stale.json"
+printf '%s' '[{"user":{"login":"app/ci-automerge-app"},"state":"APPROVED","commit_id":"oldhead000"}]' > "$STALE_REVIEWS"
 
 # ---- mock gh: pr view (snapshot) + api (check-runs GET / merge PUT) + argv trace ----
 cat > "$BIN/gh" <<'MOCK'
@@ -36,6 +40,9 @@ case "$sub" in
         exit 0
       fi
     done
+    if printf '%s' "$*" | grep -q '/reviews'; then
+      cat "$MOCK_REVIEWS"; exit 0
+    fi
     cat "$MOCK_CHECKS"; exit 0 ;;
 esac
 exit 0
@@ -47,6 +54,14 @@ GREEN_CHECKS="$WORK/checks.green.json"
 printf '%s' '{"check_runs":[{"name":"CI / build","status":"completed","conclusion":"SUCCESS"}]}' > "$GREEN_CHECKS"
 FAIL_CHECKS="$WORK/checks.fail.json"
 printf '%s' '{"check_runs":[{"name":"CI / build","status":"completed","conclusion":"FAILURE"}]}' > "$FAIL_CHECKS"
+NEUTRAL_CHECKS="$WORK/checks.neutral.json"
+printf '%s' '{"check_runs":[{"name":"CI / policy","status":"completed","conclusion":"NEUTRAL"}]}' > "$NEUTRAL_CHECKS"
+MULTIPAGE_CHECKS="$WORK/checks.multipage.json"
+printf '%s\n%s' \
+  '{"check_runs":[{"name":"CI / build","status":"completed","conclusion":"SUCCESS"}]}' \
+  '{"check_runs":[{"name":"CI / late gate","status":"completed","conclusion":"FAILURE"}]}' > "$MULTIPAGE_CHECKS"
+EMPTY_CHECKS="$WORK/checks.empty"
+: > "$EMPTY_CHECKS"
 
 prjson() { # <author-login> -> path (state OPEN, not draft, review null, head pinned)
   local out="$WORK/pr.$RANDOM.json"
@@ -60,6 +75,7 @@ run() {
   set +e
   OUT="$(env "PATH=$BIN:$PATH" "GH_TRACE=$WORK/trace" \
     REPO="Coalfire-CF/demo" PR_NUMBER=7 MERGE_METHOD=squash RETRY_MAX=1 \
+    MOCK_REVIEWS="${MOCK_REVIEWS:-$APPROVED_REVIEWS}" \
     "$@" bash "$SCRIPT" 2>/dev/null)"
   RC=$?
   set -e
@@ -96,6 +112,31 @@ run DRY_RUN=false MOCK_PRJSON="$(prjson 'app/dependabot')" MOCK_CHECKS="$FAIL_CH
 assert_rc0; assert_line "SKIP #7 (checks-FAIL)"; assert_nomerge
 echo "OK: ${CASE}"
 
+# ---- stale policy review from head A cannot authorize synchronized head B ----
+CASE="stale policy approval → SKIP approval-head-mismatch"
+run DRY_RUN=false MOCK_REVIEWS="$STALE_REVIEWS" MOCK_PRJSON="$(prjson 'app/dependabot')" MOCK_CHECKS="$GREEN_CHECKS"
+assert_rc0; assert_line "SKIP #7 (approval-head-mismatch)"; assert_nomerge
+echo "OK: ${CASE}"
+
+# ---- neutral is not validation success → fail closed ----
+CASE="neutral checks → SKIP checks-FAIL"
+run DRY_RUN=false MOCK_PRJSON="$(prjson 'app/dependabot')" MOCK_CHECKS="$NEUTRAL_CHECKS"
+assert_rc0; assert_line "SKIP #7 (checks-FAIL)"; assert_nomerge
+echo "OK: ${CASE}"
+
+# ---- a failure on a later paginated response must still block ----
+CASE="later check-runs page failure → SKIP checks-FAIL"
+run DRY_RUN=false MOCK_PRJSON="$(prjson 'app/dependabot')" MOCK_CHECKS="$MULTIPAGE_CHECKS"
+assert_rc0; assert_line "SKIP #7 (checks-FAIL)"; assert_nomerge
+echo "$TRACE" | grep -q -- '--paginate' || fail "${CASE}: check-runs read must paginate"
+echo "OK: ${CASE}"
+
+# ---- successful API call with no JSON page is invalid, never green ----
+CASE="empty paginated response → SKIP check-runs-invalid"
+run DRY_RUN=false MOCK_PRJSON="$(prjson 'app/dependabot')" MOCK_CHECKS="$EMPTY_CHECKS"
+assert_rc0; assert_line "SKIP #7 (check-runs-invalid)"; assert_nomerge
+echo "OK: ${CASE}"
+
 # ---- untrusted author → SKIP, no merge ----
 CASE="author not allowlisted → SKIP"
 run DRY_RUN=false MOCK_PRJSON="$(prjson 'mallory')" MOCK_CHECKS="$GREEN_CHECKS"
@@ -111,7 +152,7 @@ prj="$(prjson 'dependabot[bot]')"
 ( cd "$gdir"
   env "PATH=$BIN:$PATH" "GH_TRACE=$WORK/trace212" \
     REPO="Coalfire-CF/demo" PR_NUMBER=7 MERGE_METHOD=squash RETRY_MAX=1 DRY_RUN=false \
-    MOCK_PRJSON="$prj" MOCK_CHECKS="$GREEN_CHECKS" bash "$SCRIPT" > "$WORK/out212" 2>/dev/null
+    MOCK_PRJSON="$prj" MOCK_CHECKS="$GREEN_CHECKS" MOCK_REVIEWS="$APPROVED_REVIEWS" bash "$SCRIPT" > "$WORK/out212" 2>/dev/null
 )
 grep -qF "MERGED #7" "$WORK/out212" \
   || fail "${CASE}: dependabot[bot] author must still MERGE despite a CWD glob-decoy, got: $(cat "$WORK/out212")"
