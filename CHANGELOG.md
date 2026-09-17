@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.18.2](https://github.com/Coalfire-CF/Actions/compare/v0.18.1...v0.18.2) (2026-09-17)
+
+
+### Bug Fixes
+
+* **automerge:** bind policy approval to PR head ([#320](https://github.com/Coalfire-CF/Actions/issues/320)) ([fcab113](https://github.com/Coalfire-CF/Actions/commit/fcab113ae659ea2acc0122ce4dfc9ade9a764100))
+* **release:** keep supply-chain jobs running on duplicate release tags ([#318](https://github.com/Coalfire-CF/Actions/issues/318)) ([0c5a168](https://github.com/Coalfire-CF/Actions/commit/0c5a1683e77439e4ea15e1be85e158410b39f6ec))
+
+
+### Miscellaneous
+
+* **deps:** bump Coalfire-CF/Actions/actions/gitleaks ([#314](https://github.com/Coalfire-CF/Actions/issues/314)) ([0831b21](https://github.com/Coalfire-CF/Actions/commit/0831b2185bbbd95dcb28b97b264047f66d6422bc))
+* **deps:** bump Coalfire-CF/Actions/actions/gitleaks ([#316](https://github.com/Coalfire-CF/Actions/issues/316)) ([4842174](https://github.com/Coalfire-CF/Actions/commit/48421741659327bc5f81b8a9061c5a8a16191df7))
+
+
+### Documentation
+
+* **examples:** refresh caller pins to v0.18.1 ([#313](https://github.com/Coalfire-CF/Actions/issues/313)) ([ebe298e](https://github.com/Coalfire-CF/Actions/commit/ebe298e98a6566f828d2db91c29ad842980fcc07))
+
 ## [0.18.1](https://github.com/Coalfire-CF/Actions/compare/v0.18.0...v0.18.1) (2026-08-17)
 
 
