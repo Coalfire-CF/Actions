@@ -292,6 +292,14 @@ migrate_repo() {
     fi
   done
 
+  # Repos held on the pre-1.0 caller name (docs-standard exceptions in the v1.0.0
+  # rename) still call it org-terraform-docs.yml. Rename it with the migration.
+  local legacy_caller="${dir}/.github/workflows/org-terraform-docs.yml"
+  if [ ! -f "${dir}/${CALLER}" ] && [ -f "$legacy_caller" ]; then
+    git -C "$dir" mv .github/workflows/org-terraform-docs.yml "$CALLER"
+    sed -i.bak -E '1,/^name:/ s/^name:.*/name: "CI: Terraform docs"/' "${dir}/${CALLER}" && rm -f "${dir}/${CALLER}.bak"
+  fi
+
   [ -f "${dir}/${CALLER}" ] || { outcome "$name" MANUAL "no ${CALLER}"; return; }
 
   # ---- Split. Header is everything before BEGIN, footer everything after END.
