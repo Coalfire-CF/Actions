@@ -7,7 +7,7 @@
 # release. Dependabot only rewrites the @ref, never the path, so the bump PR
 # points callers at a file that is gone. The caller then fails at startup (it
 # may report no check-runs at all), and a semver-minor bump would otherwise pass
-# every other gate. Used by the decide job in org-dependabot-auto-merge.yml.
+# every other gate. Used by the decide job in automation-dependabot-auto-merge.yml.
 #
 # For every workflow file the PR adds or modifies, read it at the PR head and
 # collect each `<TARGET_REPO>/<path>@<ref>` reference. Then confirm <path> exists

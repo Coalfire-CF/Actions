@@ -11,7 +11,7 @@
 > **Your repository, branches, and tags are never modified.** Only the tarball asset is affected.
 
 When release-please creates a new release — or when the version it would cut
-already has a GitHub Release (a hand-cut tag) — `org-release.yml` triggers
+already has a GitHub Release (a hand-cut tag) — `release-please.yml` triggers
 several parallel jobs:
 
 ```text
@@ -45,7 +45,7 @@ The `release-clean` job:
 
 ## What Gets Removed by Default
 
-**This is on by default.** If you call `org-release.yml` without any `with:` overrides, the following are stripped from the clean tarball:
+**This is on by default.** If you call `release-please.yml` without any `with:` overrides, the following are stripped from the clean tarball:
 
 ### Directories
 
@@ -79,10 +79,10 @@ The `release-clean` job:
 
 ### Default Behavior (No Changes Needed)
 
-If you already call `org-release.yml`, you automatically get clean tarballs on your next release:
+If you already call `release-please.yml`, you automatically get clean tarballs on your next release:
 
 ```yaml
-# .github/workflows/release.yml
+# .github/workflows/internal-release.yml
 name: Release
 
 on:
@@ -97,7 +97,7 @@ permissions:
 
 jobs:
   create-release:
-    uses: Coalfire-CF/Actions/.github/workflows/org-release.yml@72d0360b99f80252dda40f6dfefc252f5a66edb3 # v0.10.0
+    uses: Coalfire-CF/Actions/.github/workflows/release-please.yml@72d0360b99f80252dda40f6dfefc252f5a66edb3 # v0.10.0
     secrets: inherit
 ```
 
@@ -115,7 +115,7 @@ Add or change which directories and files are removed:
 ```yaml
 jobs:
   create-release:
-    uses: Coalfire-CF/Actions/.github/workflows/org-release.yml@72d0360b99f80252dda40f6dfefc252f5a66edb3 # v0.10.0
+    uses: Coalfire-CF/Actions/.github/workflows/release-please.yml@72d0360b99f80252dda40f6dfefc252f5a66edb3 # v0.10.0
     secrets: inherit
     with:
       clean_exclude_dirs: '.github,docs,.claude,.ci,tests'
@@ -131,7 +131,7 @@ If you do not want a cleaned tarball attached to your releases:
 ```yaml
 jobs:
   create-release:
-    uses: Coalfire-CF/Actions/.github/workflows/org-release.yml@72d0360b99f80252dda40f6dfefc252f5a66edb3 # v0.10.0
+    uses: Coalfire-CF/Actions/.github/workflows/release-please.yml@72d0360b99f80252dda40f6dfefc252f5a66edb3 # v0.10.0
     secrets: inherit
     with:
       clean_release: false

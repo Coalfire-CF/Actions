@@ -1,0 +1,926 @@
+name: "CI: Terratest"
+
+# Reusable workflow that runs Terratest integration tests against Terraform modules.
+# Terratest (Go) handles the full init/apply/verify/destroy lifecycle internally.
+#
+# Prerequisites for calling repositories:
+#   - test/ directory with Go test files using //go:build terratest tag
+#   - go.mod / go.sum in the test directory (or repo root)
+#   - OIDC trust configured in target cloud provider(s)
+#
+# Security controls:
+#   - Cloud auth via OIDC only — no long-lived secrets (IA-2, IA-5)
+#   - Inputs validated against allowlist patterns (SI-10)
+#   - Path traversal rejected in all path inputs (SI-10)
+#   - GitHub App token scoped to repo owner for private module access (AC-6, IA-2)
+#   - Test timeout enforced to prevent runaway resource creation (SC-6)
+#   - Step summary and artifacts for audit trail (AU-3)
+#   - Optional protected-environment gate for credentialed runs (#237, AC-6/CM-3)
+#   - Optional if:always() run-scoped NAT-EIP sweep backstops SIGKILL teardown (#273, CP-10)
+
+on:
+  workflow_call:
+    inputs:
+      test_mode:
+        description: 'Test mode: pr (post results to PR comment) or release (gate release pipeline)'
+        required: false
+        default: 'pr'
+        type: string
+      go_version:
+        description: 'Go version for running Terratest'
+        required: false
+        default: '1.23'
+        type: string
+      terraform_version:
+        description: 'Terraform version (leave empty to use .terraform-version)'
+        required: false
+        default: ''
+        type: string
+      test_directory:
+        description: 'Directory containing Terratest Go test files'
+        required: false
+        default: 'test'
+        type: string
+      test_timeout:
+        description: 'Go test timeout (e.g., 30m, 1h)'
+        required: false
+        default: '30m'
+        type: string
+      timeout_minutes:
+        description: 'Job timeout in minutes. Default 60; raise for large modules whose full create+destroy exceeds an hour (e.g. a full EKS + Splunk Operator deploy).'
+        required: false
+        default: 60
+        type: number
+      # Flake resilience (#236 / WI-3.5). Opt-in automatic re-run of ONLY the failed tests, via
+      # gotestsum --rerun-fails, capped low. 0 (default) keeps the current single-attempt
+      # behavior — no caller changes unless it sets this. Real-infra flakiness (eventual
+      # consistency, transient API errors) is the primary blocker to promoting the check to
+      # required (ADR-0011); a bounded rerun distinguishes a flake from a real failure without
+      # re-running the whole suite. Keep it low (1–2): a high cap masks a genuinely broken test.
+      rerun_fails:
+        description: 'Max automatic re-runs of failed tests (gotestsum --rerun-fails). 0 disables (default).'
+        required: false
+        default: 0
+        type: number
+      working_directory:
+        description: 'Working directory (repo root by default)'
+        required: false
+        default: '.'
+        type: string
+      # AWS OIDC
+      aws_role_arn:
+        description: 'AWS IAM role ARN for OIDC authentication (leave empty to skip AWS auth)'
+        required: false
+        default: ''
+        type: string
+      aws_region:
+        description: 'AWS region for OIDC authentication'
+        required: false
+        default: 'us-east-1'
+        type: string
+      # Azure OIDC
+      azure_client_id:
+        description: 'Azure App Registration client ID for OIDC (leave empty to skip Azure auth)'
+        required: false
+        default: ''
+        type: string
+      azure_tenant_id:
+        description: 'Azure AD tenant ID for OIDC'
+        required: false
+        default: ''
+        type: string
+      azure_subscription_id:
+        description: 'Azure subscription ID for OIDC'
+        required: false
+        default: ''
+        type: string
+      azure_environment:
+        description: 'Azure cloud environment: azurecloud or azureusgovernment'
+        required: false
+        default: 'azurecloud'
+        type: string
+      # GCP OIDC
+      gcp_workload_identity_provider:
+        description: 'GCP Workload Identity Provider resource name (leave empty to skip GCP auth)'
+        required: false
+        default: ''
+        type: string
+      gcp_service_account:
+        description: 'GCP service account email for Workload Identity Federation'
+        required: false
+        default: ''
+        type: string
+      slack_channel_id:
+        description: 'Slack channel ID for failure notifications (optional)'
+        required: false
+        default: ''
+        type: string
+      # Protected-environment gate (#237 / WI-1.6). Opt-in: when set to the name of a
+      # GitHub Environment configured with required reviewers, the credentialed job pauses
+      # for approval before any cloud OIDC step runs. Empty (the default) = no gate, so
+      # every existing caller is unaffected until it deliberately opts in.
+      environment:
+        description: 'GitHub Environment to gate the credentialed job (e.g. terratest-gov). Empty = no gate.'
+        required: false
+        default: ''
+        type: string
+      # if:always() NAT-EIP sweep (#273 / WI-1.3). Opt-in named input, default false, so it
+      # is a no-op for every current caller and lands only when a caller both passes an AWS
+      # role AND flips this true. A caller must also stamp RunId=<run_id>-<run_attempt> on its
+      # NAT EIPs (see docs/ORG_TERRATEST.md) or the sweep has nothing to select.
+      enable_nat_eip_sweep:
+        description: 'Run an if:always() run-scoped NAT Elastic IP sweep after the tests (AWS only; requires RunId-tagged EIPs).'
+        required: false
+        default: false
+        type: boolean
+    secrets:
+      TERRATEST_APP_CLIENT_ID:
+        description: 'GitHub App client ID for private module access'
+        required: false
+      TERRATEST_APP_PRIVATE_KEY:
+        description: 'GitHub App private key for private module access'
+        required: false
+      SLACK_BOT_TOKEN:
+        description: 'Slack bot token for failure notifications (required if slack_channel_id is set)'
+        required: false
+
+  workflow_dispatch:
+    inputs:
+      test_mode:
+        description: 'Test mode'
+        required: false
+        default: 'pr'
+        type: choice
+        options:
+          - pr
+          - release
+      go_version:
+        description: 'Go version'
+        required: false
+        default: '1.23'
+        type: string
+      terraform_version:
+        description: 'Terraform version'
+        required: false
+        default: ''
+        type: string
+      test_directory:
+        description: 'Test directory'
+        required: false
+        default: 'test'
+        type: string
+      test_timeout:
+        description: 'Test timeout'
+        required: false
+        default: '30m'
+        type: string
+
+# pull-requests: write is required only by the PR-comment step; a reusable-workflow
+# job cannot scope permissions per-step, so it is declared workflow-wide here.
+# id-token: write is required for cloud OIDC; contents: read for checkout.
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write
+
+env:
+  # Baked default Terraform version, used only when the caller repo ships no
+  # .terraform-version and passes no terraform_version input. A literal (not a raw fetch of
+  # this repo's .terraform-version) because github.job_workflow_sha is EMPTY for cross-repo
+  # reusable-workflow calls (actions/runner#2417) and github.sha is the CALLER's commit — so
+  # a raw fetch would resolve to the wrong repo/ref and 404. org-terraform-version-check keeps
+  # this literal in sync with .terraform-version across the org workflows.
+  DEFAULT_TF_VERSION: '1.15.7'
+
+jobs:
+  terratest:
+    name: Terratest
+    runs-on: ubuntu-latest
+    # Opt-in protected-environment gate (#237 / WI-1.6). When the caller passes a non-empty
+    # `environment` naming a GitHub Environment with required reviewers, this credentialed job
+    # (it configures cloud OIDC and runs a real apply) pauses for approval before any step runs.
+    # An empty value resolves to no environment, so callers that do not opt in are unaffected.
+    environment: ${{ inputs.environment }}
+    # Cap the job so a hung 'terraform apply' cannot burn the 6-hour default while
+    # holding cloud resources (the header's 'prevent runaway resource creation' claim).
+    timeout-minutes: ${{ inputs.timeout_minutes || 60 }}
+    defaults:
+      run:
+        working-directory: ${{ inputs.working_directory }}
+    steps:
+      - name: Validate inputs
+        env:
+          TEST_MODE: ${{ inputs.test_mode }}
+          TEST_DIR: ${{ inputs.test_directory }}
+          TEST_TIMEOUT: ${{ inputs.test_timeout }}
+          WORKING_DIR: ${{ inputs.working_directory }}
+          GO_VERSION: ${{ inputs.go_version }}
+          TF_VERSION: ${{ inputs.terraform_version }}
+          AWS_ROLE_ARN: ${{ inputs.aws_role_arn }}
+          AWS_REGION: ${{ inputs.aws_region }}
+          AZURE_CLIENT_ID: ${{ inputs.azure_client_id }}
+          AZURE_TENANT_ID: ${{ inputs.azure_tenant_id }}
+          AZURE_SUBSCRIPTION_ID: ${{ inputs.azure_subscription_id }}
+          AZURE_ENVIRONMENT: ${{ inputs.azure_environment }}
+          GCP_WI_PROVIDER: ${{ inputs.gcp_workload_identity_provider }}
+          GCP_SA: ${{ inputs.gcp_service_account }}
+        run: |
+          set -eo pipefail
+
+          validate_input() {
+            local name="$1"
+            local value="$2"
+            local pattern="$3"
+
+            if [[ -z "$value" ]]; then
+              return 0
+            fi
+
+            if [[ ! "$value" =~ $pattern ]]; then
+              echo "::error::Invalid ${name}: contains disallowed characters. Allowed pattern: ${pattern}"
+              exit 1
+            fi
+
+            if [[ "$value" == *".."* ]]; then
+              echo "::error::Invalid ${name}: path traversal (..) detected"
+              exit 1
+            fi
+          }
+
+          # Validate test_mode is one of the allowed values
+          if [[ "$TEST_MODE" != "pr" && "$TEST_MODE" != "release" ]]; then
+            echo "::error::Invalid test_mode: must be 'pr' or 'release'"
+            exit 1
+          fi
+
+          # Path and version inputs
+          # Path inputs disallow a leading '/' (reject absolute paths); '_' is already allowed.
+          validate_input "test_directory" "$TEST_DIR" '^[a-zA-Z0-9._-][a-zA-Z0-9._/-]*$'
+          # Go durations: one or more <int><unit> segments, e.g. 30m, 1h30m. Lowercase units only.
+          validate_input "test_timeout" "$TEST_TIMEOUT" '^([0-9]+(ms|s|m|h))+$'
+          validate_input "working_directory" "$WORKING_DIR" '^[a-zA-Z0-9._-][a-zA-Z0-9._/-]*$'
+          validate_input "go_version" "$GO_VERSION" '^[0-9]+\.[0-9]+(\.[0-9]+)?$'
+          validate_input "terraform_version" "$TF_VERSION" '^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$'
+
+          # Cloud credential inputs
+          validate_input "aws_role_arn" "$AWS_ROLE_ARN" '^arn:aws(-us-gov)?:iam::[0-9]+:role/[a-zA-Z0-9._/@=+-]+$'
+          validate_input "aws_region" "$AWS_REGION" '^[a-z]{2}(-gov)?-[a-z]+-[0-9]+$'
+          # Azure IDs are canonical UUIDs (8-4-4-4-12 hex).
+          validate_input "azure_client_id" "$AZURE_CLIENT_ID" '^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$'
+          validate_input "azure_tenant_id" "$AZURE_TENANT_ID" '^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$'
+          validate_input "azure_subscription_id" "$AZURE_SUBSCRIPTION_ID" '^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$'
+          validate_input "azure_environment" "$AZURE_ENVIRONMENT" '^(azurecloud|azureusgovernment)$'
+          validate_input "gcp_workload_identity_provider" "$GCP_WI_PROVIDER" '^projects/[0-9]+/locations/[a-z-]+/workloadIdentityPools/[a-zA-Z0-9._-]+/providers/[a-zA-Z0-9._-]+$'
+          validate_input "gcp_service_account" "$GCP_SA" '^[a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.iam\.gserviceaccount\.com$'
+
+          echo "Input validation passed"
+
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Resolve Terraform version
+        id: tf-version
+        env:
+          INPUT_TF_VERSION: ${{ inputs.terraform_version }}
+          DEFAULT_TF_VERSION: ${{ env.DEFAULT_TF_VERSION }}
+        run: |
+          set -eo pipefail
+          # Resolution order (fail-closed, no network fetch):
+          #   1. explicit terraform_version input
+          #   2. caller repo's .terraform-version (relative to working_directory)
+          #   3. the baked DEFAULT_TF_VERSION literal
+          if [ -n "$INPUT_TF_VERSION" ]; then
+            VERSION="$INPUT_TF_VERSION"
+          elif [ -f .terraform-version ]; then
+            VERSION="$(tr -d '[:space:]' < .terraform-version)"
+          else
+            VERSION="$DEFAULT_TF_VERSION"
+          fi
+          if ! echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Could not resolve a valid Terraform version (got '${VERSION}')"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ inputs.go_version }}
+          # test_directory is relative to working_directory.
+          cache-dependency-path: ${{ inputs.working_directory }}/${{ inputs.test_directory }}/go.sum
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: ${{ steps.tf-version.outputs.version }}
+          terraform_wrapper: false
+
+      - name: Check for GitHub App secrets
+        id: check-app-secrets
+        run: |
+          if [ -n "$TERRATEST_APP_CLIENT_ID" ] && [ -n "$TERRATEST_APP_PRIVATE_KEY" ]; then
+            echo "has_secrets=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_secrets=false" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          TERRATEST_APP_CLIENT_ID: ${{ secrets.TERRATEST_APP_CLIENT_ID }}
+          TERRATEST_APP_PRIVATE_KEY: ${{ secrets.TERRATEST_APP_PRIVATE_KEY }}
+
+      - name: Get GitHub App Token
+        id: app-token
+        if: steps.check-app-secrets.outputs.has_secrets == 'true'
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.TERRATEST_APP_CLIENT_ID }}
+          private-key: ${{ secrets.TERRATEST_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
+      - name: Configure Git for private modules
+        if: steps.check-app-secrets.outputs.has_secrets == 'true'
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -eo pipefail
+          git config --global url."https://actions:${APP_TOKEN}@github.com".insteadOf https://github.com
+          git config --global url."https://actions:${APP_TOKEN}@github.com/".insteadOf ssh://git@github.com/
+
+      # --- Cloud OIDC Authentication (conditional) ---
+
+      - name: Configure AWS credentials (OIDC)
+        if: inputs.aws_role_arn != ''
+        uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c # v6.2.4
+        with:
+          role-to-assume: ${{ inputs.aws_role_arn }}
+          aws-region: ${{ inputs.aws_region }}
+
+      - name: Configure Azure credentials (OIDC)
+        if: inputs.azure_client_id != ''
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ inputs.azure_client_id }}
+          tenant-id: ${{ inputs.azure_tenant_id }}
+          subscription-id: ${{ inputs.azure_subscription_id }}
+          environment: ${{ inputs.azure_environment }}
+
+      # The azurerm provider does not read azure/login's CLI session for OIDC auth;
+      # it needs ARM_* env vars. With ARM_USE_OIDC=true the provider auto-detects
+      # GitHub's ACTIONS_ID_TOKEN_REQUEST_URL/TOKEN — no secret material is exported.
+      - name: Export ARM environment for Terraform
+        if: inputs.azure_client_id != ''
+        env:
+          AZURE_CLIENT_ID: ${{ inputs.azure_client_id }}
+          AZURE_TENANT_ID: ${{ inputs.azure_tenant_id }}
+          AZURE_SUBSCRIPTION_ID: ${{ inputs.azure_subscription_id }}
+          AZURE_ENVIRONMENT: ${{ inputs.azure_environment }}
+        run: |
+          set -eo pipefail
+          {
+            echo "ARM_USE_OIDC=true"
+            echo "ARM_CLIENT_ID=${AZURE_CLIENT_ID}"
+            echo "ARM_TENANT_ID=${AZURE_TENANT_ID}"
+            echo "ARM_SUBSCRIPTION_ID=${AZURE_SUBSCRIPTION_ID}"
+          } >> "$GITHUB_ENV"
+          if [ "$AZURE_ENVIRONMENT" = "azureusgovernment" ]; then
+            echo "ARM_ENVIRONMENT=usgovernment" >> "$GITHUB_ENV"
+          fi
+
+      - name: Configure GCP credentials (OIDC)
+        if: inputs.gcp_workload_identity_provider != ''
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ inputs.gcp_workload_identity_provider }}
+          service_account: ${{ inputs.gcp_service_account }}
+
+      # --- Run Terratest ---
+
+      - name: Install gotestsum
+        run: go install gotest.tools/gotestsum@v1.13.0
+
+      - name: Download Go dependencies
+        env:
+          TEST_DIR: ${{ inputs.test_directory }}
+        run: |
+          cd "${TEST_DIR}"
+          go mod download
+
+      - name: Run Terratest
+        id: terratest
+        env:
+          TEST_DIR: ${{ inputs.test_directory }}
+          TEST_TIMEOUT: ${{ inputs.test_timeout }}
+          RERUN_FAILS: ${{ inputs.rerun_fails }}
+        run: |
+          set +e
+          cd "${TEST_DIR}"
+
+          # Opt-in flake resilience (#236). gotestsum --rerun-fails re-runs ONLY the tests that
+          # failed, up to the cap, and reports green if a rerun passes — turning a transient infra
+          # flake into a pass without a human re-run, while a test that fails every attempt still
+          # fails. gotestsum requires that in rerun mode the packages come from --packages and are
+          # NOT also passed as positional args after `--` (doing both is an error), so the package
+          # spec `./...` moves into --packages in that mode. When RERUN_FAILS is 0 (default) we
+          # keep the original single-attempt invocation with `./...` positional, so no caller's
+          # behavior changes unless it opts in.
+          if [ "${RERUN_FAILS:-0}" -gt 0 ]; then
+            echo "::notice::flake resilience on — up to ${RERUN_FAILS} rerun(s) of failed tests"
+            gotestsum \
+              --format standard-verbose \
+              --junitfile "${GITHUB_WORKSPACE}/terratest-results.xml" \
+              --rerun-fails="${RERUN_FAILS}" --rerun-fails-max-failures=15 --packages=./... \
+              -- -tags terratest -timeout "${TEST_TIMEOUT}" 2>&1 | tee "${GITHUB_WORKSPACE}/terratest_output.txt"
+          else
+            gotestsum \
+              --format standard-verbose \
+              --junitfile "${GITHUB_WORKSPACE}/terratest-results.xml" \
+              -- -tags terratest -timeout "${TEST_TIMEOUT}" ./... 2>&1 | tee "${GITHUB_WORKSPACE}/terratest_output.txt"
+          fi
+          EXIT_CODE=${PIPESTATUS[0]}
+          set -e
+
+          # Record the result and succeed here so the reporting steps below always run.
+          # The dedicated 'Fail pipeline on test failure' step is the single failure gate,
+          # so this step reports honest green/red (not the yellow of continue-on-error).
+          echo "exitcode=${EXIT_CODE}" >> "${GITHUB_OUTPUT}"
+          if [ "${EXIT_CODE}" -ne 0 ]; then
+            echo "::warning::Terratest exited ${EXIT_CODE}; the pipeline is failed by a later gate step"
+          fi
+
+      # --- Reporting ---
+
+      # Durable per-run telemetry record (#235 / WI-2.2). The old terratest-results.json was
+      # gotestsum's raw event stream, uploaded but read by NOTHING and expiring with the 30-day
+      # artifact. Replace it with a purpose-built record — repo / module / commit SHA / result /
+      # counts / duration — keyed by the tested commit SHA so the MTCS terratest-posture collector
+      # can bind evidence to the exact code tested and it outlives the artifact. Built with
+      # `jq -n` (never string interpolation) so an embedded quote/newline can't corrupt it, and
+      # the counts come from the same JUnit XML the step summary parses (one source of truth).
+      - name: Emit telemetry record
+        if: always()
+        env:
+          RESULT_SHA: ${{ github.sha }}
+          RUN_REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          TEST_MODE: ${{ inputs.test_mode }}
+          TEST_DIR: ${{ inputs.test_directory }}
+          TF_VERSION: ${{ steps.tf-version.outputs.version }}
+          GO_VERSION: ${{ inputs.go_version }}
+          EXIT_CODE: ${{ steps.terratest.outputs.exitcode }}
+        run: |
+          set -euo pipefail
+          XML="${GITHUB_WORKSPACE}/terratest-results.xml"
+
+          # Counts from the JUnit root aggregate (same parse as the step summary). If the XML is
+          # missing, the test binary died before writing it (SIGKILL/timeout) — emit a record with
+          # a null test count and a 'no-report' note rather than silently omitting the run, so a
+          # killed run is still visible in the posture surface instead of vanishing.
+          tests=null; failures=null; errors=null; skipped=null; time=null; have_report=false
+          if [ -f "$XML" ]; then
+            have_report=true
+            root="$(grep -m1 -oE '<testsuites[^>]*>' "$XML" || true)"
+            tests="$(printf '%s' "$root"    | grep -oE ' tests="[0-9]+"'   | grep -oE '[0-9]+' || echo 0)"
+            failures="$(printf '%s' "$root" | grep -oE 'failures="[0-9]+"' | grep -oE '[0-9]+' || echo 0)"
+            errors="$(printf '%s' "$root"   | grep -oE 'errors="[0-9]+"'   | grep -oE '[0-9]+' || echo 0)"
+            time="$(printf '%s' "$root"     | grep -oE 'time="[0-9.]+"'    | grep -oE '[0-9.]+' || echo 0)"
+            skipped="$(grep -oE '<testsuite [^>]*>' "$XML" | grep -oE 'skipped="[0-9]+"' | grep -oE '[0-9]+' | awk '{s+=$1} END{print s+0}')"
+          fi
+
+          # result is derived from the gate exit code, NOT from the presence of the XML — a green
+          # XML with a non-zero exit is still a failure.
+          if [ "${EXIT_CODE}" = "0" ]; then result="pass"; else result="fail"; fi
+
+          jq -n \
+            --arg repo "${RUN_REPO}" \
+            --arg module "${TEST_DIR}" \
+            --arg sha "${RESULT_SHA}" \
+            --arg mode "${TEST_MODE}" \
+            --arg result "${result}" \
+            --arg exit_code "${EXIT_CODE}" \
+            --arg run_id "${RUN_ID}" \
+            --arg run_attempt "${RUN_ATTEMPT}" \
+            --arg run_url "${RUN_URL}" \
+            --arg tf "${TF_VERSION}" \
+            --arg go "${GO_VERSION}" \
+            --argjson have_report "${have_report}" \
+            --argjson tests "${tests}" \
+            --argjson failures "${failures}" \
+            --argjson errors "${errors}" \
+            --argjson skipped "${skipped}" \
+            --argjson time "${time}" \
+            '{
+               schema: "terratest-posture/v1",
+               repo: $repo, module: $module, commit_sha: $sha, mode: $mode,
+               result: $result, exit_code: ($exit_code | tonumber),
+               run_id: $run_id, run_attempt: ($run_attempt | tonumber), run_url: $run_url,
+               terraform_version: $tf, go_version: $go,
+               have_report: $have_report,
+               counts: (if $have_report
+                        then { tests: $tests, failures: $failures, errors: $errors,
+                               skipped: $skipped,
+                               passed: ($tests - $failures - $errors - $skipped) }
+                        else null end),
+               duration_seconds: $time
+             }' > "${GITHUB_WORKSPACE}/terratest-record.json"
+
+          # Fail loud if the record did not serialize to a non-empty object — a zero-byte or
+          # empty record read as "run had no telemetry" downstream, which is the silent-green
+          # trap (a tool that fails quiet rather than loud).
+          if ! jq -e 'type == "object" and (.commit_sha | length > 0)' \
+                 "${GITHUB_WORKSPACE}/terratest-record.json" >/dev/null; then
+            echo "::error title=Telemetry record malformed::terratest-record.json did not serialize"
+            exit 1
+          fi
+          echo "emitted terratest-record.json for ${RUN_REPO}@${RESULT_SHA} result=${result}"
+          cat "${GITHUB_WORKSPACE}/terratest-record.json"
+
+      - name: Upload test artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          # SHA-stamped (#235 / RPT-04) so an archived run binds to the exact commit tested,
+          # not just an opaque run-id. run_id keeps the name unique across re-runs of one SHA.
+          name: terratest-results-${{ github.sha }}-${{ github.run_id }}
+          path: |
+            terratest_output.txt
+            terratest-results.xml
+            terratest-record.json
+          retention-days: 30
+
+      - name: Post results to PR
+        if: inputs.test_mode == 'pr' && github.event_name == 'pull_request' && always()
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          TERRATEST_EXIT_CODE: ${{ steps.terratest.outputs.exitcode }}
+          TEST_MODE: ${{ inputs.test_mode }}
+          TEST_DIR: ${{ inputs.test_directory }}
+          GO_VERSION: ${{ inputs.go_version }}
+          TF_VERSION: ${{ steps.tf-version.outputs.version }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const exitCode = process.env.TERRATEST_EXIT_CODE || '1';
+            const ok = exitCode === '0';
+
+            // ---------- helpers ----------
+            // gotestsum sanitizes raw ESC bytes to U+FFFD when writing XML, so ANSI
+            // sequences can arrive as either \u001b[0m or \ufffd[0m — strip both.
+            const stripAnsi = (s) => s.replace(/[\u001b\ufffd]\[[0-9;]*[A-Za-z]/g, '').replace(/[\u001b\ufffd]/g, '');
+            // Drop terratest's per-line "TestName 2026-...Z logger.go:67: " prefix.
+            const stripLogPrefix = (s) => s.split('\n')
+              .map(l => l.replace(/^\S+ \d{4}-\d{2}-\d{2}T[0-9:.]+Z (?:logger|retry)\.go:\d+: /, ''))
+              .join('\n');
+            const clean = (s) => stripLogPrefix(stripAnsi(s));
+            const unescapeXml = (s) => s
+              .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
+              .replace(/&apos;/g, "'")
+              .replace(/&#x([0-9a-fA-F]+);/g, (_, n) => String.fromCharCode(parseInt(n, 16)))
+              .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(n))
+              .replace(/&amp;/g, '&');
+            // A failure body is the whole captured test log; surface just the error
+            // blocks: 'file.go:NN:' headers with their indented continuation (testify's
+            // Error Trace / Error / Test shape) plus '--- FAIL' lines. After
+            // stripLogPrefix, terratest's own logger lines no longer look like that,
+            // so what's left is genuinely the failing assertions.
+            const extractErrors = (s) => {
+              const blocks = [];
+              for (const m of s.matchAll(/(?:^|\n)([ \t]*\S+\.go:\d+:[^\n]*\n(?:[ \t]+[^\n]*\n?)+)/g)) blocks.push(m[1].trimEnd());
+              const fails = s.match(/^--- FAIL:.*$/gm) || [];
+              return [...blocks, ...fails].join('\n');
+            };
+            const fmtDuration = (sec) => {
+              sec = Math.round(Number(sec) || 0);
+              const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+              return (h ? h + 'h ' : '') + (m ? m + 'm ' : '') + s + 's';
+            };
+            const attr = (tag, name) => {
+              // (?:^|[^\\w]) guard: plain 'name="' would substring-match inside 'classname="'
+              const m = tag.match(new RegExp('(?:^|[^\\w])' + name + '="([^"]*)"'));
+              return m ? m[1] : null;
+            };
+
+            // ---------- parse JUnit ----------
+            // Root <testsuites> carries the tests/failures/errors/time aggregates;
+            // skipped has NO root aggregate, so sum it across <testsuite> elements.
+            let stats = null;
+            const testRows = [];
+            const failures = [];
+            try {
+              const xml = fs.readFileSync(process.env.GITHUB_WORKSPACE + '/terratest-results.xml', 'utf8');
+              const root = xml.match(/<testsuites\b[^>]*>/);
+              let tests = 0, fails = 0, errors = 0, time = 0, skipped = 0;
+              if (root) {
+                tests = +attr(root[0], 'tests') || 0;
+                fails = +attr(root[0], 'failures') || 0;
+                errors = +attr(root[0], 'errors') || 0;
+                time = +attr(root[0], 'time') || 0;
+              }
+              for (const m of xml.matchAll(/<testsuite\b[^>]*>/g)) skipped += (+attr(m[0], 'skipped') || 0);
+              stats = { tests, fails, errors, skipped, time, passed: Math.max(0, tests - fails - errors - skipped) };
+
+              for (const m of xml.matchAll(/<testcase\b([^>]*?)(\/>|>([\s\S]*?)<\/testcase>)/g)) {
+                const name = attr(m[1], 'name') || '(unnamed)';
+                const dur = fmtDuration(attr(m[1], 'time'));
+                const body = m[3] || '';
+                let icon = '✅', detail = null;
+                const fm = body.match(/<(failure|error)\b[^>]*>([\s\S]*?)<\/\1>/);
+                if (fm) { icon = fm[1] === 'failure' ? '❌' : '💥'; detail = unescapeXml(fm[2]); }
+                else if (/<(failure|error)\b[^>]*\/>/.test(body)) { icon = '❌'; }
+                else if (/<skipped\b/.test(body)) { icon = '⏭️'; }
+                testRows.push(`| ${icon} | \`${name}\` | ${dur} |`);
+                if (detail) {
+                  const cleaned = clean(detail);
+                  let d = extractErrors(cleaned).trim();
+                  if (!d) d = cleaned.trim().slice(-2000); // fallback: tail of the raw failure body
+                  if (d.length > 4000) d = d.slice(0, 4000) + '\n… (truncated — full log in the artifact)';
+                  failures.push(`<details open><summary>${icon} <code>${name}</code></summary>\n\n\`\`\`text\n${d}\n\`\`\`\n</details>`);
+                }
+              }
+            } catch (e) { /* stats stays null; fall through to raw output */ }
+
+            // ---------- full output: cleaned, TAIL-preserved (failures live at the end) ----------
+            let output = '';
+            try {
+              output = clean(fs.readFileSync(process.env.GITHUB_WORKSPACE + '/terratest_output.txt', 'utf8'));
+            } catch (e) {
+              output = 'No test output captured.';
+            }
+            const truncNote = '… (earlier output truncated — the full log is in the workflow artifact)\n';
+            if (output.length > 50000) output = truncNote + output.slice(-50000);
+
+            // ---------- compose ----------
+            const icon = ok ? '✅' : '❌';
+            const title = ok ? 'Passed' : `Failed (exit ${exitCode})`;
+            const sha = ((context.payload.pull_request && context.payload.pull_request.head.sha) || context.sha).slice(0, 7);
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const meta = [
+              `\`${sha}\``,
+              `mode \`${process.env.TEST_MODE || 'pr'}\``,
+              `dir \`${process.env.TEST_DIR || 'test'}\``,
+              `TF \`${process.env.TF_VERSION || '?'}\``,
+              `Go \`${process.env.GO_VERSION || '?'}\``,
+              `[run ↗](${runUrl})`
+            ].join(' · ');
+            // Marker is per test-directory so multi-lane repos (e.g. AWS + Azure
+            // callers on one PR) each keep their own sticky comment.
+            const marker = `<!-- org-terratest-results:${process.env.TEST_DIR || 'test'} -->`;
+
+            let body = `${marker}\n## ${icon} Terratest — ${title}\n\n${meta}\n\n`;
+            if (stats) {
+              body += `| ✅ Passed | ❌ Failed | 💥 Errors | ⏭️ Skipped | ⏱️ Duration |\n| ---: | ---: | ---: | ---: | ---: |\n`;
+              body += `| ${stats.passed} | ${stats.fails} | ${stats.errors} | ${stats.skipped} | ${fmtDuration(stats.time)} |\n\n`;
+              if (testRows.length) body += `| | Test | Duration |\n| --- | --- | ---: |\n${testRows.join('\n')}\n\n`;
+            } else {
+              body += `_Could not parse \`terratest-results.xml\` — raw output below; artifacts carry the full logs._\n\n`;
+            }
+            if (failures.length) body += `### Failure details\n\n${failures.join('\n\n')}\n\n`;
+            body += `<details><summary>Full output</summary>\n\n\`\`\`text\n${output}\n\`\`\`\n</details>\n`;
+
+            // GitHub caps comment bodies at 65536 chars — shrink the output section to fit.
+            if (body.length > 65000) {
+              const overflow = body.length - 65000;
+              const keep = Math.max(1000, output.length - overflow - 200);
+              output = truncNote + output.slice(-keep);
+              body = body.replace(/<details><summary>Full output<\/summary>[\s\S]*$/,
+                `<details><summary>Full output</summary>\n\n\`\`\`text\n${output}\n\`\`\`\n</details>\n`);
+            }
+
+            // ---------- sticky upsert ----------
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              per_page: 100
+            });
+            const mine = comments.find(c => c.body && c.body.startsWith(marker));
+            if (mine) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: mine.id,
+                body: body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: body
+              });
+            }
+
+      - name: Generate step summary
+        if: always()
+        env:
+          TEST_DIR: ${{ inputs.test_directory }}
+          TEST_MODE: ${{ inputs.test_mode }}
+          TEST_TIMEOUT: ${{ inputs.test_timeout }}
+          GO_VERSION: ${{ inputs.go_version }}
+          TF_VERSION: ${{ steps.tf-version.outputs.version }}
+          EXIT_CODE: ${{ steps.terratest.outputs.exitcode }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          if [ "${EXIT_CODE}" = "0" ]; then
+            STATUS="Passed"
+          else
+            STATUS="Failed (exit code ${EXIT_CODE})"
+          fi
+
+          {
+            echo "## Terratest Results"
+            echo ""
+            echo "| Property | Value |"
+            echo "| --- | --- |"
+            echo "| Status | ${STATUS} |"
+            echo "| Commit | \`${COMMIT_SHA}\` |"
+            echo "| Mode | \`${TEST_MODE}\` |"
+            echo "| Test Directory | \`${TEST_DIR}\` |"
+            echo "| Timeout | \`${TEST_TIMEOUT}\` |"
+            echo "| Go Version | \`${GO_VERSION}\` |"
+            echo "| Terraform Version | \`${TF_VERSION}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # Parse the root <testsuites> aggregate (tests/failures/errors/time).
+          # 'skipped' has no root aggregate in gotestsum's JUnit, so sum it across
+          # <testsuite> elements. passed subtracts errors too - gotestsum tracks
+          # errored tests separately from failures.
+          XML="${GITHUB_WORKSPACE}/terratest-results.xml"
+          if [ -f "$XML" ]; then
+            ROOT=$(grep -m1 -oE '<testsuites[^>]*>' "$XML" || true)
+            TESTS=$(printf '%s' "$ROOT" | grep -oE ' tests="[0-9]+"' | grep -oE '[0-9]+' || true)
+            FAILURES=$(printf '%s' "$ROOT" | grep -oE 'failures="[0-9]+"' | grep -oE '[0-9]+' || true)
+            ERRORS=$(printf '%s' "$ROOT" | grep -oE 'errors="[0-9]+"' | grep -oE '[0-9]+' || true)
+            TIME=$(printf '%s' "$ROOT" | grep -oE 'time="[0-9.]+"' | grep -oE '[0-9.]+' || true)
+            SKIPPED=$(grep -oE '<testsuite [^>]*>' "$XML" | grep -oE 'skipped="[0-9]+"' | grep -oE '[0-9]+' | awk '{s+=$1} END{print s+0}')
+            TESTS=${TESTS:-0}; FAILURES=${FAILURES:-0}; ERRORS=${ERRORS:-0}; SKIPPED=${SKIPPED:-0}; TIME=${TIME:-0}
+            PASSED=$((TESTS - FAILURES - ERRORS - SKIPPED))
+            DURATION=$(awk -v t="$TIME" 'BEGIN{t=int(t+0.5); h=int(t/3600); m=int((t%3600)/60); s=t%60; printf "%s%s%ds", (h?h"h ":""), (m?m"m ":""), s}')
+            {
+              echo ""
+              echo "### Test Report"
+              echo ""
+              echo "| Tests | Passed | Failed | Errors | Skipped | Duration |"
+              echo "| --- | --- | --- | --- | --- | --- |"
+              echo "| ${TESTS} | ${PASSED} | ${FAILURES} | ${ERRORS} | ${SKIPPED} | ${DURATION} |"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Fail pipeline on test failure
+        if: steps.terratest.outputs.exitcode != '0'
+        env:
+          EXIT_CODE: ${{ steps.terratest.outputs.exitcode }}
+        run: |
+          echo "::error::Terratest failed with exit code ${EXIT_CODE} — blocking pipeline"
+          exit 1
+
+  # if:always() NAT Elastic IP sweep (#273 / WI-1.3). The suite's only teardown guard is a Go
+  # `defer terraform.Destroy(...)`, which covers panics and assertion failures but does NOT run
+  # on SIGKILL — which is exactly what a cancelled job, a `timeout-minutes` expiry, or a runner
+  # eviction does to the process group. So that guard covers the case that was already safe and
+  # misses the one that orphans addresses; seven NAT EIPs leaked this way, one triplet ~15 months,
+  # ~$302/yr (Coalfire-CF/terraform-aws-vpc-nfw#214). This job is the net for that gap.
+  #
+  # It is a SEPARATE runner from the terratest job, so it configures its own OIDC credentials; it
+  # cannot inherit them. It runs `if: always()`, including on cancellation, which is the whole
+  # point. Idempotent by construction: it releases only addresses tagged with THIS run's RunId
+  # that are also unassociated, and treats an already-released address as success — so it usually
+  # runs after a destroy that already succeeded and finds nothing.
+  #
+  # Opt-in twice: only when the caller flips `enable_nat_eip_sweep` true AND passes an AWS role.
+  # An unset role = clean skip, so no existing caller starts running (or failing) this at its next
+  # run. Requires callers to stamp RunId=<run_id>-<run_attempt> on their NAT EIPs; see
+  # docs/ORG_TERRATEST.md "Run-scoped resource tagging".
+  nat-eip-sweep:
+    name: NAT EIP sweep
+    needs: terratest
+    if: ${{ always() && inputs.enable_nat_eip_sweep && inputs.aws_role_arn != '' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # cloud OIDC
+    steps:
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c # v6.2.4
+        with:
+          role-to-assume: ${{ inputs.aws_role_arn }}
+          aws-region: ${{ inputs.aws_region }}
+
+      - name: Sweep NAT EIPs belonging to this run
+        env:
+          # Never interpolate ${{ }} directly into a run: body. These are passed through env and
+          # are trusted (numeric / repo-controlled), but the pattern must not vary by trust level.
+          RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+          TERRATEST_RESULT: ${{ needs.terratest.result }}
+          AWS_REGION: ${{ inputs.aws_region }}
+        run: |
+          set -euo pipefail
+
+          # -- Positive control -------------------------------------------------------
+          # An empty address list is indistinguishable from broken credentials, a wrong
+          # region, or a missing IAM permission: all four print "0 orphans" and exit 0.
+          # describe-regions cannot legitimately return 0 in a working account, so it
+          # separates "the API works and found nothing" from "the API did not work".
+          # Without this the sweep would certify a clean account forever.
+          echo "::group::Positive control"
+          aws sts get-caller-identity --output json | jq -r '"sweeping as: \(.Arn)"'
+          region_count="$(aws ec2 describe-regions --output json | jq '.Regions | length')"
+          echo "control: describe-regions returned ${region_count} region(s)"
+          if [ "${region_count}" -lt 1 ]; then
+            echo "::error title=EIP sweep control failed::describe-regions returned 0 regions in ${AWS_REGION}." \
+                 "The enumeration below cannot be trusted, so this is a hard failure rather than a clean sweep."
+            exit 1
+          fi
+          echo "::endgroup::"
+
+          # -- Enumerate --------------------------------------------------------------
+          # Count with default pagination + jq over the raw array. Deliberately NOT
+          # `--query 'length(Addresses)'`, which prints once PER PAGE (100/100/92 reads
+          # as 100, not 292), and NOT `--no-paginate`, which returns only the first page.
+          # DescribeAddresses happens to be unpaginated today; the form is correct
+          # regardless and does not silently under-report if that ever changes.
+          all_addresses="$(aws ec2 describe-addresses --output json)"
+          total="$(printf '%s' "${all_addresses}" | jq '.Addresses | length')"
+          echo "examined ${total} Elastic IP(s) in ${AWS_REGION}"
+
+          mine="$(printf '%s' "${all_addresses}" \
+            | jq --arg rid "${RUN_ID}" \
+                '[.Addresses[] | select(any(.Tags[]?; .Key == "RunId" and .Value == $rid))]')"
+          mine_count="$(printf '%s' "${mine}" | jq 'length')"
+          echo "tagged RunId=${RUN_ID}: ${mine_count}"
+
+          # -- Selector sanity --------------------------------------------------------
+          # If the test job did not finish cleanly, there SHOULD be addresses carrying
+          # this RunId. Matching zero in that situation more likely means the selector
+          # is broken (nat_eip_tags not plumbed, wrong account, wrong region) than that
+          # teardown succeeded. Warn loudly rather than reporting a clean sweep.
+          if [ "${mine_count}" -eq 0 ] && [ "${TERRATEST_RESULT}" != "success" ]; then
+            echo "::warning title=EIP sweep selector may be broken::terratest result was" \
+                 "'${TERRATEST_RESULT}' yet 0 of ${total} addresses carry RunId=${RUN_ID}." \
+                 "Either destroy completed before the job died, or the RunId tag is not" \
+                 "reaching the module - verify the RunId tag is actually being applied."
+          fi
+
+          # -- Still-associated addresses are not this job's problem to release --------
+          # An associated EIP means its NAT gateway still exists, i.e. destroy did not
+          # complete. AWS refuses to release an associated address anyway. Surface it as
+          # a leak needing a real destroy instead of failing on a doomed release call.
+          associated="$(printf '%s' "${mine}" | jq -r '[.[] | select(.AssociationId != null)] | length')"
+          if [ "${associated}" -gt 0 ]; then
+            printf '%s' "${mine}" | jq -r '.[] | select(.AssociationId != null)
+              | "  still associated: \(.AllocationId) \(.PublicIp) assoc=\(.AssociationId)"'
+            echo "::error title=Incomplete teardown::${associated} address(es) from this run are still" \
+                 "associated, so their NAT gateways survive. This needs a real terraform destroy;" \
+                 "release-address cannot free an associated EIP."
+          fi
+
+          # -- Release the orphans ----------------------------------------------------
+          released=0
+          failed=0
+          for alloc in $(printf '%s' "${mine}" | jq -r '.[] | select(.AssociationId == null) | .AllocationId'); do
+            echo "releasing orphan ${alloc}"
+            if err="$(aws ec2 release-address --allocation-id "${alloc}" 2>&1)"; then
+              released=$((released + 1))
+            elif printf '%s' "${err}" | grep -q 'InvalidAllocationID.NotFound'; then
+              # Already gone - a concurrent destroy or an earlier attempt of this sweep
+              # got there first. Idempotent re-run, not a failure.
+              echo "  already released (InvalidAllocationID.NotFound) - treating as success"
+              released=$((released + 1))
+            else
+              echo "::error title=EIP release failed::${alloc}: ${err}"
+              failed=$((failed + 1))
+            fi
+          done
+
+          {
+            echo "## NAT EIP sweep"
+            echo ""
+            echo "| metric | value |"
+            echo "|---|---|"
+            echo "| terratest result | \`${TERRATEST_RESULT}\` |"
+            echo "| addresses examined | ${total} |"
+            echo "| tagged this run | ${mine_count} |"
+            echo "| still associated | ${associated} |"
+            echo "| released | ${released} |"
+            echo "| release failures | ${failed} |"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+          # Fail on anything that left billable state behind. A sweep that exits 0 after
+          # failing to release is the silent-green failure this whole change exists to
+          # remove.
+          if [ "${failed}" -gt 0 ] || [ "${associated}" -gt 0 ]; then
+            exit 1
+          fi
+          echo "sweep clean: examined ${total}, released ${released}, none left behind"
+
+  notify-failure:
+    name: Notify on failure
+    needs: terratest
+    if: failure() && inputs.slack_channel_id != ''
+    uses: ./.github/workflows/automation-slack-notify.yml
+    secrets:
+      SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+    with:
+      notification-type: failure
+      channel-id: ${{ inputs.slack_channel_id }}

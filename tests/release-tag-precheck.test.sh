@@ -19,7 +19,6 @@ BIN="$WORK/bin"; mkdir -p "$BIN"
 
 HEAD_SHA="def5678aaa111bbbb222cccc333dddd444eeee55"
 TAG_SHA="abc1234aaa111bbbb222cccc333dddd444eeee55"
-ANNOTATED_TAG_OBJ="eeeeffff00001111222233334444555566667777"
 
 cat > "$BIN/gh" <<'MOCK'
 #!/usr/bin/env bash
@@ -94,7 +93,6 @@ chmod +x "$BIN/gh"
 b64() { printf '%s' "$1" | base64 | tr -d '\n'; }
 
 MANIFEST_B64="$(b64 '{".": "4.4.0"}')"
-CONFIG_DEFAULT_B64=""  # 404 → include-v-in-tag defaults true
 CONFIG_NO_V_B64="$(b64 '{"packages":{".":{"release-type":"simple","include-v-in-tag":false}}}')"
 
 RELEASE_PR='[{"number":338,"title":"chore(main): release 4.4.0","labels":[{"name":"autorelease: pending"}]}]'
@@ -302,13 +300,13 @@ run "merge-commit-subject"
 printf '%s' "$OUT" | grep -qE '^COLLISION ' || fail "merge-commit + autorelease PR must collide, got: $OUT"
 echo "OK: publish attempt is detected from associated PR labels, not only the subject"
 
-# ---- drift guard: org-release.yml must invoke this script ----
-WF="${REPO_ROOT}/.github/workflows/org-release.yml"
-[ -f "$WF" ] || fail "org-release.yml not found"
-grep -q 'scripts/release-tag-precheck.sh' "$WF" || fail "org-release.yml must invoke scripts/release-tag-precheck.sh"
-grep -q 'steps.precheck.outputs.skip_release_please' "$WF" || fail "org-release.yml must skip release-please on precheck.skip_release_please"
-grep -q 'steps.precheck.outputs.collision' "$WF" || fail "org-release.yml must fail the job on precheck.collision"
-grep -q 'needs.release.outputs.supply_chain' "$WF" || fail "org-release.yml must gate clean/scan jobs on supply_chain"
-echo "OK: org-release.yml is wired to the precheck (drift-guarded)"
+# ---- drift guard: release-please.yml must invoke this script ----
+WF="${REPO_ROOT}/.github/workflows/release-please.yml"
+[ -f "$WF" ] || fail "release-please.yml not found"
+grep -q 'scripts/release-tag-precheck.sh' "$WF" || fail "release-please.yml must invoke scripts/release-tag-precheck.sh"
+grep -q 'steps.precheck.outputs.skip_release_please' "$WF" || fail "release-please.yml must skip release-please on precheck.skip_release_please"
+grep -q 'steps.precheck.outputs.collision' "$WF" || fail "release-please.yml must fail the job on precheck.collision"
+grep -q 'needs.release.outputs.supply_chain' "$WF" || fail "release-please.yml must gate clean/scan jobs on supply_chain"
+echo "OK: release-please.yml is wired to the precheck (drift-guarded)"
 
 echo "ALL TESTS PASSED"

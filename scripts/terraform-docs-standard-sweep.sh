@@ -53,7 +53,7 @@ WORKDIR="${WORKDIR:-$HOME/.cache/tf-docs-sweep}"
 TFDOCS_IMAGE="${TFDOCS_IMAGE:-quay.io/terraform-docs/terraform-docs:0.20.0}"
 KEEP_CLONES="${KEEP_CLONES:-false}"
 
-CALLER=".github/workflows/org-terraform-docs.yml"
+CALLER=".github/workflows/ci-terraform-docs.yml"
 BEGIN_MARK="<!-- BEGIN_TF_DOCS -->"
 END_MARK="<!-- END_TF_DOCS -->"
 
@@ -226,10 +226,10 @@ patch_caller() {
   # Re-pin. Rewrite the whole uses: line so a stale trailing comment cannot
   # survive next to a new SHA.
   sed -i.bak -E \
-    "s|(uses: *)${ORG}/Actions/\.github/workflows/org-terraform-docs\.yml@[0-9a-fA-F]+.*|\1${ORG}/Actions/.github/workflows/org-terraform-docs.yml@${pin} # ${tag}|" \
+    "s|(uses: *)${ORG}/Actions/\.github/workflows/org-terraform-docs\.yml@[0-9a-fA-F]+.*|\1${ORG}/Actions/.github/workflows/ci-terraform-docs.yml@${pin} # ${tag}|" \
     "$f" && rm -f "${f}.bak"
 
-  grep -q "org-terraform-docs.yml@${pin}" "$f"
+  grep -q "ci-terraform-docs.yml@${pin}" "$f"
 }
 
 # ---------------------------------------------------------------------------

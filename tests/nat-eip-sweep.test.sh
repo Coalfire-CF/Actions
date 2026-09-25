@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Meta-test for the if:always() NAT Elastic IP sweep step in
-# .github/workflows/org-terratest.yml (#273 / WI-1.3).
+# .github/workflows/ci-terratest.yml (#273 / WI-1.3).
 #
 # The sweep logic lives INLINE in the workflow's `run:` body (not a scripts/*.sh)
 # on purpose: a reusable workflow cannot reliably fetch its own repo's helper
@@ -33,7 +33,7 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-WF="${REPO_ROOT}/.github/workflows/org-terratest.yml"
+WF="${REPO_ROOT}/.github/workflows/ci-terratest.yml"
 
 fail() { echo "NOT OK: $1"; exit 1; }
 [ -f "$WF" ] || fail "workflow not found at $WF"

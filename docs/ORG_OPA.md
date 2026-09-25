@@ -41,7 +41,7 @@ MTCS finding **F08**.
 ```yaml
 jobs:
   opa:
-    uses: Coalfire-CF/Actions/.github/workflows/org-opa.yml@<sha> # v0.7.0
+    uses: Coalfire-CF/Actions/.github/workflows/ci-policy-opa.yml@<sha> # v0.7.0
     with:
       policy_ref: <org-opa-policies release SHA> # v0.1.0
     secrets:

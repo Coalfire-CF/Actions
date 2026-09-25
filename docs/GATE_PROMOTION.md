@@ -29,7 +29,7 @@ telemetry window before the flip and the equally-instant flip-back after it.
    - the recorded promotion decision citation (RFC-0010 / ADR-0011),
    - the telemetry-window evidence (dates + zero-count source),
    - a named **rollback owner** who can merge the flip-back PR same-day.
-1. **Merge on green** (protected main; the `test-scripts.yml` meta-tests cover
+1. **Merge on green** (protected main; the `ci-test-scripts.yml` meta-tests cover
    the resolver; a block-style reformat is rejected by the parser tests).
 1. **Watch the fleet:** monitor the fleet-posture signal for a breakage spike
    over the next scheduled sweeps. Rollback = the same one-line PR flipping back

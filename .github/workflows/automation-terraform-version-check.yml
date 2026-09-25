@@ -1,0 +1,153 @@
+name: "Automation: Terraform version check"
+
+on:
+  schedule:
+    - cron: '0 9 1,15 * *' # 1st and 15th of each month at 9am UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+# M8/#205: serialize so a manual workflow_dispatch cannot overlap the monthly cron
+# (two runs racing to create the same chore/terraform-<ver> branch/PR).
+concurrency:
+  group: terraform-version-check-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  check-version:
+    name: Check for New Terraform Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # M8/#205: prefer a GitHub App token for the bump PR. A PR opened (and its
+      # branch pushed) by GITHUB_TOKEN does NOT trigger on:pull_request workflows
+      # (GitHub anti-recursion), so the validate/plan/fmt checklist the PR embeds
+      # never runs. Fall back to GITHUB_TOKEN when the App is not provisioned so
+      # this workflow keeps working (behavior unchanged, minus CI triggering).
+      - name: Check for App credentials
+        id: check-app
+        env:
+          TF_VERSION_APP_ID: ${{ secrets.TF_VERSION_APP_ID }}
+          TF_VERSION_APP_PRIVATE_KEY: ${{ secrets.TF_VERSION_APP_PRIVATE_KEY }}
+        run: |
+          if [ -n "$TF_VERSION_APP_ID" ] && [ -n "$TF_VERSION_APP_PRIVATE_KEY" ]; then
+            echo "has_app=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_app=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::No TF_VERSION_APP_ID / TF_VERSION_APP_PRIVATE_KEY configured — the version-bump PR will be opened with GITHUB_TOKEN, which does NOT trigger pull_request CI (validate/plan/fmt). Provision a GitHub App to enable CI on auto-bump PRs (#205)."
+          fi
+
+      - name: Generate App token
+        id: app-token
+        if: steps.check-app.outputs.has_app == 'true'
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.TF_VERSION_APP_ID }}
+          private-key: ${{ secrets.TF_VERSION_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
+      - name: Get current version
+        id: current
+        run: |
+          CURRENT=$(cat .terraform-version | tr -d '[:space:]')
+          echo "version=$CURRENT" >> $GITHUB_OUTPUT
+
+      - name: Get latest stable Terraform release
+        id: latest
+        run: |
+          LATEST=$(curl -s https://api.github.com/repos/hashicorp/terraform/releases/latest | jq -r '.tag_name' | sed 's/^v//')
+          if [ -z "$LATEST" ] || [ "$LATEST" = "null" ]; then
+            echo "::error::Failed to fetch latest Terraform release"
+            exit 1
+          fi
+          echo "version=$LATEST" >> $GITHUB_OUTPUT
+
+      - name: Compare versions
+        id: compare
+        env:
+          CURRENT_VERSION: ${{ steps.current.outputs.version }}
+          LATEST_VERSION: ${{ steps.latest.outputs.version }}
+        run: |
+          set -eo pipefail
+          # Respect the org version-band ceiling (RFC-0004/ADR-0013): never
+          # auto-propose a bump that would cross the band's upper bound.
+          CEILING=""
+          if [ -f .terraform-version-band ]; then
+            CEILING="$(tr -d '[:space:]' < .terraform-version-band | sed -E 's/.*<([0-9]+\.[0-9]+\.[0-9]+).*/\1/')"
+          fi
+          if [ "$CURRENT_VERSION" = "$LATEST_VERSION" ]; then
+            echo "needs_update=false" >> "$GITHUB_OUTPUT"
+            echo "Already on latest version: $CURRENT_VERSION"
+          elif [ -n "$CEILING" ] && [ "$(printf '%s\n%s\n' "$LATEST_VERSION" "$CEILING" | sort -V | head -1)" != "$LATEST_VERSION" ]; then
+            # LATEST >= CEILING → out of band; do not open a bump PR automatically.
+            echo "needs_update=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Latest Terraform ${LATEST_VERSION} is at/above the org band ceiling (< ${CEILING}). Skipping auto-bump PR; a band raise is a manual RFC-0004/ADR-0013 decision."
+          else
+            echo "needs_update=true" >> "$GITHUB_OUTPUT"
+            echo "Update available: $CURRENT_VERSION -> $LATEST_VERSION"
+          fi
+
+      - name: Check for existing PR
+        if: steps.compare.outputs.needs_update == 'true'
+        id: existing-pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LATEST_VERSION: ${{ steps.latest.outputs.version }}
+        run: |
+          EXISTING=$(gh pr list --head "chore/terraform-${LATEST_VERSION}" --state open --json number --jq '.[0].number')
+          if [ -n "$EXISTING" ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "PR #$EXISTING already exists for this version"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create version bump branch
+        if: steps.compare.outputs.needs_update == 'true' && steps.existing-pr.outputs.exists == 'false'
+        env:
+          LATEST_VERSION: ${{ steps.latest.outputs.version }}
+          # App token when available (so the push is authored by the App and CI
+          # fires); GITHUB_TOKEN fallback preserves prior behavior (#205).
+          GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git checkout -b "chore/terraform-${LATEST_VERSION}"
+          echo "$LATEST_VERSION" > .terraform-version
+          # F36 (Plan B): keep the baked DEFAULT_TF_VERSION literals in lockstep
+          # with .terraform-version so the hermetic fallback never drifts stale.
+          while IFS= read -r wf; do
+            sed -i -E "s/DEFAULT_TF_VERSION: '[0-9]+\.[0-9]+\.[0-9]+'/DEFAULT_TF_VERSION: '${LATEST_VERSION}'/" "$wf"
+          done < <(grep -rlE "DEFAULT_TF_VERSION: '[0-9]" .github/workflows/ || true)
+          git add .terraform-version .github/workflows/
+          git commit -m "chore: bump terraform version to ${LATEST_VERSION}"
+          git push origin "chore/terraform-${LATEST_VERSION}"
+
+      - name: Create Pull Request
+        if: steps.compare.outputs.needs_update == 'true' && steps.existing-pr.outputs.exists == 'false'
+        env:
+          # App token when available so the PR triggers pull_request CI (#205).
+          GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
+          CURRENT_VERSION: ${{ steps.current.outputs.version }}
+          LATEST_VERSION: ${{ steps.latest.outputs.version }}
+        run: |
+          gh pr create \
+            --title "chore: bump terraform version to ${LATEST_VERSION}" \
+            --body "## Summary
+
+          - Bumps default Terraform version from \`${CURRENT_VERSION}\` to \`${LATEST_VERSION}\`
+          - Release notes: https://github.com/hashicorp/terraform/releases/tag/v${LATEST_VERSION}
+
+          ## Review Checklist
+
+          - [ ] Review the [Terraform changelog](https://github.com/hashicorp/terraform/releases/tag/v${LATEST_VERSION}) for breaking changes
+          - [ ] Verify compatibility with existing modules and state files
+          - [ ] Confirm provider compatibility with new version
+
+          Auto-generated by Terraform Version Check workflow" \
+            --base main

@@ -1,0 +1,140 @@
+name: "Automation: Dependabot reconcile"
+
+# Scheduled safety net (grade-A plan #14) for wedged Dependabot PRs.
+#
+# The auto-merge engine's direct-merge fallback runs only inside a PR-triggered
+# run. A PR that goes GREEN *after* its last event — with auto-merge un-latched
+# (repos without required status checks) — is never re-driven and sits
+# approved-but-unmerged. This sweep converges them: it enumerates open org PRs
+# labeled `merge/approved` and, for each, re-applies the SAME green gate as the
+# auto-merge fallback (scripts/pr-green-merge.sh) and direct-merges the green
+# ones. It re-checks freshness live and never merges a red/pending/draft/closed
+# or unlabeled PR.
+#
+# It merges with BYPASS_REVIEW=true because it runs as the ci-automerge-app
+# GitHub App — a ruleset bypass actor. On code-owner-required rulesets a bot
+# approval never satisfies the required review, so the merge is issued via the
+# REST endpoint (which honors the App's bypass) past reviewDecision=REVIEW_REQUIRED.
+# An explicit human block (CHANGES_REQUESTED) is still never overridden.
+#
+# SAFETY MODEL (2026-07-15): scheduled runs merge FOR REAL — this sweep is the
+# tail-catcher for PRs whose CI outlasts the PR-time merge (check_suite events
+# never fire for Actions-created suites, so no event-driven path exists for
+# Actions-gated repos). Every merge is still gated per-PR by pr-green-merge.sh:
+# green CI, trusted exact-head policy approval, automation author, and never over
+# CHANGES_REQUESTED. The merge/approved label selects candidates only.
+# Manual dispatch stays dry-run by DEFAULT (safe canaries; scope with the `repo`
+# input) — pass dry_run=false explicitly to make a dispatched run merge.
+#
+# The auto-merge fallback's own adoption of scripts/pr-green-merge.sh is owned by
+# the #9/#12/#13 follow-up chain on automation-dependabot-auto-merge.yml (option B) —
+# this workflow ships the shared helper; it does not modify that file.
+
+on:
+  schedule:
+    - cron: '17 */6 * * *'   # every 6h at :17 past — offset off the top-of-hour herd
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Log would-merge decisions only; perform NO merges (default true)'
+        type: boolean
+        default: true
+      merge_method:
+        description: 'Merge method for green PRs: merge | squash | rebase'
+        type: string
+        default: 'squash'
+      repo:
+        description: 'Optional single repo (owner/name) to scope the sweep to — for canary / targeted runs. Empty = whole org.'
+        type: string
+        default: ''
+
+# Least privilege: checkout only. Cross-repo merges across the org use the
+# GitHub App token generated below, not GITHUB_TOKEN.
+permissions:
+  contents: read
+
+concurrency:
+  # One sweep at a time. Per-PR keying (repo+number, the corrected #11 key) is
+  # not expressible on a batch scheduled workflow with no single PR in context;
+  # per-PR race safety instead comes from (a) idempotent merges — a PR already
+  # merged/closed re-reads as non-OPEN and is SKIPped — and (b)
+  # automation-dependabot-auto-merge.yml's own per-PR concurrency group. This group
+  # serializes overlapping sweeps.
+  group: dependabot-reconcile-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    name: Reconcile wedged merge/approved PRs
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout (decision scripts)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Generate GitHub App token (org-wide)
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.AUTOMERGE_CLIENT_ID }}
+          private-key: ${{ secrets.AUTOMERGE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
+      - name: Sweep open merge/approved PRs
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          OWNER: ${{ github.repository_owner }}
+          # Scheduled runs are LIVE (the tail-catcher — see header). Manual
+          # dispatch stays dry-run unless dry_run=false is passed explicitly.
+          DRY_RUN: ${{ (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false)) && 'false' || 'true' }}
+          MERGE_METHOD: ${{ inputs.merge_method || 'squash' }}
+          REPO_SCOPE: ${{ inputs.repo || '' }}
+          MAX_PRS: '200'
+        run: |
+          set -euo pipefail
+          : "${GH_TOKEN:?missing app token}"
+          echo "Reconcile sweep — owner=${OWNER} scope=${REPO_SCOPE:-<org>} dry_run=${DRY_RUN} method=${MERGE_METHOD} cap=${MAX_PRS}"
+
+          # Shared bounded-retry helper (grade-A #13) — one implementation, not three.
+          # shellcheck source=scripts/retry-lib.sh
+          . "${GITHUB_WORKSPACE}/scripts/retry-lib.sh"
+
+          # Search scope: whole org by default, or a single repo for a canary /
+          # targeted run (REPO_SCOPE=owner/name).
+          if [ -n "${REPO_SCOPE}" ]; then
+            SEARCH_SCOPE=(--repo "$REPO_SCOPE")
+          else
+            SEARCH_SCOPE=(--owner "$OWNER")
+          fi
+
+          # Enumerate open PRs labeled merge/approved (capped). A gh-search blip is
+          # treated as transient (retry with backoff); persistent failure is a hard
+          # error (the sweep can't run blind).
+          _search_prs() {
+            gh search prs "${SEARCH_SCOPE[@]}" --state open --label 'merge/approved' \
+              --limit "$MAX_PRS" --json repository,number 2>/dev/null || return "$RETRY_TRANSIENT_RC"
+          }
+          if ! PRS="$(with_retry 3 2 20 -- _search_prs)"; then
+            echo "::error::gh search failed after retries"
+            exit 1
+          fi
+
+          COUNT="$(printf '%s' "$PRS" | jq 'length')"
+          echo "Found ${COUNT} open merge/approved PR(s)."
+          if [ "$COUNT" -ge "$MAX_PRS" ]; then
+            echo "::warning::sweep hit the ${MAX_PRS}-PR cap — some approved PRs may be unprocessed this run (no silent truncation; re-run or raise MAX_PRS)."
+          fi
+
+          rc=0
+          while IFS=$'\t' read -r repo num; do
+            [ -n "$repo" ] && [ -n "$num" ] || continue
+            echo "::group::${repo}#${num}"
+            if ! PR_NUMBER="$num" REPO="$repo" MERGE_METHOD="$MERGE_METHOD" DRY_RUN="$DRY_RUN" BYPASS_REVIEW=true \
+                 bash "${GITHUB_WORKSPACE}/scripts/pr-green-merge.sh"; then
+              echo "::warning::pr-green-merge failed for ${repo}#${num}"
+              rc=1
+            fi
+            echo "::endgroup::"
+          done < <(printf '%s' "$PRS" | jq -r '.[] | [.repository.nameWithOwner, (.number | tostring)] | @tsv')
+
+          exit "$rc"

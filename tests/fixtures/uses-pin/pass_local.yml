@@ -2,4 +2,4 @@
 # called workflow's own immutable SHA. The uses-pin gate MUST NOT flag it.
 jobs:
   notify:
-    uses: ./.github/workflows/org-slack-notify.yml
+    uses: ./.github/workflows/automation-slack-notify.yml

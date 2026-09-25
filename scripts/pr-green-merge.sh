@@ -3,10 +3,10 @@
 # pr-green-merge.sh — shared green-gate + direct-merge for one Dependabot PR
 # (grade-A plan #14). Single source of truth for "is this PR safe to merge right
 # now, and if so merge it" used by the reconcile sweeper
-# (.github/workflows/org-dependabot-reconcile.yml).
+# (.github/workflows/automation-dependabot-reconcile.yml).
 #
 # It re-applies the SAME green gate as the auto-merge fallback
-# (org-dependabot-auto-merge.yml "Approve and auto-merge" step) — no failing and
+# (automation-dependabot-auto-merge.yml "Approve and auto-merge" step) — no failing and
 # no pending check — re-checking freshness live rather than trusting a label:
 #   FAIL   — any check failed / errored / timed-out / cancelled / action-required
 #   PENDING— any check queued / in-progress / expected (not yet complete)
@@ -20,7 +20,7 @@
 # pull commit statuses and thus require `statuses:read`, which the bypass App does
 # not hold; the ruleset requires no status checks either way.) NOTE (option B): the
 # auto-merge fallback's adoption of this helper is owned by the #9/#12/#13
-# follow-up chain on org-dependabot-auto-merge.yml — this PR does not touch that
+# follow-up chain on automation-dependabot-auto-merge.yml — this PR does not touch that
 # file. The bounded retry below is a minimal transient-blip guard, NOT #13's full
 # backoff+jitter; it converges onto #13's shared retry helper when that lands.
 #
@@ -80,7 +80,7 @@ RETRY_MAX="${RETRY_MAX:-3}"
 # Check runs whose name starts with this prefix are EXCLUDED from the green gate.
 # Default excludes the auto-merge workflow's own jobs ("auto-merge / classify",
 # "auto-merge / decide", …): when the decide job runs the merge inline, its own
-# check run is IN_PROGRESS and notify_failure/remerge are QUEUED, so counting them
+# check run is IN_PROGRESS and notify-failure/remerge are QUEUED, so counting them
 # would make the PR-time merge forever self-classify PENDING and never fire. Those
 # jobs gate the auto-merge DECISION (upstream), not code correctness, so excluding
 # them is safe; the repo's real CI checks still gate. Set to "" to disable.

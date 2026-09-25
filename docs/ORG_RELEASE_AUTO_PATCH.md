@@ -1,6 +1,6 @@
 # Auto-merge patch-only releases (`auto_release_patch`)
 
-Opt-in policy for `org-release.yml` that auto-merges a release-please **release
+Opt-in policy for `release-please.yml` that auto-merges a release-please **release
 PR** only when it is an **unambiguous patch-only release**. Minor and major
 releases always keep the human gate. Tracking: Coalfire-CF/Actions#148.
 
@@ -73,7 +73,7 @@ merges or approves, but it does post the legibility comment.
 ```yaml
 jobs:
   release:
-    uses: Coalfire-CF/Actions/.github/workflows/org-release.yml@<sha> # vX.Y.Z
+    uses: Coalfire-CF/Actions/.github/workflows/release-please.yml@<sha> # vX.Y.Z
     with:
       auto_release_patch: true            # opt in (patch-only)
       auto_release_patch_dry_run: true    # log-only until validated; flip to false for live

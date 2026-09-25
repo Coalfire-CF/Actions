@@ -14,7 +14,7 @@ The real risk is concentrated in two places:
 
 1. **The Dependabot auto-merge pipeline's shared S3 cache.** The two scripts that gate auto-merge (`supply-chain-check.sh`, `breaking-change-check.sh`) are also the *only* two scripts in the repo with zero test coverage — and both can write an optimistically-clean verdict into the fleet-wide cache on a transient outage. A subsequent run for the same dependency, in any repo, can then auto-approve on that poisoned entry. This is the single highest-impact class of defect found.
 
-1. **Two Terraform PR gates that silently do nothing.** `org-terraform-validate.yml` reports green even when `terraform validate` fails, and `org-terraform-fmt.yml` neither fails on nor fixes misformatted code. Both look like enforcement but enforce nothing.
+1. **Two Terraform PR gates that silently do nothing.** `ci-terraform-validate.yml` reports green even when `terraform validate` fails, and `ci-terraform-format.yml` neither fails on nor fixes misformatted code. Both look like enforcement but enforce nothing.
 
 The remaining findings are hardening and hygiene items. No committed secret, no deprecated `set-output`, and no untrusted-code-with-secrets checkout was found.
 
@@ -84,7 +84,7 @@ On a cache **miss**, `aws s3 cp` fails and leaves the file from the *previous lo
 
 #### H3 — Script injection into `github-script` from repository file content
 
-**File:** `.github/workflows/org-trivy-exception-review.yml:116-118`
+**File:** `.github/workflows/automation-trivy-exception-review.yml:116-118`
 
 ```js
 const expiredList = `${{ steps.check_expired.outputs.expired_list }}`;
@@ -98,9 +98,9 @@ const hasExpiringSoon = '${{ steps.check_expired.outputs.has_expiring_soon }}' =
 
 **Resolution:** Pass the outputs via `env:` and read `process.env.*`. The workflow's own "Generate summary" step (lines 179-183) already does exactly this — the `github-script` step is the inconsistent one.
 
-#### H4 — `org-terraform-validate.yml` can never fail
+#### H4 — `ci-terraform-validate.yml` can never fail
 
-**File:** `.github/workflows/org-terraform-validate.yml:108-117`
+**File:** `.github/workflows/ci-terraform-validate.yml:108-117`
 
 ```bash
 set +e
@@ -116,15 +116,15 @@ Three compounding problems: (1) `terraform validate` writes diagnostics to **std
 
 **Failure scenario:** A PR introduces a Terraform syntax error. The gate passes, the empty PR comment says nothing, and the error reaches merge.
 
-**Resolution:** `OUTPUT=$(terraform validate 2>&1); RC=$?`, write the output, then `exit $RC` (or a dedicated fail step). `org-terraform-plan.yml:260-262` already uses this explicit-fail pattern.
+**Resolution:** `OUTPUT=$(terraform validate 2>&1); RC=$?`, write the output, then `exit $RC` (or a dedicated fail step). `deploy-terraform-plan.yml:260-262` already uses this explicit-fail pattern.
 
 ---
 
 ### Medium
 
-#### M1 — `org-terraform-fmt.yml` is a no-op
+#### M1 — `ci-terraform-format.yml` is a no-op
 
-**File:** `.github/workflows/org-terraform-fmt.yml:79-86`
+**File:** `.github/workflows/ci-terraform-format.yml:79-86`
 
 ```bash
 - name: Run Terraform fmt
@@ -203,19 +203,19 @@ No `--paginate` / `per_page`, so only the first page (default 30) of comments is
 
 **File:** `.github/dependabot.yml:5-22`
 
-The file declares only `package-ecosystem: "github-actions"`, but the repo ships `package.json` (devDependency `markdownlint-cli2`) and `package-lock.json`. The generator this file claims to dogfood explicitly maps npm (`org-dependabot.yml:120` → `[npm]="package.json"`), so the committed config is out of sync with what the workflow would emit for this very repo.
+The file declares only `package-ecosystem: "github-actions"`, but the repo ships `package.json` (devDependency `markdownlint-cli2`) and `package-lock.json`. The generator this file claims to dogfood explicitly maps npm (`automation-dependabot-refresh.yml:120` → `[npm]="package.json"`), so the committed config is out of sync with what the workflow would emit for this very repo.
 
 **Failure scenario:** Future advisories against the pinned markdownlint-cli2 tree open no automatic bump PRs; the documented "dependency pinning with integrity checks" posture silently rots.
 
-**Resolution:** Add an `npm` block (or regenerate via `org-dependabot.yml` and commit the result).
+**Resolution:** Add an `npm` block (or regenerate via `automation-dependabot-refresh.yml` and commit the result).
 
 #### M8 — Version-bump PRs are opened with `GITHUB_TOKEN` and get no CI
 
-**File:** `.github/workflows/org-terraform-version-check.yml:94-115`
+**File:** `.github/workflows/automation-terraform-version-check.yml:94-115`
 
-The auto-generated Terraform-version bump PR is created with `GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}`. By GitHub's anti-recursion rule, PRs opened by `GITHUB_TOKEN` do not trigger `on: pull_request` workflows, so the bump PR gets no validate/plan/fmt runs — defeating the review checklist it embeds. This workflow has no `concurrency:` group either, so a `workflow_dispatch` can overlap the monthly cron run. The release path documents this exact rationale for preferring an App token (`org-release.yml:123-131`: "a GITHUB_TOKEN merge fires no push event and the publish run never runs").
+The auto-generated Terraform-version bump PR is created with `GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}`. By GitHub's anti-recursion rule, PRs opened by `GITHUB_TOKEN` do not trigger `on: pull_request` workflows, so the bump PR gets no validate/plan/fmt runs — defeating the review checklist it embeds. This workflow has no `concurrency:` group either, so a `workflow_dispatch` can overlap the monthly cron run. The release path documents this exact rationale for preferring an App token (`release-please.yml:123-131`: "a GITHUB_TOKEN merge fires no push event and the publish run never runs").
 
-**Resolution:** Open the PR with a GitHub App token (as `org-release.yml` does) and add a `concurrency` group.
+**Resolution:** Open the PR with a GitHub App token (as `release-please.yml` does) and add a `concurrency` group.
 
 ---
 
@@ -227,19 +227,19 @@ The auto-generated Terraform-version bump PR is created with `GH_TOKEN: ${{ secr
 | L2 | `.github/readmetreerc.yml:4-5` | Quoted `include:` values (`- "."`) are never unquoted by the parser in `org-tree-readme.yml:104-114`; works today only because the `.` fallback fires. A quoted non-root include would be silently skipped | Strip surrounding quotes in the parser, or drop quotes in the config |
 | L3 | `version-band-check.sh:111-121` | Ceiling-only constraint (`< 2.0.0`, no floor) anchors at the ceiling and is reported out-of-band | Detect upper-bound-only constraints and anchor differently |
 | L4 | `actions/gitleaks/action.yml:114-116` | `passed` / `finding-count` outputs unset on the scanner-error branch → downstream `outputs.passed == 'false'` won't fire | Set both outputs on every exit path |
-| L5 | `actions/gitleaks/action.yml:62` | Installs to `/usr/local/bin` without `sudo`; fails on hardened/self-hosted runners (inconsistent with `test-scripts.yml:90` which uses `sudo`) | Use `sudo`, or a writable per-runner path |
+| L5 | `actions/gitleaks/action.yml:62` | Installs to `/usr/local/bin` without `sudo`; fails on hardened/self-hosted runners (inconsistent with `ci-test-scripts.yml:90` which uses `sudo`) | Use `sudo`, or a writable per-runner path |
 | L6 | `pr-green-merge.sh:116`, `release-patch-merge.sh:160,167` | `for a in $AUTHOR_ALLOWLIST` unquoted; `dependabot[bot]` is a valid glob (`[bot]` char class) and can be corrupted by a matching filename in cwd | `set -f` around the loop, or use a quoted array |
 | L7 | `release-patch-merge.sh:243` | `gh pr checks --watch` has no timeout; a stuck check hangs until the workflow-level timeout | Add `--timeout` or a wrapping timeout |
 | L8 | `release-patch-merge.sh:68` (`_gh_once`) | Every gh failure classified transient, so permanent 404s are retried `RETRY_MAX` times | Distinguish 4xx (non-retryable) from 5xx/timeout |
-| L9 | `org-release.yml:348` | `notify-failure` `needs:` omits `auto-merge-patch` and `notify-release`, so `failure()` won't alert on those jobs | Add both to `needs:` |
-| L10 | `org-markdown-lint.yml:109-111` | `if: failure()` comment step has no event guard; on a non-PR trigger `context.issue.number` is undefined and `createComment` throws | Guard with `github.event_name == 'pull_request'` |
-| L11 | `org-opa.yml:107` | `inputs.policy_repo` interpolated inline into `run:` (caller-controlled, not event) while `POLICY_REF` is correctly via `env:` | Route `policy_repo` through `env:` too |
-| L12 | `org-terraform-apply.yml:252-254`, `org-terraform-plan.yml:239-241` | Unquoted `$INIT_ARGS` / `$PLAN_ARGS` rely on word-splitting; a `backend_config` with spaces splits wrong | Use bash arrays |
-| L13 | `org-gitleaks-pr.yml:53`, `org-trivy-pr.yml:74`, `org-terraform-plan.yml:282` | `${{ }}` interpolated into `github-script` JS (controlled true/false/int values — anti-pattern, low exploitability) | Move to `env:` + `process.env.*` for consistency |
+| L9 | `release-please.yml:348` | `notify-failure` `needs:` omits `auto-merge-patch` and `notify-release`, so `failure()` won't alert on those jobs | Add both to `needs:` |
+| L10 | `ci-markdown.yml:109-111` | `if: failure()` comment step has no event guard; on a non-PR trigger `context.issue.number` is undefined and `createComment` throws | Guard with `github.event_name == 'pull_request'` |
+| L11 | `ci-policy-opa.yml:107` | `inputs.policy_repo` interpolated inline into `run:` (caller-controlled, not event) while `POLICY_REF` is correctly via `env:` | Route `policy_repo` through `env:` too |
+| L12 | `deploy-terraform-apply.yml:252-254`, `deploy-terraform-plan.yml:239-241` | Unquoted `$INIT_ARGS` / `$PLAN_ARGS` rely on word-splitting; a `backend_config` with spaces splits wrong | Use bash arrays |
+| L13 | `ci-security-gitleaks.yml:53`, `ci-security-trivy.yml:74`, `deploy-terraform-plan.yml:282` | `${{ }}` interpolated into `github-script` JS (controlled true/false/int values — anti-pattern, low exploitability) | Move to `env:` + `process.env.*` for consistency |
 | L14 | `docs/ORG_DEPENDABOT_AUTO_MERGE.md:275` vs `auto-merge-decide.sh:110-111` | Docs say approved patch/minor → `risk/low`, but an approved minor bump is labeled `risk/medium` | Reconcile doc with code |
 | L15 | `README.md:93,107,117,137`; `docs/ORG_DEPENDABOT_AUTO_MERGE.md:192,211,…` | Copy-paste examples pin `# v0.10.0` while repo is `0.11.3`; new adopters onboard two minor releases behind | Auto-update via release-please `extra-files`, or note the drift |
-| L16 | `org-dependabot.yml:47`, `org-terraform-fmt.yml:35` | `pull-requests: write` (dependabot) / `contents: write` (fmt) granted but unused | Drop the unused grants |
-| L17 | `breaking-change-check.sh:289-291`; `org-jira-sync.yml:98-101`; `org-dependabot-auto-merge.yml:170,211` | Dead code: `bedrock_err.log` surfacing (nothing writes it now), an overwritten `ISSUE_BODY` heredoc with a wrong var name, and unused `PR_TITLE` env | Remove |
+| L16 | `automation-dependabot-refresh.yml:47`, `ci-terraform-format.yml:35` | `pull-requests: write` (dependabot) / `contents: write` (fmt) granted but unused | Drop the unused grants |
+| L17 | `breaking-change-check.sh:289-291`; `automation-jira-sync.yml:98-101`; `automation-dependabot-auto-merge.yml:170,211` | Dead code: `bedrock_err.log` surfacing (nothing writes it now), an overwritten `ISSUE_BODY` heredoc with a wrong var name, and unused `PR_TITLE` env | Remove |
 | L18 | `renovate/terraform-ref-pins.json5:21` | Deprecated `fileMatch` key (now `managerFilePatterns`; still honored with a warning) | Rename |
 | L19 | `breaking-change-check.sh:248,493` | Byte-based `head -c` truncation can cut mid-UTF-8; jq tolerates it (cosmetic) | Truncate on char boundaries if it matters |
 
@@ -262,12 +262,12 @@ Findings **H1, H2, M2, M3, M4 all live in these two untested scripts.** Recommen
 
 Checked and confirmed as *not* defects (documented so they aren't re-litigated):
 
-- **SHA-pinning of third-party actions is 100%** — the README claim is true and is enforced in CI by the `no-main-refs` guard job (`test-scripts.yml:101-133`). The only non-SHA `uses:` are local sibling/composite calls and commented examples.
+- **SHA-pinning of third-party actions is 100%** — the README claim is true and is enforced in CI by the `no-main-refs` guard job (`ci-test-scripts.yml:101-133`). The only non-SHA `uses:` are local sibling/composite calls and commented examples.
 - **No deprecated `set-output` / `save-state` / `set-env`** anywhere.
 - **The `pull_request_target` auto-merge flow never checks out untrusted PR head** — it classifies against the base default branch and passes all event fields via `env:`. No secret-exposure-to-untrusted-code foot-gun.
 - **External tool downloads are checksum-verified** — OPA, yq, actionlint all download-then-verify against pinned SHA-256 sums.
 - **Auto-commit workflows cannot self-retrigger** — they push with the default `GITHUB_TOKEN`, which by design does not trigger further workflow runs; concurrency groups are present.
-- **`org-slack-notify.yml` / `org-jira-sync.yml`** build all payloads via `jq --arg` / `env:` and use `permissions: {}` — injection-safe.
+- **`automation-slack-notify.yml` / `automation-jira-sync.yml`** build all payloads via `jq --arg` / `env:` and use `permissions: {}` — injection-safe.
 - **`retry-lib.sh`, the `cache-lib.sh` read side, `prompt-lib.sh` fencing, `gate-config-resolve.sh`, the Renovate preset, and the release-please config** are all sound (individually verified).
 
 ---
@@ -275,7 +275,7 @@ Checked and confirmed as *not* defects (documented so they aren't re-litigated):
 ## 6. Prioritized Remediation Roadmap
 
 1. **H1 + H2** — stop the auto-merge scripts from writing optimistic/contaminated verdicts to the shared cache. Highest blast radius; fleet-wide and silent.
-1. **H3** — close the `github-script` injection in `org-trivy-exception-review.yml` (mechanical `env:` fix).
+1. **H3** — close the `github-script` injection in `automation-trivy-exception-review.yml` (mechanical `env:` fix).
 1. **H4 + M1** — make the Terraform validate and fmt gates actually enforce.
 1. **M2–M4** — harden the `set -e` crash paths (non-numeric confidence/score, corrupt cache object) so failures route to manual review instead of aborting the job.
 1. **Add tests for the two zero-coverage scripts** (§4), locking in the H1/H2/M2–M4 fixes.

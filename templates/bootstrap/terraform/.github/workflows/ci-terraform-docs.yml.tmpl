@@ -1,0 +1,20 @@
+name: "CI: Terraform docs"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+on:
+  pull_request:
+    paths:
+      - "**.tf"
+      - "**.tfvars"
+      - "**.hcl"
+      - ".terraform.lock.hcl"
+      - "**/terraform/**"
+  workflow_call:
+
+jobs:
+  terraform-docs:
+    name: Generate Terraform docs
+    uses: Coalfire-CF/Actions/.github/workflows/ci-terraform-docs.yml@__ACTIONS_SHA__ # __ACTIONS_VERSION__

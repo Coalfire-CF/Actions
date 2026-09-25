@@ -21,7 +21,7 @@ than trusting a number frozen in this doc. The snippets below pin **v0.16.0**
 inputs ship from the release that lands #237/#273 — pin at or above it to use them.
 
 - **AWS (GovCloud):** [`terraform-aws-vpc-nfw`](https://github.com/Coalfire-CF/terraform-aws-vpc-nfw)
-  `.github/workflows/org-terratest.yml` — the canonical **module-repo self-test** (PR #198).
+  `.github/workflows/ci-terratest.yml` — the canonical **module-repo self-test** (PR #198).
 - **Azure Government:** the `cs-terratest-poc` `terratest-azure.yml` pilot — the org's first
   green Azure Gov lane (now being ported into the module repos it validated).
 
@@ -172,7 +172,7 @@ on:
       - "**.tf"
       - "**.tfvars"
       - "test/**"
-      - ".github/workflows/org-terratest.yml"
+      - ".github/workflows/ci-terratest.yml"
 
 permissions:
   contents: read # checkout
@@ -193,7 +193,7 @@ concurrency:
 
 jobs:
   terratest:
-    uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@d06776a5840b53ff374f80f3c45e84181425b6d6 # v0.18.2
+    uses: Coalfire-CF/Actions/.github/workflows/ci-terratest.yml@79f66e88c53ad53a385d913278ee82f04147f983 # v0.19.0
     with:
       test_mode: pr
       go_version: "1.26"
@@ -228,7 +228,7 @@ on:
     paths:
       - "test/**"
       - "**.tf"
-      - ".github/workflows/org-terratest.yml"
+      - ".github/workflows/ci-terratest.yml"
 
 permissions:
   contents: read # checkout
@@ -241,7 +241,7 @@ concurrency:
 
 jobs:
   terratest-azure:
-    uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@d06776a5840b53ff374f80f3c45e84181425b6d6 # v0.18.2
+    uses: Coalfire-CF/Actions/.github/workflows/ci-terratest.yml@79f66e88c53ad53a385d913278ee82f04147f983 # v0.19.0
     with:
       test_mode: pr
       go_version: "1.26"
@@ -277,7 +277,7 @@ concurrency:
 
 jobs:
   terratest:
-    uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@d06776a5840b53ff374f80f3c45e84181425b6d6 # v0.18.2
+    uses: Coalfire-CF/Actions/.github/workflows/ci-terratest.yml@79f66e88c53ad53a385d913278ee82f04147f983 # v0.19.0
     with:
       test_mode: pr
       go_version: "1.26"
@@ -300,7 +300,7 @@ on:
 
 jobs:
   terratest:
-    uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@d06776a5840b53ff374f80f3c45e84181425b6d6 # v0.18.2
+    uses: Coalfire-CF/Actions/.github/workflows/ci-terratest.yml@79f66e88c53ad53a385d913278ee82f04147f983 # v0.19.0
     with:
       test_mode: release
       go_version: "1.26"
@@ -309,7 +309,7 @@ jobs:
 
   release-clean:
     needs: terratest
-    uses: Coalfire-CF/Actions/.github/workflows/org-release-clean.yml@d06776a5840b53ff374f80f3c45e84181425b6d6 # v0.18.2
+    uses: Coalfire-CF/Actions/.github/workflows/release-clean-archive.yml@79f66e88c53ad53a385d913278ee82f04147f983 # v0.19.0
     with:
       tag_name: ${{ github.event.release.tag_name }}
 ```
@@ -468,7 +468,7 @@ on:
   schedule:
     # Weekly is reasonable given real-infra cost. STAGGER the minute/hour across repos so a
     # dozen suites don't all apply at once and spike concurrent spend (this repo uses off-the-
-    # hour minutes elsewhere for the same reason — e.g. org-repo-bootstrap.yml).
+    # hour minutes elsewhere for the same reason — e.g. automation-repo-bootstrap.yml).
     - cron: "37 7 * * 1" # Mondays 07:37 UTC — pick a distinct slot per repo
   workflow_dispatch:
 
@@ -483,7 +483,7 @@ permissions:
 
 jobs:
   terratest:
-    uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@d06776a5840b53ff374f80f3c45e84181425b6d6 # v0.18.2
+    uses: Coalfire-CF/Actions/.github/workflows/ci-terratest.yml@79f66e88c53ad53a385d913278ee82f04147f983 # v0.19.0
     with:
       test_directory: test
       test_timeout: 45m
@@ -697,7 +697,7 @@ When adding Terratest to a Terraform module repo:
        - "dep/gomod"
    ```
 
-   If you use the `org-dependabot.yml` refresh workflow, this is auto-detected from
+   If you use the `automation-dependabot-refresh.yml` refresh workflow, this is auto-detected from
    `test/go.mod`.
 1. **Provision OIDC trust** in the target cloud (see
    [`ORG_TERRATEST_PROVISIONING.md`](./ORG_TERRATEST_PROVISIONING.md))

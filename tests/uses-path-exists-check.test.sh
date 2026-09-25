@@ -46,9 +46,9 @@ mkdir -p "$WORK/wf"
 cat > "$WORK/wf/ci.yml" <<EOF
 jobs:
   validate:
-    uses: Coalfire-CF/Actions/.github/workflows/org-terraform-validate.yml@${NEW} # v0.19.0
+    uses: Coalfire-CF/Actions/.github/workflows/ci-terraform-validate.yml@${NEW} # v0.19.0
   release:
-    uses: Coalfire-CF/Actions/.github/workflows/org-release.yml@${NEW} # v0.19.0
+    uses: Coalfire-CF/Actions/.github/workflows/release-please.yml@${NEW} # v0.19.0
   # uses: Coalfire-CF/Actions/.github/workflows/org-commented.yml@${NEW}
   scan:
     steps:
@@ -58,7 +58,7 @@ EOF
 printf '[{"filename":".github/workflows/ci.yml","status":"modified"},{"filename":".github/workflows/gone.yml","status":"removed"},{"filename":"README.md","status":"modified"}]' > "$WORK/files.json"
 
 EXISTING="$WORK/existing"
-printf '%s\n' ".github/workflows/org-terraform-validate.yml@${NEW}" "actions/gitleaks@${NEW}" > "$EXISTING"
+printf '%s\n' ".github/workflows/ci-terraform-validate.yml@${NEW}" "actions/gitleaks@${NEW}" > "$EXISTING"
 
 OUT=""
 run() {
@@ -74,13 +74,13 @@ getval() { sed -n "s/^$1=//p" <<< "$OUT" | head -1; }
 # 1. One path removed upstream: flagged, the other two pass, comment ignored.
 run
 [ "$(getval uses_checked)" = "3" ] || fail "case1 checked '$(getval uses_checked)' != 3"
-[ "$(getval uses_missing)" = ".github/workflows/org-release.yml@${NEW}" ] \
+[ "$(getval uses_missing)" = ".github/workflows/release-please.yml@${NEW}" ] \
   || fail "case1 missing '$(getval uses_missing)'"
 [ "$(getval uses_error)" = "false" ] || fail "case1 error"
 echo "OK: removed reusable workflow is flagged; commented ref and third-party ignored"
 
 # 2. Control: all paths exist -> nothing missing, still 3 checked.
-echo ".github/workflows/org-release.yml@${NEW}" >> "$EXISTING"
+echo ".github/workflows/release-please.yml@${NEW}" >> "$EXISTING"
 run
 [ "$(getval uses_checked)" = "3" ] || fail "case2 checked"
 [ -z "$(getval uses_missing)" ] || fail "case2 missing '$(getval uses_missing)'"

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Meta-test for the "Emit telemetry record" step in
-# .github/workflows/org-terratest.yml (#235 / WI-2.2).
+# .github/workflows/ci-terratest.yml (#235 / WI-2.2).
 #
 # Like the sweep test, the emit logic lives INLINE in the workflow run: body, so
 # this test EXTRACTS it from the YAML (it can never drift from what ships) and
@@ -22,7 +22,7 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-WF="${REPO_ROOT}/.github/workflows/org-terratest.yml"
+WF="${REPO_ROOT}/.github/workflows/ci-terratest.yml"
 
 fail() { echo "NOT OK: $1"; exit 1; }
 [ -f "$WF" ] || fail "workflow not found at $WF"

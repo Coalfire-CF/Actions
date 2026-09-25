@@ -6,7 +6,7 @@ GitHub has no native "apply a template when a repo is created": template
 repositories and starter workflows are opt-in pickers at creation time, the org
 `.github` repository only propagates community-health files (never workflows,
 CODEOWNERS, or dependabot.yml), and rulesets enforce rules but never add files.
-`org-repo-bootstrap.yml` is the convergence mechanism instead: a daily sweeper
+`automation-repo-bootstrap.yml` is the convergence mechanism instead: a daily sweeper
 that finds org repos missing the standard Actions baseline and opens one
 adoption PR per repo.
 
@@ -15,14 +15,14 @@ adoption PR per repo.
 1. **Enumerate** — all non-archived, non-fork org repos, minus the infra repos
    (`Actions`, `.github`, `.allstar`) and anything topic-exempt.
 1. **Decide per repo** — `scripts/repo-bootstrap.sh` applies the opt-out gates
-   (below), probes for adoption (`.github/workflows/org-release.yml` present ⇒
+   (below), probes for adoption (`.github/workflows/release-please.yml` present ⇒
    compliant), classifies the repo (Terraform via the languages API → the
    `terraform/` template set; private → `setup-bot-access.yml`), renders
    `templates/bootstrap/` with the latest release pin, and **drops any file
    that already exists in the target repo** (never overwrites).
 1. **Deliver** — branch `bootstrap/baseline-<version>`, one commit, one PR
    labeled `bootstrap/proposed` + `merge/approved`.
-1. **Land** — the reconcile sweeper (`org-dependabot-reconcile.yml`) merges the
+1. **Land** — the reconcile sweeper (`automation-dependabot-reconcile.yml`) merges the
    PR once its own checks are green; the App author is admitted by
    `pr-green-merge.sh`'s allowlist. The bootstrap PR's own callers run on the
    PR itself, so the repo's first CI run gates its own adoption.
@@ -96,19 +96,19 @@ check (e.g. gitleaks).
 
 ```bash
 # 1. Dry-run one repo (dispatch defaults to dry-run):
-gh workflow run org-repo-bootstrap.yml -f repo=Coalfire-CF/<canary>
+gh workflow run automation-repo-bootstrap.yml -f repo=Coalfire-CF/<canary>
 #    → expect WOULD-BOOTSTRAP with the class-appropriate file list
 
 # 2. Live canary:
-gh workflow run org-repo-bootstrap.yml -f repo=Coalfire-CF/<canary> -f dry_run=false
+gh workflow run automation-repo-bootstrap.yml -f repo=Coalfire-CF/<canary> -f dry_run=false
 #    → review the PR: pins resolve, dependabot seed valid, callers run on the PR
 
-# 3. Let reconcile land it (or dispatch org-dependabot-reconcile.yml), then:
-gh workflow run org-repo-bootstrap.yml -f repo=Coalfire-CF/<canary>
+# 3. Let reconcile land it (or dispatch automation-dependabot-reconcile.yml), then:
+gh workflow run automation-repo-bootstrap.yml -f repo=Coalfire-CF/<canary>
 #    → expect SKIP (compliant)
 
 # 4. Org-wide census before trusting the schedule:
-gh workflow run org-repo-bootstrap.yml
+gh workflow run automation-repo-bootstrap.yml
 #    → review every WOULD-BOOTSTRAP line for misclassifications
 ```
 

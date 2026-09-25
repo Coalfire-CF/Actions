@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Meta-test for the opt-in flake-rerun branch of the "Run Terratest" step in
-# .github/workflows/org-terratest.yml (#236 / WI-3.5).
+# .github/workflows/ci-terratest.yml (#236 / WI-3.5).
 #
 # gotestsum has a hard constraint: in --rerun-fails mode the packages must come from
 # --packages and must NOT also be passed positionally after `--` (passing both is an
@@ -15,7 +15,7 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-WF="${REPO_ROOT}/.github/workflows/org-terratest.yml"
+WF="${REPO_ROOT}/.github/workflows/ci-terratest.yml"
 
 fail() { echo "NOT OK: $1"; exit 1; }
 [ -f "$WF" ] || fail "workflow not found at $WF"

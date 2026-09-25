@@ -14,28 +14,32 @@ All workflows follow security-hardened patterns:
 
 ## Workflows
 
+File, workflow and job names follow the cs-delta naming contract. See
+[docs/PIPELINE_NAMING.md](docs/PIPELINE_NAMING.md), which also has the
+v1.0.0 old-to-new rename table for callers.
+
 ### PR Workflows
 
 Called by downstream repos on pull requests.
 
 | Workflow | File | Description |
 |----------|------|-------------|
-| Trivy PR | `org-trivy-pr.yml` | Security scanning of changed Terraform files |
-| Gitleaks | `org-gitleaks-pr.yml` | Secret detection on PR commits |
-| Terraform Validate | `org-terraform-validate.yml` | `terraform init` + `terraform validate` with PR comment. Takes `working_directory` (default `.`) — **repos with no root module must set or matrix it**, or the gate validates an empty directory |
-| Terraform fmt | `org-terraform-fmt.yml` | Format check and auto-fix for Terraform files |
-| Terraform Docs | `org-terraform-docs.yml` | Verifies `README.md` matches the module; never pushes. Authors regenerate locally with the pinned pre-commit hook. Drift fails human PRs with the diff and warns on Dependabot PRs ([docs](docs/ORG_TERRAFORM_DOCS.md)) |
-| Terraform Plan | `org-terraform-plan.yml` | Terraform plan with PR comment |
-| Terraform Apply | `org-terraform-apply.yml` | Terraform apply (manual trigger or post-merge) |
-| Markdown Lint | `org-markdown-lint.yml` | Lint changed markdown files with markdownlint-cli2 |
-| Dependabot Refresh | `org-dependabot.yml` | Auto-detect ecosystems and regenerate dependabot.yml |
-| Dependabot Auto-Merge | `org-dependabot-auto-merge.yml` | Evaluate and auto-merge non-terraform Dependabot PRs ([docs](docs/ORG_DEPENDABOT_AUTO_MERGE.md)) |
-| Label Sync | `org-label-sync.yml` | Sync Dependabot auto-merge label taxonomy to downstream repos ([taxonomy](docs/ORG_LABEL_TAXONOMY.md)) |
-| Trivy Exception Review | `org-trivy-exception-review.yml` | Weekly review of Trivy `.trivyignore` exceptions |
-| Terraform Source Pin | `org-terraform-source-pin.yml` | SHA-preferred pin gate for Coalfire-CF module sources **and** workflow `uses:` refs — advisory (`strict: false`) ([docs](docs/ORG_SOURCE_PIN.md)) |
-| Terraform Version Band | `org-terraform-version-band.yml` | Enforces the org Terraform version band `>= 1.15.7, < 2.0.0` — advisory ([docs](docs/ORG_VERSION_BAND.md)) |
-| OPA Policy Check | `org-opa.yml` | Tier-1 advisory OPA/Rego policy-as-code runner ([docs](docs/ORG_OPA.md)) |
-| Terratest | `org-terratest.yml` | Reusable Terratest / behavioral-test harness with multi-cloud OIDC ([docs](docs/ORG_TERRATEST.md)) |
+| Trivy PR | `ci-security-trivy.yml` | Security scanning of changed Terraform files |
+| Gitleaks | `ci-security-gitleaks.yml` | Secret detection on PR commits |
+| Terraform Validate | `ci-terraform-validate.yml` | `terraform init` + `terraform validate` with PR comment. Takes `working_directory` (default `.`) — **repos with no root module must set or matrix it**, or the gate validates an empty directory |
+| Terraform fmt | `ci-terraform-format.yml` | Format check and auto-fix for Terraform files |
+| Terraform Docs | `ci-terraform-docs.yml` | Verifies `README.md` matches the module; never pushes. Authors regenerate locally with the pinned pre-commit hook. Drift fails human PRs with the diff and warns on Dependabot PRs ([docs](docs/ORG_TERRAFORM_DOCS.md)) |
+| Terraform Plan | `deploy-terraform-plan.yml` | Terraform plan with PR comment |
+| Terraform Apply | `deploy-terraform-apply.yml` | Terraform apply (manual trigger or post-merge) |
+| Markdown Lint | `ci-markdown.yml` | Lint changed markdown files with markdownlint-cli2 |
+| Dependabot Refresh | `automation-dependabot-refresh.yml` | Auto-detect ecosystems and regenerate dependabot.yml |
+| Dependabot Auto-Merge | `automation-dependabot-auto-merge.yml` | Evaluate and auto-merge non-terraform Dependabot PRs ([docs](docs/ORG_DEPENDABOT_AUTO_MERGE.md)) |
+| Label Sync | `automation-label-sync.yml` | Sync Dependabot auto-merge label taxonomy to downstream repos ([taxonomy](docs/ORG_LABEL_TAXONOMY.md)) |
+| Trivy Exception Review | `automation-trivy-exception-review.yml` | Weekly review of Trivy `.trivyignore` exceptions |
+| Terraform Source Pin | `ci-terraform-source-pin.yml` | SHA-preferred pin gate for Coalfire-CF module sources **and** workflow `uses:` refs — advisory (`strict: false`) ([docs](docs/ORG_SOURCE_PIN.md)) |
+| Terraform Version Band | `ci-terraform-version-band.yml` | Enforces the org Terraform version band `>= 1.15.7, < 2.0.0` — advisory ([docs](docs/ORG_VERSION_BAND.md)) |
+| OPA Policy Check | `ci-policy-opa.yml` | Tier-1 advisory OPA/Rego policy-as-code runner ([docs](docs/ORG_OPA.md)) |
+| Terratest | `ci-terratest.yml` | Reusable Terratest / behavioral-test harness with multi-cloud OIDC ([docs](docs/ORG_TERRATEST.md)) |
 
 ### Release Workflows
 
@@ -43,27 +47,27 @@ Called on merge to main.
 
 | Workflow | File | Description |
 |----------|------|-------------|
-| Release | `org-release.yml` | Release-please + security scans + clean tarball + Slack notification |
-| Release Clean | `org-release-clean.yml` | Produces stripped release tarball (no .github/, docs/, etc.) |
-| Trivy Release | `org-trivy-release.yml` | Full-repo Trivy scan on release |
-| Gitleaks Release | `org-gitleaks-release.yml` | Full-history secret scan on release |
+| Release | `release-please.yml` | Release-please + security scans + clean tarball + Slack notification |
+| Release Clean | `release-clean-archive.yml` | Produces stripped release tarball (no .github/, docs/, etc.) |
+| Trivy Release | `release-security-trivy.yml` | Full-repo Trivy scan on release |
+| Gitleaks Release | `release-security-gitleaks.yml` | Full-history secret scan on release |
 
 ### Utility Workflows
 
 | Workflow | File | Description |
 |----------|------|-------------|
-| Slack Notify | `org-slack-notify.yml` | Sends release, failure, or health-check notifications to Slack |
-| Jira Sync | `org-jira-sync.yml` | Syncs GitHub issues to Jira (Cloud or Data Center) |
-| Terraform Version Check | `org-terraform-version-check.yml` | Scheduled check for new Terraform versions, auto-creates PRs |
-| Repo Bootstrap | `org-repo-bootstrap.yml` | Daily sweeper that opens baseline-adoption PRs (pinned caller bundle from `templates/bootstrap/`) on org repos that never adopted the standard workflows ([docs](docs/ORG_REPO_BOOTSTRAP.md)) |
+| Slack Notify | `automation-slack-notify.yml` | Sends release, failure, or health-check notifications to Slack |
+| Jira Sync | `automation-jira-sync.yml` | Syncs GitHub issues to Jira (Cloud or Data Center) |
+| Terraform Version Check | `automation-terraform-version-check.yml` | Scheduled check for new Terraform versions, auto-creates PRs |
+| Repo Bootstrap | `automation-repo-bootstrap.yml` | Daily sweeper that opens baseline-adoption PRs (pinned caller bundle from `templates/bootstrap/`) on org repos that never adopted the standard workflows ([docs](docs/ORG_REPO_BOOTSTRAP.md)) |
 
 ### Legacy / Internal
 
 | Workflow | File | Description |
 |----------|------|-------------|
-| Local Release | `release.yml` | Release workflow for the Actions repo itself |
-| Sync Auto-Merge Labels | `label-sync.yml` | Self-caller: syncs the auto-merge label taxonomy on this repo (weekly + manual) |
-| Dependabot Auto-Merge (self) | `dependabot-auto-merge.yml` | Self-caller: runs auto-merge evaluation on this repo's own Dependabot PRs |
+| Local Release | `internal-release.yml` | Release workflow for the Actions repo itself |
+| Sync Auto-Merge Labels | `internal-label-sync.yml` | Self-caller: syncs the auto-merge label taxonomy on this repo (weekly + manual) |
+| Dependabot Auto-Merge (self) | `internal-dependabot-auto-merge.yml` | Self-caller: runs auto-merge evaluation on this repo's own Dependabot PRs |
 
 ## Usage
 
@@ -79,7 +83,7 @@ Called on merge to main.
 Downstream repos call these workflows via `workflow_call`. Example `.github/workflows/` setup:
 
 ```yaml
-# .github/workflows/org-release.yml
+# .github/workflows/release-please.yml
 name: Org Release
 on:
   push:
@@ -92,7 +96,7 @@ permissions:
 
 jobs:
   create-release:
-    uses: Coalfire-CF/Actions/.github/workflows/org-release.yml@d06776a5840b53ff374f80f3c45e84181425b6d6 # v0.18.2
+    uses: Coalfire-CF/Actions/.github/workflows/release-please.yml@79f66e88c53ad53a385d913278ee82f04147f983 # v0.19.0
     secrets: inherit
     with:
       slack_channel_id: 'C0123456789'
@@ -106,7 +110,7 @@ Access to private Terraform module repositories is controlled using a GitHub App
 # Private repo — pass app credentials for module access
 jobs:
   validate:
-    uses: Coalfire-CF/Actions/.github/workflows/org-terraform-validate.yml@d06776a5840b53ff374f80f3c45e84181425b6d6 # v0.18.2
+    uses: Coalfire-CF/Actions/.github/workflows/ci-terraform-validate.yml@79f66e88c53ad53a385d913278ee82f04147f983 # v0.19.0
     with:
       terraform_version: '1.15.7' # or omit to use .terraform-version
     secrets:
@@ -116,7 +120,7 @@ jobs:
 # Public repo — no app credentials needed
 jobs:
   validate:
-    uses: Coalfire-CF/Actions/.github/workflows/org-terraform-validate.yml@d06776a5840b53ff374f80f3c45e84181425b6d6 # v0.18.2
+    uses: Coalfire-CF/Actions/.github/workflows/ci-terraform-validate.yml@79f66e88c53ad53a385d913278ee82f04147f983 # v0.19.0
     with:
       terraform_version: '1.15.7' # or omit to use .terraform-version
 ```
@@ -136,7 +140,7 @@ Wrapper around [terraform-docs GitHub Actions](https://github.com/terraform-docs
 # Root module and submodules
 jobs:
   terraform-docs:
-    uses: Coalfire-CF/Actions/.github/workflows/org-terraform-docs.yml@d06776a5840b53ff374f80f3c45e84181425b6d6 # v0.18.2
+    uses: Coalfire-CF/Actions/.github/workflows/ci-terraform-docs.yml@79f66e88c53ad53a385d913278ee82f04147f983 # v0.19.0
     with:
       recursive: true
 ```

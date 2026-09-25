@@ -1,0 +1,478 @@
+name: "Automation: Dependabot refresh"
+
+on:
+  workflow_call:
+    inputs:
+      slack_channel_id:
+        description: 'Slack channel ID for failure notifications (optional)'
+        required: false
+        type: string
+        default: ''
+      head_branch:
+        description: "Branch to update (pass github.head_ref for PRs)"
+        required: true
+        type: string
+      include_github_actions:
+        description: 'Deprecated — github-actions is now auto-detected. Kept for backwards compatibility.'
+        required: false
+        type: string
+        default: "true"
+      default_interval:
+        description: 'Schedule interval for all detected ecosystems'
+        required: false
+        type: string
+        default: "daily"
+      depb_path:
+        description: "Path to dependabot.yml"
+        required: false
+        type: string
+        default: ".github/dependabot.yml"
+      exclude_paths:
+        description: 'Comma-separated list of glob patterns to exclude from all ecosystem detection (e.g., "modules/*,test/*")'
+        required: false
+        type: string
+        default: ""
+      commit_message:
+        description: "Commit message"
+        required: false
+        type: string
+        default: "chore: refresh dependabot.yml"
+    secrets:
+      SLACK_BOT_TOKEN:
+        description: 'Slack bot token for failure notifications (required if slack_channel_id is set)'
+        required: false
+
+permissions:
+  # #222: this generator commits + pushes the generated dependabot.yml (needs
+  # contents:write) but makes no PR-API calls — drop the unused pull-requests grant.
+  contents: write
+
+jobs:
+  sync:
+    name: Sync dependabot.yml and Terraform sources
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout target branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.head_branch }}
+          fetch-depth: 0
+
+      - name: Configure git identity
+        env:
+          GIT_ACTOR: ${{ github.actor }}
+        run: |
+          git config user.name "$GIT_ACTOR"
+          git config user.email "${GIT_ACTOR}@users.noreply.github.com"
+          git config --global --add safe.directory '*'
+
+      - name: Run refresh (embedded script)
+        id: run
+        env:
+          DEFAULT_INTERVAL: ${{ inputs.default_interval }}
+          REPO_ROOT: ${{ github.workspace }}
+          DEPB_PATH: ${{ inputs.depb_path }}
+          EXCLUDE_PATHS: ${{ inputs.exclude_paths }}
+        run: |
+          set -euo pipefail
+          cat > /tmp/dependabot_refresh.sh <<'BASH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          DEPB_PATH="${DEPB_PATH:-.github/dependabot.yml}"
+          DEFAULT_INTERVAL="${DEFAULT_INTERVAL:-daily}"
+          REPO_ROOT="${REPO_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+          EXCLUDE_PATHS="${EXCLUDE_PATHS:-}"
+
+          # Deterministic per-repo schedule offset (grade-A #13): spread the
+          # fleet's daily Dependabot fanout across the day instead of a shared
+          # top-of-window herd. Same repo name -> same HH:MM slot (idempotent
+          # re-runs = zero diff; no runtime randomness). This is the identical
+          # algorithm as scripts/stagger-slot.sh — the canonical, unit-tested
+          # reference (tests/stagger-slot.test.sh); the generator runs in the
+          # consumer checkout so it inlines rather than self-checking-out Actions.
+          STAGGER_HEX="$(printf '%s' "${GITHUB_REPOSITORY:-unknown/unknown}" | sha256sum | cut -c1-8)"
+          STAGGER_MIN=$(( 16#$STAGGER_HEX % 1440 ))
+          STAGGER_TIME="$(printf '%02d:%02d' $(( STAGGER_MIN / 60 )) $(( STAGGER_MIN % 60 )))"
+
+          log() { printf '%s\n' "$*" >&2; }
+          die() { log "ERROR: $*"; exit 1; }
+
+          require_tools() {
+            for t in awk sort perl find; do
+              command -v "$t" >/dev/null 2>&1 || die "$t is required"
+            done
+          }
+
+          # ---- Ecosystem manifest definitions ----
+          # Each ecosystem maps to a pipe-separated list of -name patterns for find.
+          # The directory containing a matching file becomes a dependabot entry.
+          declare -A ECOSYSTEM_MANIFESTS=(
+            [bundler]="Gemfile"
+            [cargo]="Cargo.toml"
+            [composer]="composer.json"
+            [docker]="Dockerfile|docker-compose.yml|docker-compose.yaml"
+            [elm]="elm.json"
+            [github-actions]=".github/workflows/*.yml|.github/workflows/*.yaml"
+            [gitsubmodule]=".gitmodules"
+            [gomod]="go.mod"
+            [gradle]="build.gradle|build.gradle.kts"
+            [maven]="pom.xml"
+            [mix]="mix.exs"
+            [npm]="package.json"
+            [nuget]="*.csproj|*.fsproj|packages.config"
+            [pip]="requirements.txt|Pipfile|setup.py|pyproject.toml"
+            [pub]="pubspec.yaml"
+            [swift]="Package.swift"
+            [terraform]="*.tf"
+            [devcontainers]=".devcontainer/devcontainer.json|.devcontainer/*/devcontainer.json"
+          )
+
+          # Convert an absolute path to a repo-relative dependabot directory ("/" for root)
+          to_relative_dir() {
+            local abs_dir="$1"
+            if [[ "$abs_dir" == "$REPO_ROOT" ]]; then
+              echo "/"
+            else
+              local rel="${abs_dir#"$REPO_ROOT"}"
+              [[ -z "$rel" ]] && rel="/"
+              [[ "${rel:0:1}" != "/" ]] && rel="/$rel"
+              rel="$(printf '%s' "$rel" | sed -E 's#/+#/#g; s#/\./#/#g; s#/$##')"
+              [[ -z "$rel" ]] && rel="/"
+              echo "$rel"
+            fi
+          }
+
+          # Find unique repo-relative dirs containing files matching the given patterns.
+          # For github-actions, the directory is always "/".
+          # For devcontainers, the directory is always "/".
+          # Args: ecosystem_name  manifest_patterns (pipe-separated)
+          find_ecosystem_dirs() {
+            local ecosystem="$1"
+            local patterns="$2"
+            declare -A seen=()
+            declare -a out=()
+
+            IFS='|' read -ra pats <<< "$patterns"
+
+            for pat in "${pats[@]}"; do
+              # If pattern contains a path separator, treat it as a path-glob from REPO_ROOT
+              if [[ "$pat" == */* ]]; then
+                # Use bash globbing for path-based patterns
+                local full_pattern="${REPO_ROOT}/${pat}"
+                # Enable globbing
+                shopt -s nullglob globstar
+                local matches=( $full_pattern )
+                shopt -u nullglob globstar
+                for f in "${matches[@]}"; do
+                  [[ -f "$f" ]] || continue
+                  # For github-actions and devcontainers, directory is always "/"
+                  local dir
+                  if [[ "$ecosystem" == "github-actions" || "$ecosystem" == "devcontainers" ]]; then
+                    dir="/"
+                  else
+                    dir="$(to_relative_dir "$(dirname "$f")")"
+                  fi
+                  if [[ -z "${seen[$dir]+x}" ]]; then
+                    seen[$dir]=1
+                    out+=("$dir")
+                  fi
+                done
+              else
+                # Simple filename pattern — use find
+                mapfile -d '' -t files < <(find "$REPO_ROOT" -type f -name "$pat" -not -path '*/.git/*' -print0 2>/dev/null)
+                for f in "${files[@]}"; do
+                  local dir
+                  dir="$(to_relative_dir "$(dirname "$f")")"
+                  if [[ -z "${seen[$dir]+x}" ]]; then
+                    seen[$dir]=1
+                    out+=("$dir")
+                  fi
+                done
+              fi
+            done
+
+            if (( ${#out[@]} > 0 )); then
+              printf "%s\n" "${out[@]}" | sort -u
+            fi
+          }
+
+          # Check if a directory should be excluded based on EXCLUDE_PATHS patterns
+          is_excluded() {
+            local dir="$1"
+            if [[ -z "$EXCLUDE_PATHS" ]]; then
+              return 1
+            fi
+            IFS=',' read -ra patterns <<< "$EXCLUDE_PATHS"
+            local dir_stripped="${dir#/}"
+            for pat in "${patterns[@]}"; do
+              pat="$(printf '%s' "$pat" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+              [[ -z "$pat" ]] && continue
+              # shellcheck disable=SC2254
+              if [[ "$dir_stripped" == $pat ]]; then
+                return 0
+              fi
+            done
+            return 1
+          }
+
+          # Map ecosystem names to dep/* labels for auto-merge system
+          declare -A ECOSYSTEM_LABELS=(
+            [bundler]="dep/bundler"
+            [cargo]="dep/cargo"
+            [composer]="dep/composer"
+            [docker]="dep/docker"
+            [elm]="dep/other"
+            [github-actions]="dep/github-actions"
+            [gitsubmodule]="dep/other"
+            [gomod]="dep/gomod"
+            [gradle]="dep/other"
+            [maven]="dep/other"
+            [mix]="dep/other"
+            [npm]="dep/npm"
+            [nuget]="dep/nuget"
+            [pip]="dep/pip"
+            [pub]="dep/other"
+            [swift]="dep/other"
+            [terraform]="dep/terraform-module"
+            [devcontainers]="dep/other"
+          )
+
+          generate_dependabot_yaml() {
+            cat <<'YAML'
+          # Auto-generated by dependabot_refresh.sh
+          # See: https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+
+          version: 2
+          updates:
+          YAML
+
+            local has_entries=false
+
+            # Sort ecosystem names for deterministic output
+            mapfile -t sorted_ecosystems < <(printf '%s\n' "${!ECOSYSTEM_MANIFESTS[@]}" | sort)
+
+            for ecosystem in "${sorted_ecosystems[@]}"; do
+              local patterns="${ECOSYSTEM_MANIFESTS[$ecosystem]}"
+              mapfile -t dirs < <(find_ecosystem_dirs "$ecosystem" "$patterns")
+
+              # Filter empty entries
+              local filtered=()
+              for d in "${dirs[@]:-}"; do
+                [[ -n "$d" ]] && filtered+=("$d")
+              done
+              dirs=("${filtered[@]+"${filtered[@]}"}")
+
+              if (( ${#dirs[@]} == 0 )); then
+                continue
+              fi
+
+              # Resolve the dep/* label for this ecosystem
+              local dep_label="${ECOSYSTEM_LABELS[$ecosystem]:-dep/other}"
+
+              # Collect the non-excluded dirs for this ecosystem
+              local kept_dirs=()
+              for d in "${dirs[@]}"; do
+                if is_excluded "$d"; then
+                  log "  Excluding $ecosystem: $d (matched exclude pattern)"
+                  continue
+                fi
+                kept_dirs+=("$d")
+              done
+              if (( ${#kept_dirs[@]} == 0 )); then
+                continue
+              fi
+              has_entries=true
+
+              if [[ "$ecosystem" == "github-actions" ]]; then
+                # github-actions is forced to "/" (one dir, no fan-out). Keep the
+                # singular directory: entry + the two-group split verbatim.
+                # Group version bumps (minor+patch only — majors stay
+                # individually-reviewable singletons; the pipeline gates them
+                # regardless). TWO homogeneous groups: org callers score 0 on
+                # OpenSSF Scorecard (no data), and the first-party waiver is
+                # all-must-match — a mixed group would chronically block on
+                # low-scorecard. Split groups keep waiver semantics coherent.
+                # NOTE: keep this groups block byte-identical to the fleet injector's.
+                for d in "${kept_dirs[@]}"; do
+                  cat <<YAML
+            - package-ecosystem: "${ecosystem}"
+              directory: "${d}"
+              schedule:
+                interval: "${DEFAULT_INTERVAL}"
+                time: "${STAGGER_TIME}"
+              commit-message:
+                prefix: "chore"
+                include: "scope"
+              labels:
+                - "${dep_label}"
+          YAML
+                  cat <<'YAML'
+              groups:
+                org-actions:
+                  applies-to: version-updates
+                  patterns: ["Coalfire-CF/*"]
+                  update-types: ["minor", "patch"]
+                third-party:
+                  applies-to: version-updates
+                  patterns: ["*"]
+                  exclude-patterns: ["Coalfire-CF/*"]
+                  update-types: ["minor", "patch"]
+          YAML
+                  log "  Found ${ecosystem} in ${d}"
+                done
+              else
+                # Every other ecosystem: ONE entry listing all dirs under
+                # directories: (plural) with group-by: dependency-name, so a
+                # dependency referenced in real + example + test dirs collapses
+                # into a single PR instead of one PR per directory. No
+                # update-types -> majors are included; group-by keeps each PR to
+                # one dependency, so a major only blocks its own PR at the gate.
+                local directories_block=""
+                for d in "${kept_dirs[@]}"; do
+                  directories_block+="      - \"${d}\""$'\n'
+                done
+                directories_block="${directories_block%$'\n'}"
+                cat <<YAML
+            - package-ecosystem: "${ecosystem}"
+              directories:
+          ${directories_block}
+              schedule:
+                interval: "${DEFAULT_INTERVAL}"
+                time: "${STAGGER_TIME}"
+              commit-message:
+                prefix: "chore"
+                include: "scope"
+              labels:
+                - "${dep_label}"
+              groups:
+                ${ecosystem}:
+                  applies-to: version-updates
+                  group-by: dependency-name
+                  patterns: ["*"]
+                ${ecosystem}-security:
+                  applies-to: security-updates
+                  group-by: dependency-name
+                  patterns: ["*"]
+          YAML
+                log "  Found ${ecosystem} in ${#kept_dirs[@]} dir(s)"
+              fi
+
+            done
+
+            # If no entries were found, emit an empty list so YAML stays valid
+            if [[ "$has_entries" == false ]]; then
+              echo "  []"
+            fi
+          }
+
+          # Write file only if changed; return 0 if wrote, 1 if unchanged
+          safe_write_file() {
+            local target="$1"
+            local temp="$2"
+            mkdir -p "$(dirname "$target")"
+            if [[ -f "$target" ]] && diff -q "$target" "$temp" >/dev/null 2>&1; then
+              rm -f "$temp"
+              return 1
+            fi
+            mv -f "$temp" "$target"
+            return 0
+          }
+
+          # Rewrite Terraform module sources: github.com/... -> git::https://github.com/...
+          rewrite_tf_sources() {
+            local changed_files=0 matched_lines=0
+            mapfile -d '' -t tfs < <(find "$REPO_ROOT" -type f -name '*.tf' -not -path '*/.git/*' -print0)
+            for tf in "${tfs[@]}"; do
+              if grep -Eq 'source\s*=\s*"\s*github\.com/' "$tf"; then
+                count=$(grep -E 'source\s*=\s*"\s*github\.com/' -n "$tf" | wc -l | tr -d ' ')
+                matched_lines=$((matched_lines + count))
+                perl -0777 -i -pe 's/(source\s*=\s*")\s*github\.com\//${1}git::https:\/\/github.com\//g' "$tf"
+                changed_files=$((changed_files + 1))
+              fi
+            done
+            log "Rewrote module sources in $changed_files file(s); matched $matched_lines source line(s)."
+            (( changed_files > 0 ))
+          }
+
+          # ---- main ----
+          require_tools
+          log "Repo root: $REPO_ROOT"
+          log "Scanning for all supported Dependabot ecosystems..."
+
+          tmpfile="$(mktemp)"
+          generate_dependabot_yaml > "$tmpfile"
+
+          changed_yml=0
+          if safe_write_file "$DEPB_PATH" "$tmpfile"; then
+            changed_yml=1
+            log "Wrote ${DEPB_PATH}"
+          else
+            log "${DEPB_PATH} already up to date."
+          fi
+
+          # Terraform source rewriting (only if .tf files exist)
+          changed_tf=0
+          if find "$REPO_ROOT" -type f -name '*.tf' -not -path '*/.git/*' -print -quit | grep -q .; then
+            rewrite_tf_sources && changed_tf=1 || true
+          fi
+
+          # Exit 10 if anything changed so the workflow can decide to commit
+          if (( changed_yml == 1 || changed_tf == 1 )); then
+            exit 10
+          else
+            exit 0
+          fi
+          BASH
+
+          chmod +x /tmp/dependabot_refresh.sh
+          set +e
+          /tmp/dependabot_refresh.sh
+          code=$?
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          set -e
+
+          echo "---- git status ----"
+          git status --short || true
+          echo "---- changed files ----"
+          git diff --name-only -- . ':!**/.git/**' || true
+
+      # ACTOR-gate the push (issue #149): a Dependabot-actor run gets a read-only
+      # GITHUB_TOKEN and would false-red on push. Gated on github.actor (token
+      # capability), not pull_request.user.login — a human push to a Dependabot
+      # branch gets a write token and should push.
+      - name: Commit & push (if changed)
+        if: ${{ steps.run.outputs.exit_code == '10' && github.actor != 'dependabot[bot]' }}
+        env:
+          HEAD_BRANCH: ${{ inputs.head_branch }}
+          COMMIT_MESSAGE: ${{ inputs.commit_message }}
+        run: |
+          set -euo pipefail
+          git checkout "${HEAD_BRANCH}"
+          git pull --ff-only origin "${HEAD_BRANCH}" || true
+          git add -A
+          git commit -m "${COMMIT_MESSAGE}"
+          git push origin "HEAD:${HEAD_BRANCH}"
+
+      # Keep the drift visible on Dependabot runs (can't push; read-only token
+      # also can't comment) — annotation + step summary.
+      - name: Report dependabot.yml drift (Dependabot read-only token)
+        if: ${{ steps.run.outputs.exit_code == '10' && github.actor == 'dependabot[bot]' }}
+        run: |
+          echo "::warning::.github/dependabot.yml is out of date on this Dependabot PR and could not be auto-pushed (read-only Dependabot token). A maintainer push — or @dependabot rebase after a human commit — will refresh it (issue #149)."
+          {
+            echo "### dependabot.yml drift (not auto-pushed)"
+            echo ""
+            echo "This PR runs under the read-only Dependabot token; the regenerated dependabot.yml could not be committed. Push as a maintainer to refresh it."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  notify-failure:
+    name: Notify on failure
+    needs: sync
+    if: failure() && inputs.slack_channel_id != ''
+    uses: ./.github/workflows/automation-slack-notify.yml
+    secrets:
+      SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+    with:
+      notification-type: failure
+      channel-id: ${{ inputs.slack_channel_id }}

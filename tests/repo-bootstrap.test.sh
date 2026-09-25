@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Meta-test for scripts/repo-bootstrap.sh — the per-repo worker behind the
-# org-repo-bootstrap sweeper (.github/workflows/org-repo-bootstrap.yml).
+# org-repo-bootstrap sweeper (.github/workflows/automation-repo-bootstrap.yml).
 #
 # Same philosophy as tests/reconcile-sweeper.test.sh: the sweep workflow is a
 # thin enumerate-loop; the helper IS the testable safety surface. We drive it
@@ -170,10 +170,22 @@ echo "$OUT" | grep -q "WOULD-BOOTSTRAP Coalfire-CF/new-repo (13 files)" || fail 
 echo "$OUT" | grep -q "_header.md" && fail "stub partials must not be proposed when README.md exists"
 echo "OK: existing README.md → terraform-docs baseline dropped (13 files)"
 
-# ---- Case 3: adopted repo (org-release.yml present) → SKIP (compliant). ----
-run_helper "$META_PUB" "$LANGS_NONE" "$PRS_NONE" ".github/workflows/org-release.yml" true 1
+# ---- Case 3: adopted repo (release-please.yml present) → SKIP (compliant). ----
+run_helper "$META_PUB" "$LANGS_NONE" "$PRS_NONE" ".github/workflows/release-please.yml" true 1
 echo "$OUT" | grep -q "SKIP Coalfire-CF/new-repo (compliant)" || fail "adopted repo should SKIP compliant (got: $OUT)"
 echo "OK: adopted repo → SKIP (compliant)"
+
+# ---- Case 3b: repo on the pre-1.0 caller names is adopted too. Without this a
+#      not-yet-swept repo would be handed a duplicate set of callers. ----
+run_helper "$META_PUB" "$LANGS_NONE" "$PRS_NONE" ".github/workflows/org-release.yml" true 1
+echo "$OUT" | grep -q "SKIP Coalfire-CF/new-repo (compliant)" || fail "legacy org-release.yml should SKIP compliant (got: $OUT)"
+echo "OK: legacy org-release.yml → SKIP (compliant)"
+
+# ---- Case 3c: a legacy caller name blocks its renamed baseline file. ----
+run_helper "$META_PUB" "$LANGS_NONE" "$PRS_NONE" ".github/workflows/org-gitleaks-pr.yml" true 1
+echo "$OUT" | grep -q "WOULD-BOOTSTRAP Coalfire-CF/new-repo (8 files)" || fail "legacy gitleaks caller should drop ci-security-gitleaks.yml, leaving 8 (got: $OUT)"
+echo "$OUT" | grep -q "ci-security-gitleaks.yml" && fail "ci-security-gitleaks.yml must not be proposed next to org-gitleaks-pr.yml"
+echo "OK: legacy org-gitleaks-pr.yml → renamed caller not proposed (8 files)"
 
 # ---- Case 4: opt-out gates — archived / fork / topic / marker file. ----
 run_helper "$META_ARCHIVED" "$LANGS_NONE" "$PRS_NONE" "" true 1
@@ -215,7 +227,7 @@ RENDERED="$(find "$CLONE_DIR" -type f \( -name '*.yml' -o -name '*.json' \) 2>/d
 # shellcheck disable=SC2086 # $RENDERED is a newline-separated file list; must word-split into grep
 grep -rl "__ACTIONS_SHA__\|__ACTIONS_VERSION__\|__STAGGER_SLOT__" $RENDERED && fail "placeholders survived rendering"
 # shellcheck disable=SC2086 # $RENDERED is a newline-separated file list; must word-split into grep
-grep -q "@${SHA_OK} # v0.12.1" "$(dirname "$(echo "$RENDERED" | head -1)")"/../workflows/org-release.yml 2>/dev/null || \
+grep -q "@${SHA_OK} # v0.12.1" "$(dirname "$(echo "$RENDERED" | head -1)")"/../workflows/release-please.yml 2>/dev/null || \
   grep -rq "@${SHA_OK} # v0.12.1" $RENDERED || fail "rendered callers must carry the SHA pin"
 # shellcheck disable=SC2086 # $RENDERED is a newline-separated file list; must word-split into grep
 grep -rqE 'time: "[0-2][0-9]:[0-5][0-9]"' $RENDERED || fail "dependabot seed must carry a rendered HH:MM stagger slot"

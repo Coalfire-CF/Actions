@@ -1,4 +1,4 @@
-# Dogfoods the grouped config org-dependabot.yml generates for consumer repos
+# Dogfoods the grouped config automation-dependabot-refresh.yml generates for consumer repos
 # (two groups: Coalfire-CF minors/patches vs third-party; majors arrive as
 # individually-reviewable singleton PRs).
 version: 2
@@ -21,7 +21,7 @@ updates:
         exclude-patterns: ["Coalfire-CF/*"]
         update-types: ["minor", "patch"]
   # npm (#204): this repo ships package.json + package-lock.json (markdownlint-cli2),
-  # which org-dependabot.yml maps to the npm ecosystem — so the dogfood must declare
+  # which automation-dependabot-refresh.yml maps to the npm ecosystem — so the dogfood must declare
   # it too, or advisories against the pinned tree open no bump PRs. Mirrors the
   # generator's non-actions shape: directories: (plural) + group-by: dependency-name,
   # so a dependency spanning multiple dirs collapses into one PR instead of one PR

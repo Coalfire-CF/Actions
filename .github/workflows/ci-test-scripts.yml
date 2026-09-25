@@ -1,0 +1,173 @@
+name: "CI: Test scripts"
+
+# Runs the repository's script meta-tests (tests/*.test.sh) on every PR that
+# touches the gate scripts, their tests/fixtures, or this workflow. These tests
+# exercise scripts/source-pin-check.sh and scripts/uses-pin-check.sh against the
+# fixtures under tests/fixtures/ and assert PASS/WARN/FAIL + strict behavior.
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/**'
+      - 'tests/**'
+      - '.github/workflows/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-scripts:
+    name: Run tests/*.test.sh
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Run all script meta-tests
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          tests=(tests/*.test.sh)
+          if [ ${#tests[@]} -eq 0 ]; then
+            echo "::error::no tests/*.test.sh found"
+            exit 1
+          fi
+          rc=0
+          for t in "${tests[@]}"; do
+            echo "::group::${t}"
+            chmod +x "$t"
+            if bash "$t"; then
+              echo "PASS: ${t}"
+            else
+              echo "::error file=${t}::meta-test failed"
+              rc=1
+            fi
+            echo "::endgroup::"
+          done
+          exit "$rc"
+
+  shellcheck:
+    name: Shellcheck scripts/*.sh
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Run shellcheck over all committed scripts
+        run: |
+          set -euo pipefail
+          # Full shellcheck at DEFAULT severity (catches style/info such as
+          # SC2086) over every committed gate/decision script. The inline-heredoc
+          # nits the actionlint job defers (it runs SHELLCHECK_OPTS=-S warning)
+          # are covered here now that the auto-merge decision logic lives in
+          # scripts/*.sh (grade-A plan item #10). shellcheck is preinstalled on
+          # ubuntu-latest runners.
+          shopt -s nullglob
+          scripts=(scripts/*.sh)
+          if [ ${#scripts[@]} -eq 0 ]; then
+            echo "::error::no scripts/*.sh found"
+            exit 1
+          fi
+          shellcheck "${scripts[@]}"
+          echo "OK: shellcheck clean across ${#scripts[@]} script(s)."
+
+  actionlint:
+    name: Lint workflows (actionlint)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install actionlint (pinned + checksum-verified)
+        run: |
+          set -euo pipefail
+          ACTIONLINT_VERSION=1.7.12
+          ACTIONLINT_SHA256=8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+          curl -sSfL -o /tmp/actionlint.tar.gz \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          echo "${ACTIONLINT_SHA256}  /tmp/actionlint.tar.gz" | sha256sum -c -
+          sudo tar -xzf /tmp/actionlint.tar.gz -C /usr/local/bin actionlint
+          actionlint --version
+
+      - name: Run actionlint over all workflows
+        env:
+          # Gate at shellcheck warning+ severity. The style/info nits in the large
+          # inline heredocs are deferred to the scripts/*.sh extraction (grade-A plan
+          # item #10), which runs full shellcheck over the extracted files.
+          SHELLCHECK_OPTS: -S warning
+        run: actionlint -color
+
+  workflow-naming:
+    name: Guard — workflow naming (cs-delta rule 20)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check workflow file, display, and job names
+        run: bash scripts/workflow-naming-check.sh .github/workflows
+
+  no-main-refs:
+    name: Guard — no mutable main refs (F36/N2 regression)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Assert no raw Actions/main fetch and no @main sibling calls
+        run: |
+          set -uo pipefail
+          rc=0
+          # F36: no workflow may resolve a value from a mutable Actions/main raw URL.
+          if grep -rnE 'raw\.githubusercontent\.com/Coalfire-CF/Actions/main' .github/workflows/; then
+            echo "::error::F36 regression — a workflow fetches from Actions/main (use a baked literal / caller .terraform-version)."
+            rc=1
+          fi
+          # N2: no ACTIVE (non-comment) internal sibling call may use @main (use a local ./ ref).
+          if grep -rnE '^[[:space:]]*uses: Coalfire-CF/Actions/\.github/workflows/[A-Za-z0-9._-]+\.yml@main' .github/workflows/; then
+            echo "::error::N2 regression — an internal sibling call uses @main (use uses: ./.github/workflows/<x>.yml)."
+            rc=1
+          fi
+          # N2 (composite path): no ACTIVE internal composite-action ref may use @main.
+          # Reusable workflows check out the CONSUMER repo, so ./ refs don't resolve here — pin @<sha> # vX.Y.Z.
+          if grep -rnE '^[[:space:]]*uses: Coalfire-CF/Actions/actions/[^@]+@main' .github/workflows/; then
+            echo "::error::N2 regression — an internal composite action ref uses @main (pin to @<release-sha> # vX.Y.Z)."
+            rc=1
+          fi
+          # Docs guard: no caller EXAMPLE in README/docs may show @main (org-agnostic — placeholder
+          # orgs like <YOUR_ORG> count too). New-adopter onboarding copies these lines verbatim.
+          if grep -rnE 'uses:.*[^ ]*/Actions/\.github/workflows/[^@]+@main' README.md docs/; then
+            echo "::error::docs regression — a caller example uses @main (write @<release-sha> # vX.Y.Z; RFC-0008)."
+            rc=1
+          fi
+          # T1: every runner job that executes terraform apply/destroy/plan must be
+          # time-capped — an uncapped hung apply burns the 6-hour default and can
+          # hold a state lock. (Reusable-call jobs can't take timeout-minutes.)
+          uncapped="$(awk '
+            function flush() { if (job != "" && infra && runner && !capped) print file ": job \x27" job "\x27 runs terraform apply/destroy/plan without timeout-minutes"; infra=0; capped=0; runner=0 }
+            FNR == 1 { flush(); file = FILENAME; injobs = 0; job = "" }
+            /^jobs:/ { injobs = 1; next }
+            injobs && /^  [A-Za-z0-9_-]+:[[:space:]]*$/ { flush(); job = $1; sub(/:$/, "", job); next }
+            injobs && /^    runs-on:/ { runner = 1 }
+            injobs && /^    timeout-minutes:/ { capped = 1 }
+            injobs && /terraform (apply|destroy|plan)([[:space:]]|$)/ { infra = 1 }
+            END { flush() }
+          ' .github/workflows/*.yml)"
+          if [ -n "$uncapped" ]; then
+            printf '%s\n' "$uncapped"
+            echo "::error::T1 regression — an infra-mutating job lacks timeout-minutes (grade-A plan item #19)."
+            rc=1
+          fi
+          # P1: every workflow must declare an explicit permissions: block (least privilege).
+          missing="$(grep -L 'permissions:' .github/workflows/*.yml || true)"
+          if [ -n "$missing" ]; then
+            printf '%s\n' "$missing"
+            echo "::error::P1 regression — a workflow lacks an explicit permissions: block (grade-A plan item #4)."
+            rc=1
+          fi
+          if [ "$rc" -eq 0 ]; then
+            echo "OK: no Actions/main raw fetches, no active @main sibling refs, all infra jobs time-capped."
+          fi
+          exit "$rc"

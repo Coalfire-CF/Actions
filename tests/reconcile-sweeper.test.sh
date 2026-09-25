@@ -3,7 +3,7 @@
 # Meta-test for the reconcile sweeper's per-PR green-gate/merge helper
 # scripts/pr-green-merge.sh (grade-A plan #14).
 #
-# The sweep workflow (.github/workflows/org-dependabot-reconcile.yml) is a thin
+# The sweep workflow (.github/workflows/automation-dependabot-reconcile.yml) is a thin
 # loop over `gh search` that delegates every merge decision to this helper, so
 # the helper IS the testable safety surface. We drive it through a MOCK `gh`
 # shim placed first on PATH that (a) records every invocation and (b) can REJECT
@@ -121,12 +121,12 @@ CK_EMPTY='{"check_runs":[]}'
 CK_RED='{"check_runs":[{"status":"completed","conclusion":"failure"}]}'
 CK_PEND='{"check_runs":[{"status":"in_progress","conclusion":null}]}'
 # Self-referential: the auto-merge workflow's own jobs are in-flight (decide
-# running the merge, notify_failure/remerge queued) while a real repo check is
+# running the merge, notify-failure/remerge queued) while a real repo check is
 # green. The green gate must EXCLUDE the "auto-merge / *" runs and see GREEN.
 CK_SELF='{"check_runs":[
   {"name":"gitleaks / scan","status":"completed","conclusion":"success"},
   {"name":"auto-merge / decide","status":"in_progress","conclusion":null},
-  {"name":"auto-merge / notify_failure","status":"queued","conclusion":null},
+  {"name":"auto-merge / notify-failure","status":"queued","conclusion":null},
   {"name":"auto-merge / remerge","status":"queued","conclusion":null}]}'
 # Same, but a NON-excluded repo check (terraform) is still running -> PENDING.
 CK_SELF_PEND='{"check_runs":[
