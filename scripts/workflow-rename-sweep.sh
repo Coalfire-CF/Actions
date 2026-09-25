@@ -39,6 +39,10 @@ DRY_RUN="${DRY_RUN:-true}"
 BRANCH="${BRANCH:-chore/actions-v1-workflow-names}"
 WORKDIR="${WORKDIR:-$HOME/.cache/workflow-rename-sweep}"
 PR_TITLE="${PR_TITLE:-ci: move Actions callers to the v1.0.0 workflow names}"
+# Commit identity: the operator's git config when set, else a bot identity, so
+# a runner with no global identity can still commit.
+GIT_USER_NAME="${GIT_USER_NAME:-$(git config user.name 2>/dev/null || echo "coalfire-workflow-rename-sweep")}"
+GIT_USER_EMAIL="${GIT_USER_EMAIL:-$(git config user.email 2>/dev/null || echo "workflow-rename-sweep@users.noreply.github.com")}"
 
 log() { echo "[workflow-rename-sweep] $*" >&2; }
 die() { log "FATAL: $*"; exit 2; }
@@ -203,9 +207,12 @@ apply() {
       log "PLAN ${repo}: $(tr '\n' ';' <<< "$out")"
       planned=$((planned + 1)); continue
     fi
-    git -C "$dir" checkout -q -b "$BRANCH"
-    git -C "$dir" commit -q -m "$PR_TITLE" \
-      -m "Coalfire-CF/Actions v1.0.0 renamed its reusable workflows. Moves callers to the new paths, pinned to ${ACTIONS_TAG}. See docs/PIPELINE_NAMING.md in Coalfire-CF/Actions."
+    # A failure here must fail this repo only, not stop the sweep (set -e).
+    if ! git -C "$dir" checkout -q -b "$BRANCH" \
+       || ! git -C "$dir" -c user.name="${GIT_USER_NAME}" -c user.email="${GIT_USER_EMAIL}" commit -q -m "$PR_TITLE" \
+            -m "Coalfire-CF/Actions v1.0.0 renamed its reusable workflows. Moves callers to the new paths, pinned to ${ACTIONS_TAG}. See docs/PIPELINE_NAMING.md in Coalfire-CF/Actions."; then
+      log "FAIL ${repo}: branch or commit"; failed=$((failed + 1)); continue
+    fi
     if ! git -C "$dir" push -q -u origin "$BRANCH" 2>/dev/null; then
       log "FAIL ${repo}: push"; failed=$((failed + 1)); continue
     fi
