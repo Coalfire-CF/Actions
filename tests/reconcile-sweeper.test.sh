@@ -267,4 +267,11 @@ echo "$OUT" | grep -q "SKIP #123 (approval-head-mismatch)" || fail "stale policy
 echo "$TRACE" | grep -qE "$WRITE_VERBS_RE" && fail "stale policy approval issued a merge"
 echo "OK: stale policy approval from prior head → SKIP (no merge)"
 
+# ---- Sweep search must exclude archived repos. They are read-only, so a merge
+#      there always 403s and fails the run (cs-joe-industries/furniture, 2026-09-25). ----
+WF="${REPO_ROOT}/.github/workflows/automation-dependabot-reconcile.yml"
+grep -E "gh search prs .*--label 'merge/approved'" "$WF" | grep -q -- '--archived=false' \
+  || fail "reconcile search does not pass --archived=false"
+echo "OK: reconcile search skips archived repos"
+
 echo "ALL TESTS PASSED"

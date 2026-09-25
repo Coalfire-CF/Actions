@@ -109,9 +109,10 @@ jobs:
 
           # Enumerate open PRs labeled merge/approved (capped). A gh-search blip is
           # treated as transient (retry with backoff); persistent failure is a hard
-          # error (the sweep can't run blind).
+          # error (the sweep can't run blind). Archived repos are read-only, so a
+          # merge there always 403s and would fail every run; skip them.
           _search_prs() {
-            gh search prs "${SEARCH_SCOPE[@]}" --state open --label 'merge/approved' \
+            gh search prs "${SEARCH_SCOPE[@]}" --state open --label 'merge/approved' --archived=false \
               --limit "$MAX_PRS" --json repository,number 2>/dev/null || return "$RETRY_TRANSIENT_RC"
           }
           if ! PRS="$(with_retry 3 2 20 -- _search_prs)"; then
