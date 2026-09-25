@@ -86,7 +86,9 @@ new_caller() {
     org-release.yml) echo 'release-please.yml|Release: Release Please' ;;
     org-dependabot-auto-merge.yml) echo 'automation-dependabot-auto-merge.yml|Automation: Dependabot auto-merge' ;;
     org-dependabot.yml) echo 'automation-dependabot-refresh.yml|Automation: Dependabot refresh' ;;
-    org-gitleaks-pr.yml) echo 'ci-security-gitleaks.yml|CI: Security Gitleaks' ;;
+    org-gitleaks-pr.yml|org-gitleaks.yml) echo 'ci-security-gitleaks.yml|CI: Security Gitleaks' ;;
+    org-trivy-pr.yml|org-trivy.yml) echo 'ci-security-trivy.yml|CI: Security Trivy' ;;
+    org-terratest.yml) echo 'ci-terratest.yml|CI: Terratest' ;;
     org-md-lint.yml|org-markdown-lint.yml) echo 'ci-markdown.yml|CI: Markdown' ;;
     org-terraform-docs.yml) echo 'ci-terraform-docs.yml|CI: Terraform docs' ;;
     org-terraform-fmt.yml) echo 'ci-terraform-format.yml|CI: Terraform format' ;;
@@ -110,6 +112,16 @@ rewrite_file() {
   done < <(grep -vE '^[[:space:]]*#' "$f" | grep -oE "${USES_RE}" | sed -E 's#.*/(org-[a-z-]+)\.ya?ml@#\1#' | sort -u)
   PIN="$ACTIONS_PIN" TAG="$ACTIONS_TAG" perl -pi -e \
     's{^(\s*actions_ref:\s*)[0-9a-fA-F]{40}.*}{$1$ENV{PIN} # $ENV{TAG}}' "$f"
+}
+
+# add_actions_ref <path>: insert "actions_ref: PIN # TAG" for the auto-merge
+# uses: line, under its existing with: block or in a new one.
+add_actions_ref() {
+  PIN="$ACTIONS_PIN" TAG="$ACTIONS_TAG" perl -0pi -e '
+    s{^([ \t]+)(uses:[ \t]*Coalfire-CF/Actions/\.github/workflows/automation-dependabot-auto-merge\.yml\@[^\n]*\n)(\1with:[ \t]*\n)?}{
+      my ($ind, $uses, $with) = ($1, $2, $3);
+      "$ind$uses$ind" . "with:\n$ind  actions_ref: $ENV{PIN} # $ENV{TAG}\n"
+    }me' "$1"
 }
 
 # rewrite_dir <checkout>: rewrite every matching caller. Prints one line per
@@ -142,11 +154,14 @@ rewrite_dir() {
     fi
     changed=$((changed + 1))
   done
-  # An auto-merge caller must pass actions_ref; the reusable requires it.
+  # The auto-merge reusable requires actions_ref (since v0.18.2). Callers
+  # bootstrapped earlier lack it, so add it next to the rewritten uses: line.
   for f in "$wf"/*.yml "$wf"/*.yaml; do
     [ -f "$f" ] || continue
     if grep -q 'workflows/automation-dependabot-auto-merge\.yml@' "$f" && ! grep -q 'actions_ref:' "$f"; then
-      log "WARN $(basename "$f"): auto-merge caller has no actions_ref input"
+      add_actions_ref "$f"
+      grep -q "actions_ref: ${ACTIONS_PIN}" "$f" || die "$(basename "$f"): could not add actions_ref"
+      echo "added actions_ref to $(basename "$f")"
     fi
   done
   [ "$changed" -gt 0 ] || return 3

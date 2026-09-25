@@ -96,7 +96,7 @@ permissions:
 
 jobs:
   create-release:
-    uses: Coalfire-CF/Actions/.github/workflows/release-please.yml@79f66e88c53ad53a385d913278ee82f04147f983 # v0.19.0
+    uses: Coalfire-CF/Actions/.github/workflows/release-please.yml@88e02c851b87f8042147e1ba9f340b49ab1b628b # v1.0.0
     secrets: inherit
     with:
       slack_channel_id: 'C0123456789'
@@ -110,7 +110,7 @@ Access to private Terraform module repositories is controlled using a GitHub App
 # Private repo — pass app credentials for module access
 jobs:
   validate:
-    uses: Coalfire-CF/Actions/.github/workflows/ci-terraform-validate.yml@79f66e88c53ad53a385d913278ee82f04147f983 # v0.19.0
+    uses: Coalfire-CF/Actions/.github/workflows/ci-terraform-validate.yml@88e02c851b87f8042147e1ba9f340b49ab1b628b # v1.0.0
     with:
       terraform_version: '1.15.7' # or omit to use .terraform-version
     secrets:
@@ -120,7 +120,7 @@ jobs:
 # Public repo — no app credentials needed
 jobs:
   validate:
-    uses: Coalfire-CF/Actions/.github/workflows/ci-terraform-validate.yml@79f66e88c53ad53a385d913278ee82f04147f983 # v0.19.0
+    uses: Coalfire-CF/Actions/.github/workflows/ci-terraform-validate.yml@88e02c851b87f8042147e1ba9f340b49ab1b628b # v1.0.0
     with:
       terraform_version: '1.15.7' # or omit to use .terraform-version
 ```
@@ -140,7 +140,7 @@ Wrapper around [terraform-docs GitHub Actions](https://github.com/terraform-docs
 # Root module and submodules
 jobs:
   terraform-docs:
-    uses: Coalfire-CF/Actions/.github/workflows/ci-terraform-docs.yml@79f66e88c53ad53a385d913278ee82f04147f983 # v0.19.0
+    uses: Coalfire-CF/Actions/.github/workflows/ci-terraform-docs.yml@88e02c851b87f8042147e1ba9f340b49ab1b628b # v1.0.0
     with:
       recursive: true
 ```
