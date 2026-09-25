@@ -373,7 +373,7 @@ CI runs `markdownlint-cli2` 0.23.0. Census with that version, not the 0.23.2 tha
 
 ### Known remaining debt
 
-`org-markdown-lint` lints only CHANGED files, so pre-existing violations stay
+`ci-markdown` lints only CHANGED files, so pre-existing violations stay
 invisible until a PR touches the file. The migration touched every README and
 surfaced **85 findings across 25 repos** in rules unrelated to this work
 (MD031, MD032, MD030, MD010, MD059, MD045, MD056, MD055). These are not

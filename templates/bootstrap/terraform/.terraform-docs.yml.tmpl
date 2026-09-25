@@ -6,7 +6,7 @@
 #     docker run --rm -v "$PWD:/w" -w /w \
 #       quay.io/terraform-docs/terraform-docs:0.20.0 markdown table -c .terraform-docs.yml .
 
-# Must stay "markdown table". org-terraform-docs passes the formatter as a
+# Must stay "markdown table". ci-terraform-docs passes the formatter as a
 # subcommand, and terraform-docs ignores this key whenever a subcommand is
 # given, so a mismatch here renders one thing locally and another in CI.
 formatter: "markdown table"

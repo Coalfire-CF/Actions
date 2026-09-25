@@ -24,7 +24,7 @@ Each gate resolves its effective blocking flag with this precedence
 1. **`false`** — if the key/file is absent.
 
 A caller leaves `strict: ''` (the default) to defer to the central value.
-For `org-opa`, the caller input is named `blocking` and maps to `gates.opa.strict`.
+For `ci-policy-opa`, the caller input is named `blocking` and maps to `gates.opa.strict`.
 
 ## How the file is read (why not `job_workflow_sha`)
 

@@ -204,7 +204,7 @@ jobs:
       aws_region: us-gov-west-1
     secrets:
       # Option A (dev-phase secret aliasing): pass the org private-module pull App
-      # through under the TERRATEST_APP_* names org-terratest expects, so the test
+      # through under the TERRATEST_APP_* names ci-terratest expects, so the test
       # can `go mod download` private sibling modules. A dedicated Terratest App
       # (Option B) is the go-live hardening — see "GitHub App for Private Module Access".
       TERRATEST_APP_CLIENT_ID: ${{ secrets.CF_TF_PULL_PRIVATE_APP_CLIENTID }}
@@ -423,7 +423,7 @@ test code for anything that would abuse the cloud credentials.
 Real-infra tests are inherently flaky (eventual consistency, transient cloud API errors). Go's
 `terraform.WithDefaultRetryableErrors` handles known-retryable Terraform errors inside a test;
 this covers the layer above it. Flake reliability is the **primary blocker to promoting
-`org-terratest` to a required check** (ADR-0011: a check can only block if it is reliably green
+`ci-terratest` to a required check** (ADR-0011: a check can only block if it is reliably green
 on correct code).
 
 **Automatic rerun (opt-in).** Set `rerun_fails` to a low cap (1–2):
@@ -512,7 +512,7 @@ the goal is exactly one green run on the final PR HEAD.
 
 ### `action_required` approval loops on new/bot-touched repos
 
-On a newly-created repo, or one where a bot (`org-dependabot`, tree-readme) just pushed a
+On a newly-created repo, or one where a bot (`automation-dependabot-refresh`, tree-readme) just pushed a
 commit, workflow runs stick at `action_required` and must be manually approved:
 
 ```bash
@@ -728,7 +728,7 @@ a GitHub App token to authenticate `go mod download` against private repos.
 `secrets:` block. Option A below is the retired dev-phase fallback, kept only for context.
 
 **Option A (retired dev-phase fallback — do not use for new callers):** alias the existing org
-private-module pull App into the names org-terratest expects, right in the caller's `secrets:`
+private-module pull App into the names ci-terratest expects, right in the caller's `secrets:`
 block:
 
 ```yaml

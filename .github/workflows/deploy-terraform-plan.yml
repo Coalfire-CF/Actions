@@ -132,7 +132,7 @@ jobs:
           # empty cross-repo (verified 2026-07-02, actions/runner#2417) and
           # github.sha is the caller's commit, so a raw fetch from Actions/main
           # was both mutable and unresolvable. This literal travels with the
-          # pinned workflow commit; org-terraform-version-check bumps it in
+          # pinned workflow commit; automation-terraform-version-check bumps it in
           # lockstep with .terraform-version.
           DEFAULT_TF_VERSION: '1.15.7'
         run: |

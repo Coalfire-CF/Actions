@@ -1,4 +1,4 @@
-# org-terraform-source-pin — SHA-preferred pin gate
+# ci-terraform-source-pin — SHA-preferred pin gate
 
 Reusable workflow enforcing **SHA-preferred pinning** (RFC-0008 / ADR-0018) for
 both Terraform module `source` `?ref=` values and workflow `uses:` references.

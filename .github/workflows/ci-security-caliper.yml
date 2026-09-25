@@ -124,7 +124,7 @@ jobs:
         id: caliper_token
         # cf-gha-tf-pull-from-private-repo App (contents:read) → a ~1h token
         # scoped to just Coalfire-CF/caliper. No PAT; nothing personal; the
-        # token dies with the job. Mirrors org-terraform-validate's pattern.
+        # token dies with the job. Mirrors ci-terraform-validate's pattern.
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           client-id: ${{ secrets.CF_TF_PULL_PRIVATE_APP_CLIENTID }}

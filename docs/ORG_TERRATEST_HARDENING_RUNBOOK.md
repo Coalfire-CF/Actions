@@ -1,6 +1,6 @@
-# org-terratest hardening — operator runbook
+# ci-terratest hardening — operator runbook
 
-Privileged / live steps that complete the org-terratest hardening effort — the dedicated App
+Privileged / live steps that complete the ci-terratest hardening effort — the dedicated App
 (#231), the environment gate (#237), the EIP sweep (#273), and the janitor (#234). The
 **workflow, tooling, and doc changes have already shipped** on the feature
 branch; the steps below are the ones that mutate real GitHub-org / cloud / cross-repo state and
