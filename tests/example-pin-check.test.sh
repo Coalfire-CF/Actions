@@ -7,10 +7,10 @@
 # current release in .release-please-manifest.json, so a release that forgets to
 # refresh the examples is caught in CI rather than shipping N releases behind.
 #
-# NOTE: this checks the `# vX.Y.Z` comment (the visible-drift symptom). The 40-hex
-# SHA must be refreshed to the new release tag's commit by hand alongside it — a
-# release cannot know its own tag SHA at release-PR time, so it cannot be
-# auto-bumped without introducing a SHA/tag mismatch.
+# NOTE: this checks the `# vX.Y.Z` comment (the visible-drift symptom). A release
+# cannot know its own tag SHA at release-PR time, so the refresh happens after
+# the tag exists: the refresh-example-pins job in internal-release.yml runs
+# scripts/refresh-example-pins.sh (same FILES list) and merges the result.
 
 set -uo pipefail
 
