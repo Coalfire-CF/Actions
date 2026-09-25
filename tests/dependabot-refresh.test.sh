@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Meta-test for the Dependabot config generator embedded in
-# .github/workflows/org-dependabot.yml.
+# .github/workflows/automation-dependabot-refresh.yml.
 #
 # The generator body is an embedded <<'BASH' heredoc (it runs in the consumer
 # checkout, so it can't source from Actions at runtime). This test extracts that
@@ -19,7 +19,7 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-WF="${REPO_ROOT}/.github/workflows/org-dependabot.yml"
+WF="${REPO_ROOT}/.github/workflows/automation-dependabot-refresh.yml"
 
 fail() { echo "NOT OK: $1"; exit 1; }
 

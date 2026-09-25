@@ -1,0 +1,10 @@
+name: "CI: Security Gitleaks"
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  gitleaks:
+    name: Run Gitleaks
+    uses: Coalfire-CF/Actions/.github/workflows/ci-security-gitleaks.yml@__ACTIONS_SHA__ # __ACTIONS_VERSION__

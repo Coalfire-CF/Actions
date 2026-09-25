@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # repo-bootstrap.sh — per-repo worker for the org-repo-bootstrap sweeper
-# (.github/workflows/org-repo-bootstrap.yml). Given one target repo, decide
+# (.github/workflows/automation-repo-bootstrap.yml). Given one target repo, decide
 # whether it should receive the org baseline bundle and, in live mode, open a
 # single bootstrap PR containing the pinned caller workflows + configs rendered
 # from templates/bootstrap/.
@@ -18,7 +18,7 @@
 #   - repo archived or fork                      → SKIP (archived|fork)
 #   - repo topic `bootstrap-exempt`              → SKIP (topic-exempt)
 #   - marker file `.github/.no-bootstrap`        → SKIP (opt-out-file)
-#   - already adopted (.github/workflows/org-release.yml present)
+#   - already adopted (.github/workflows/release-please.yml present)
 #                                                → SKIP (compliant)
 #   - an OPEN bootstrap/* PR                     → SKIP (pr-open)
 #   - a CLOSED-unmerged bootstrap/* PR           → SKIP (declined) — declining
@@ -127,7 +127,10 @@ if probe_path ".github/.no-bootstrap"; then
 fi
 
 # ---- Gate 3: adoption probe ----
-if probe_path ".github/workflows/org-release.yml"; then
+# Accept the pre-1.0 caller name too, so a repo not yet swept to the cs-delta
+# names is not treated as new and handed a second set of callers.
+if probe_path ".github/workflows/release-please.yml" \
+   || probe_path ".github/workflows/org-release.yml"; then
   echo "SKIP ${TARGET_REPO} (compliant)"
   exit 0
 fi
@@ -196,11 +199,28 @@ if [ "$IS_TERRAFORM" = "true" ] && probe_path "README.md"; then
         "${RENDER_DIR}/_footer.md"
 fi
 
+# legacy_caller <rel> — the pre-1.0 caller filename for a baseline workflow, or
+# empty. A repo that still has the old name already has that caller.
+legacy_caller() {
+  case "$1" in
+    .github/workflows/release-please.yml)                   echo .github/workflows/org-release.yml ;;
+    .github/workflows/automation-dependabot-auto-merge.yml) echo .github/workflows/org-dependabot-auto-merge.yml ;;
+    .github/workflows/automation-dependabot-refresh.yml)    echo .github/workflows/org-dependabot.yml ;;
+    .github/workflows/ci-security-gitleaks.yml)             echo .github/workflows/org-gitleaks-pr.yml ;;
+    .github/workflows/ci-markdown.yml)                      echo .github/workflows/org-md-lint.yml ;;
+    .github/workflows/ci-terraform-docs.yml)                echo .github/workflows/org-terraform-docs.yml ;;
+    .github/workflows/ci-terraform-format.yml)              echo .github/workflows/org-terraform-fmt.yml ;;
+    .github/workflows/ci-terraform-validate.yml)            echo .github/workflows/org-terraform-validate.yml ;;
+    *) echo "" ;;
+  esac
+}
+
 # ---- Never overwrite: drop any rendered path that already exists remotely ----
 FILES=()
 while IFS= read -r -d '' f; do
   rel="${f#./}"
-  if probe_path "$rel"; then
+  legacy="$(legacy_caller "$rel")"
+  if probe_path "$rel" || { [ -n "$legacy" ] && probe_path "$legacy"; }; then
     log "dropping ${rel} — already exists in ${TARGET_REPO} (never overwrite)"
     rm -f "${RENDER_DIR}/${rel}"
   else

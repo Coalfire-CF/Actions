@@ -1,0 +1,155 @@
+name: "Internal: Release"
+
+# This workflow is for creating releases in the Actions repo itself.
+# For downstream repos using the reusable workflow, see release-please.yml
+#
+# Self-scan gate (grade-A plan item #6): gitleaks + trivy + actionlint run over
+# this repo's own tree as `needs:` prerequisites of release-please — a secret,
+# a HIGH/CRITICAL finding, or an invalid workflow blocks the release from
+# publishing. Deliberately NOT added: cosign/SLSA on this repo (consumed by
+# commit SHA, not tarball — signing buys nothing here).
+
+on:
+  pull_request:
+    types:
+      - closed
+    branches:
+      - main
+  workflow_call:
+
+jobs:
+  self-scan-gitleaks:
+    name: Self-scan — gitleaks (full history)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Merged-gate (issue #149): a closed-unmerged PR has nothing to release —
+    # skip all jobs so a superseded close stops burning 3 self-scan runners.
+    if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout (full history)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      # Local ./ ref is correct here: this workflow runs in the Actions repo's
+      # own checkout (unlike the org-gitleaks-* reusable workflows, which check
+      # out the consumer repo and therefore pin by SHA).
+      - name: Run gitleaks scan
+        id: scan
+        uses: ./actions/gitleaks
+        with:
+          scan-mode: full
+          report-path: gitleaks_selfscan.json
+
+      - name: Gate on findings
+        env:
+          PASSED: ${{ steps.scan.outputs.passed }}
+          COUNT: ${{ steps.scan.outputs.finding-count }}
+        run: |
+          set -euo pipefail
+          if [ "$PASSED" != "true" ]; then
+            echo "::error::self-scan gitleaks found ${COUNT} potential secret(s) — release blocked."
+            exit 1
+          fi
+          echo "gitleaks clean"
+
+  self-scan-trivy:
+    name: Self-scan — trivy (secret/misconfig/vuln)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Scanners set explicitly so this cannot pass vacuously on a workflow-only
+      # repo: secret + misconfig cover the YAML/config surface; vuln covers any
+      # lockfiles that appear later.
+      - name: Run Trivy over own tree
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret,misconfig
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          ignore-unfixed: true
+
+  self-scan-actionlint:
+    name: Self-scan — actionlint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install actionlint (pinned + checksum-verified)
+        run: |
+          set -euo pipefail
+          ACTIONLINT_VERSION=1.7.12
+          ACTIONLINT_SHA256=8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+          curl -sSfL -o /tmp/actionlint.tar.gz \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          echo "${ACTIONLINT_SHA256}  /tmp/actionlint.tar.gz" | sha256sum -c -
+          sudo tar -xzf /tmp/actionlint.tar.gz -C /usr/local/bin actionlint
+          actionlint --version
+
+      - name: Run actionlint
+        env:
+          SHELLCHECK_OPTS: -S warning
+        run: actionlint -color
+
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [self-scan-gitleaks, self-scan-trivy, self-scan-actionlint]
+    # Merged-gate + actor-gate (issue #149): a Dependabot-actor run cannot see the
+    # RELEASE_APP secrets (Actions-store only) and its read-only token can't push,
+    # so release-please would 403. A skipped release self-heals — release-please
+    # scans ALL commits since the last tag on the next human/App-actor run, so no
+    # release is lost by skipping here.
+    if: >-
+      (github.event_name != 'pull_request' || github.event.pull_request.merged == true) &&
+      github.actor != 'dependabot[bot]'
+
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+
+    steps:
+      # App-token wiring mirrored verbatim from release-please.yml: falls back to
+      # github.token when RELEASE_APP_* is absent. Bonus — App-created release PRs
+      # get CI runs (a GITHUB_TOKEN-created PR does not).
+      - name: Check for GitHub App credentials
+        id: check-app
+        env:
+          APP_ID: ${{ secrets.RELEASE_APP_ID }}
+        run: |
+          if [[ -n "${APP_ID}" ]]; then
+            echo "available=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "available=false" >> "${GITHUB_OUTPUT}"
+            echo "::notice::GitHub App credentials not found — falling back to github.token"
+          fi
+
+      - name: Generate GitHub App token
+        id: app-token
+        if: steps.check-app.outputs.available == 'true'
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
+      - name: Run Release Please
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          token: ${{ steps.app-token.outputs.token || github.token }}

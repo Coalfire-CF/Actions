@@ -1,7 +1,7 @@
 # Terratest Per-Repo OIDC Provisioning Runbook
 
 This runbook onboards a module repo to the org Terratest platform
-([`org-terratest.yml`](../.github/workflows/org-terratest.yml), documented in
+([`ci-terratest.yml`](../.github/workflows/ci-terratest.yml), documented in
 [`ORG_TERRATEST.md`](./ORG_TERRATEST.md)). It covers the identity plumbing that must exist
 *before* a caller's first run can authenticate to the cloud test account:
 

@@ -2,7 +2,7 @@
 # shellcheck disable=SC2129
 #
 # auto-merge-decide.sh — deterministic auto-merge decision gate for the
-# Dependabot auto-merge workflow (.github/workflows/org-dependabot-auto-merge.yml,
+# Dependabot auto-merge workflow (.github/workflows/automation-dependabot-auto-merge.yml,
 # job: decide, step "Evaluate checks and decide").
 #
 # EXTRACTED VERBATIM (grade-A plan #10) from the former inline decide `run:` block
@@ -19,9 +19,9 @@
 # over manual. First-party org deps waive only the Scorecard gate (RFC-0010).
 #
 # Inputs (environment, set by the workflow step `env:` block):
-#   OSV_CLEAR SCORECARD_PASS SCORECARD_SCORE     (supply_chain_check.outputs.*)
+#   OSV_CLEAR SCORECARD_PASS SCORECARD_SCORE     (supply-chain-check.outputs.*)
 #   SEMVER_TYPE HAS_BREAKING CONFIDENCE RISK_SUMMARY APPLIES_TO_REPO
-#                                                (breaking_change_check.outputs.*)
+#                                                (breaking-change-check.outputs.*)
 #   DEP_NAME TO_VERSION IS_FIRST_PARTY UPDATE_TYPE_META DEP_GROUP PARSE_ERROR
 #                                                (classify.outputs.*)
 #   SC_ERRORS BC_ERRORS   per-job check-error counts (fail-closed inputs)

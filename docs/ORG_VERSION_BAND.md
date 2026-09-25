@@ -20,7 +20,7 @@ the band and the check are co-versioned.
 
 `strict` input (**default `false`**): findings emit `::warning` and the job exits
 0. Flip `strict: true` on the recorded promotion (ADR-0013) to enforce. The
-companion `org-terraform-version-check.yml` auto-bump bot respects the ceiling:
+companion `automation-terraform-version-check.yml` auto-bump bot respects the ceiling:
 it skips the bump PR and annotates when the latest Terraform is at/above the
 band ceiling (a band raise is a manual RFC-0004/ADR-0013 decision).
 
@@ -29,7 +29,7 @@ band ceiling (a band raise is a manual RFC-0004/ADR-0013 decision).
 ```yaml
 jobs:
   version-band:
-    uses: Coalfire-CF/Actions/.github/workflows/org-terraform-version-band.yml@<sha> # v0.7.0
+    uses: Coalfire-CF/Actions/.github/workflows/ci-terraform-version-band.yml@<sha> # v0.7.0
     with:
       strict: false   # advisory (default)
     secrets:

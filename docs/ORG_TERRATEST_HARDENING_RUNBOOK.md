@@ -134,7 +134,7 @@ and lists the intended (not executed) deletions for a known orphaned cohort; the
 
 ## What has already shipped (no operator action)
 
-- `org-terratest.yml`: opt-in `environment` gate, opt-in `nat-eip-sweep` job, durable
+- `ci-terratest.yml`: opt-in `environment` gate, opt-in `nat-eip-sweep` job, durable
   `terratest-record.json` telemetry emit + SHA stamping, opt-in `rerun_fails`.
 - `docs/ORG_TERRATEST.md` / `ORG_TERRATEST_PROVISIONING.md`: Option B active, run-scoped tagging,
   protected-environment pattern, flake/quarantine/scheduled guidance, Azure RBAC narrowing note,

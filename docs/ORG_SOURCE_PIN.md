@@ -33,7 +33,7 @@ warning and never fails.
 ```yaml
 jobs:
   source-pin:
-    uses: Coalfire-CF/Actions/.github/workflows/org-terraform-source-pin.yml@<sha> # v0.7.0
+    uses: Coalfire-CF/Actions/.github/workflows/ci-terraform-source-pin.yml@<sha> # v0.7.0
     with:
       scan_root: '.'
       strict: false   # advisory (default)

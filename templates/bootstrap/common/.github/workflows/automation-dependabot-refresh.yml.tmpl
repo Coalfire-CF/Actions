@@ -1,0 +1,19 @@
+name: "Automation: Dependabot refresh"
+
+on:
+  pull_request:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  refresh:
+    name: Refresh Dependabot
+    uses: Coalfire-CF/Actions/.github/workflows/automation-dependabot-refresh.yml@__ACTIONS_SHA__ # __ACTIONS_VERSION__
+    with:
+      head_branch: ${{ github.head_ref || github.ref_name }}  # PR head, or current branch if not a PR
+      include_github_actions: "true"
+      default_interval: "daily"
+      depb_path: ".github/dependabot.yml"
+      commit_message: "chore: refresh dependabot.yml"

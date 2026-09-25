@@ -1,7 +1,7 @@
 {
   // Markdown lint configuration for org-wide README and documentation linting.
   // This mirrors the embedded default policy in
-  // .github/workflows/org-markdown-lint.yml so the Actions repo dogfoods the
+  // .github/workflows/ci-markdown.yml so the Actions repo dogfoods the
   // exact policy it ships to consumers. Keep the two in sync.
   // Rule reference: https://github.com/DavidAnson/markdownlint/blob/main/doc/Rules.md
   "ignores": ["CHANGELOG.md", "**/CHANGELOG.md"],

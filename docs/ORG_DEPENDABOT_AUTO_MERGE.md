@@ -17,8 +17,8 @@ Dependabot PR opened
   -> classify (ecosystem, dep name, versions)
   -> terraform? -> label merge/skipped + blocked/terraform-no-tests -> STOP
   -> non-terraform:
-       -> supply_chain_check (OSV.dev + OpenSSF Scorecard)       \  parallel
-       -> breaking_change_check (semver + Bedrock changelog       /
+       -> supply-chain-check (OSV.dev + OpenSSF Scorecard)       \  parallel
+       -> breaking-change-check (semver + Bedrock changelog       /
             + repo usage analysis for applicability)
        -> decide:
             all green  -> merge/approved -> approve + bypass merge when green
@@ -79,7 +79,7 @@ code-owner-required ruleset it would sit `BLOCKED` forever. Plain `gh pr merge`
 (GraphQL) likewise refuses a blocked PR. The merge is gated on the head commit's
 check runs being green (`scripts/pr-green-merge.sh`, which ignores the auto-merge
 workflow's own in-flight jobs so it doesn't self-block); a PR still building is left
-for the **reconcile sweeper** (`org-dependabot-reconcile.yml`) to converge — its
+for the **reconcile sweeper** (`automation-dependabot-reconcile.yml`) to converge — its
 scheduled runs (every 6h) merge for real and are the tail-catcher for PRs whose CI
 outlasts the PR-time merge. Manual dispatch of the sweeper stays dry-run by default
 (scope a canary with its `repo` input; pass `dry_run=false` to merge). (A
@@ -224,7 +224,7 @@ Run the label sync workflow on each repo before enabling auto-merge:
 ```yaml
 jobs:
   sync-labels:
-    uses: <YOUR_ORG>/Actions/.github/workflows/org-label-sync.yml@d06776a5840b53ff374f80f3c45e84181425b6d6 # v0.18.2
+    uses: <YOUR_ORG>/Actions/.github/workflows/automation-label-sync.yml@79f66e88c53ad53a385d913278ee82f04147f983 # v0.19.0
     secrets: inherit
 ```
 
@@ -232,7 +232,7 @@ See [ORG_LABEL_TAXONOMY.md](ORG_LABEL_TAXONOMY.md) for the full label reference.
 
 ## Usage
 
-Add this workflow to each downstream repo as `.github/workflows/dependabot-auto-merge.yml`:
+Add this workflow to each downstream repo as `.github/workflows/automation-dependabot-auto-merge.yml`:
 
 ```yaml
 name: Dependabot Auto-Merge
@@ -251,9 +251,9 @@ jobs:
     if: >-
       github.event_name == 'check_suite' ||
       github.event.pull_request.user.login == 'dependabot[bot]'
-    uses: <YOUR_ORG>/Actions/.github/workflows/org-dependabot-auto-merge.yml@d06776a5840b53ff374f80f3c45e84181425b6d6 # v0.18.2
+    uses: <YOUR_ORG>/Actions/.github/workflows/automation-dependabot-auto-merge.yml@79f66e88c53ad53a385d913278ee82f04147f983 # v0.19.0
     with:
-      actions_ref: d06776a5840b53ff374f80f3c45e84181425b6d6 # v0.18.2
+      actions_ref: 79f66e88c53ad53a385d913278ee82f04147f983 # v0.19.0
     secrets: inherit
 ```
 
@@ -282,9 +282,9 @@ Pass the same immutable SHA to `actions_ref`:
 jobs:
   auto-merge:
     if: github.actor == 'dependabot[bot]'
-    uses: <YOUR_ORG>/Actions/.github/workflows/org-dependabot-auto-merge.yml@d06776a5840b53ff374f80f3c45e84181425b6d6 # v0.18.2
+    uses: <YOUR_ORG>/Actions/.github/workflows/automation-dependabot-auto-merge.yml@79f66e88c53ad53a385d913278ee82f04147f983 # v0.19.0
     with:
-      actions_ref: d06776a5840b53ff374f80f3c45e84181425b6d6 # v0.18.2
+      actions_ref: 79f66e88c53ad53a385d913278ee82f04147f983 # v0.19.0
     secrets: inherit
 ```
 
@@ -373,7 +373,7 @@ With ~2,700 Dependabot PRs/month and ~80% cache hit rate at steady state:
 
 ## Rollout
 
-1. Run `org-label-sync.yml` on target repos
+1. Run `automation-label-sync.yml` on target repos
 1. Enable on a few repos in dry-run (observe labels, no auto-merge)
 1. Enable auto-merge on those repos, monitor for 1 week
 1. Expand to remaining repos
@@ -406,4 +406,4 @@ groups:
     update-types: ["minor", "patch"]
 ```
 
-`org-dependabot.yml`'s generator emits this block automatically for the github-actions ecosystem.
+`automation-dependabot-refresh.yml`'s generator emits this block automatically for the github-actions ecosystem.

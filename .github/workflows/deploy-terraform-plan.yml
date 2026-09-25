@@ -1,0 +1,318 @@
+name: "Deploy: Terraform plan"
+
+# Reusable workflow that runs `terraform plan` for a Terraform module/config.
+# Cloud authentication is OIDC-based and multi-cloud: each provider's auth step
+# runs only when its inputs are supplied, so AWS-only callers are unaffected.
+#   - AWS:   set aws_role_arn (+ aws_region)
+#   - Azure: set azure_client_id / azure_tenant_id / azure_subscription_id
+#            (azure_environment=azureusgovernment for Azure-Gov)
+#   - GCP:   set gcp_workload_identity_provider (+ gcp_service_account)
+# Mirrors the proven per-cloud OIDC pattern in ci-terratest.yml.
+
+on:
+  workflow_call:
+    inputs:
+      terraform_version:
+        description: 'The version of Terraform to use (leave empty to use .terraform-version)'
+        required: false
+        default: ''
+        type: string
+      working_directory:
+        description: 'Working directory for Terraform commands'
+        required: false
+        default: '.'
+        type: string
+      backend_config:
+        description: 'Backend configuration arguments (e.g., -backend-config=bucket=my-bucket)'
+        required: false
+        default: ''
+        type: string
+      var_file:
+        description: 'Path to a Terraform variables file'
+        required: false
+        default: ''
+        type: string
+      aws_region:
+        description: 'AWS region for OIDC authentication'
+        required: false
+        default: 'us-east-1'
+        type: string
+      aws_role_arn:
+        description: 'AWS IAM role ARN for OIDC authentication (leave empty to skip AWS auth)'
+        required: false
+        default: ''
+        type: string
+      azure_client_id:
+        description: 'Azure App Registration client ID for OIDC (leave empty to skip Azure auth)'
+        required: false
+        default: ''
+        type: string
+      azure_tenant_id:
+        description: 'Azure AD tenant ID for OIDC'
+        required: false
+        default: ''
+        type: string
+      azure_subscription_id:
+        description: 'Azure subscription ID for OIDC'
+        required: false
+        default: ''
+        type: string
+      azure_environment:
+        description: 'Azure cloud environment: azurecloud or azureusgovernment'
+        required: false
+        default: 'azurecloud'
+        type: string
+      gcp_workload_identity_provider:
+        description: 'GCP Workload Identity Provider resource name (leave empty to skip GCP auth)'
+        required: false
+        default: ''
+        type: string
+      gcp_service_account:
+        description: 'GCP service account email for Workload Identity Federation'
+        required: false
+        default: ''
+        type: string
+      slack_channel_id:
+        description: 'Slack channel ID for failure notifications (optional)'
+        required: false
+        default: ''
+        type: string
+    secrets:
+      SLACK_BOT_TOKEN:
+        description: 'Slack bot token for failure notifications (required if slack_channel_id is set)'
+        required: false
+      TF_PLAN_APP_CLIENT_ID:
+        description: 'GitHub App client ID for private module access'
+        required: false
+      TF_PLAN_APP_PRIVATE_KEY:
+        description: 'GitHub App private key for private module access'
+        required: false
+
+  workflow_dispatch:
+    inputs:
+      terraform_version:
+        description: 'The version of Terraform to use (leave empty to use .terraform-version)'
+        required: false
+        default: ''
+        type: string
+      working_directory:
+        description: 'Working directory for Terraform commands'
+        required: false
+        default: '.'
+        type: string
+
+# Serialize plans per repo+ref+dir to stop duplicate runs racing on comments/artifacts.
+concurrency:
+  group: terraform-plan-${{ github.repository }}-${{ github.ref }}-${{ inputs.working_directory }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write
+
+jobs:
+  plan:
+    name: Terraform Plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: ${{ inputs.working_directory }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Resolve Terraform version
+        id: tf-version
+        working-directory: .
+        env:
+          INPUT_TF_VERSION: ${{ inputs.terraform_version }}
+          # F36 (Plan B): baked hermetic default. github.job_workflow_sha is
+          # empty cross-repo (verified 2026-07-02, actions/runner#2417) and
+          # github.sha is the caller's commit, so a raw fetch from Actions/main
+          # was both mutable and unresolvable. This literal travels with the
+          # pinned workflow commit; org-terraform-version-check bumps it in
+          # lockstep with .terraform-version.
+          DEFAULT_TF_VERSION: '1.15.7'
+        run: |
+          if [ -n "$INPUT_TF_VERSION" ]; then
+            VERSION="$INPUT_TF_VERSION"
+          elif [ -f .terraform-version ]; then
+            VERSION="$(tr -d '[:space:]' < .terraform-version)"
+          else
+            VERSION="${DEFAULT_TF_VERSION}"
+          fi
+          # Fail-closed (F36): an empty/malformed .terraform-version or a
+          # pre-release input must NOT fall through to setup-terraform's "latest".
+          if ! echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Could not resolve a concrete X.Y.Z Terraform version (got '${VERSION}')"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: ${{ steps.tf-version.outputs.version }}
+
+      - name: Check for GitHub App secrets
+        id: check-app-secrets
+        run: |
+          if [ -n "$TF_PLAN_APP_CLIENT_ID" ] && [ -n "$TF_PLAN_APP_PRIVATE_KEY" ]; then
+            echo "has_secrets=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_secrets=false" >> $GITHUB_OUTPUT
+          fi
+        env:
+          TF_PLAN_APP_CLIENT_ID: ${{ secrets.TF_PLAN_APP_CLIENT_ID }}
+          TF_PLAN_APP_PRIVATE_KEY: ${{ secrets.TF_PLAN_APP_PRIVATE_KEY }}
+
+      - name: Get GitHub App Token
+        id: app-token
+        if: steps.check-app-secrets.outputs.has_secrets == 'true'
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.TF_PLAN_APP_CLIENT_ID }}
+          private-key: ${{ secrets.TF_PLAN_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
+      - name: Configure Git for private modules
+        if: steps.check-app-secrets.outputs.has_secrets == 'true'
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          git config --global url."https://actions:${APP_TOKEN}@github.com".insteadOf https://github.com
+          git config --global url."https://actions:${APP_TOKEN}@github.com/".insteadOf ssh://git@github.com/
+
+      - name: Configure AWS credentials (OIDC)
+        if: inputs.aws_role_arn != ''
+        uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c # v6.2.4
+        with:
+          role-to-assume: ${{ inputs.aws_role_arn }}
+          aws-region: ${{ inputs.aws_region }}
+
+      - name: Configure Azure credentials (OIDC)
+        if: inputs.azure_client_id != ''
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ inputs.azure_client_id }}
+          tenant-id: ${{ inputs.azure_tenant_id }}
+          subscription-id: ${{ inputs.azure_subscription_id }}
+          environment: ${{ inputs.azure_environment }}
+
+      # The azurerm provider does not read azure/login's CLI session for OIDC auth;
+      # it needs ARM_* env vars. With ARM_USE_OIDC=true the provider auto-detects
+      # GitHub's ACTIONS_ID_TOKEN_REQUEST_URL/TOKEN — no secret material is exported.
+      - name: Export ARM environment for Terraform
+        if: inputs.azure_client_id != ''
+        env:
+          AZURE_CLIENT_ID: ${{ inputs.azure_client_id }}
+          AZURE_TENANT_ID: ${{ inputs.azure_tenant_id }}
+          AZURE_SUBSCRIPTION_ID: ${{ inputs.azure_subscription_id }}
+          AZURE_ENVIRONMENT: ${{ inputs.azure_environment }}
+        run: |
+          set -eo pipefail
+          {
+            echo "ARM_USE_OIDC=true"
+            echo "ARM_CLIENT_ID=${AZURE_CLIENT_ID}"
+            echo "ARM_TENANT_ID=${AZURE_TENANT_ID}"
+            echo "ARM_SUBSCRIPTION_ID=${AZURE_SUBSCRIPTION_ID}"
+          } >> "$GITHUB_ENV"
+          if [ "$AZURE_ENVIRONMENT" = "azureusgovernment" ]; then
+            echo "ARM_ENVIRONMENT=usgovernment" >> "$GITHUB_ENV"
+          fi
+
+      - name: Configure GCP credentials (OIDC)
+        if: inputs.gcp_workload_identity_provider != ''
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ inputs.gcp_workload_identity_provider }}
+          service_account: ${{ inputs.gcp_service_account }}
+
+      - name: Terraform Init
+        env:
+          INPUT_BACKEND_CONFIG: ${{ inputs.backend_config }}
+        run: |
+          # L12/#218: bash array so a backend_config value with spaces is passed
+          # as a single argument (not word-split), and empty args add nothing.
+          INIT_ARGS=()
+          if [ -n "$INPUT_BACKEND_CONFIG" ]; then
+            INIT_ARGS+=("-backend-config=$INPUT_BACKEND_CONFIG")
+          fi
+          terraform init "${INIT_ARGS[@]}"
+
+      - name: Terraform Plan
+        id: plan
+        env:
+          INPUT_VAR_FILE: ${{ inputs.var_file }}
+        run: |
+          # L12/#218: bash array so a var_file path with spaces survives intact.
+          PLAN_ARGS=(-no-color -input=false -out=tfplan)
+          if [ -n "$INPUT_VAR_FILE" ]; then
+            PLAN_ARGS+=("-var-file=$INPUT_VAR_FILE")
+          fi
+          set +e
+          terraform plan "${PLAN_ARGS[@]}" -detailed-exitcode 2>&1 | tee "$GITHUB_WORKSPACE/plan_output.txt"
+          EXIT_CODE=${PIPESTATUS[0]}
+          set -e
+
+          echo "exitcode=$EXIT_CODE" >> $GITHUB_OUTPUT
+
+          # Exit code 0 = no changes, 1 = error, 2 = changes detected
+          if [ "$EXIT_CODE" -eq 1 ]; then
+            exit 1
+          fi
+
+      - name: Upload plan artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: tfplan-${{ github.run_id }}
+          path: |
+            ${{ inputs.working_directory }}/tfplan
+            plan_output.txt
+          retention-days: 5
+
+      - name: Post plan to PR
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        # L13/#219: pass the step output via env: + process.env instead of
+        # interpolating ${{ }} into the JS (repo hardening convention).
+        env:
+          PLAN_EXITCODE: ${{ steps.plan.outputs.exitcode }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            let plan = fs.readFileSync(process.env.GITHUB_WORKSPACE + '/plan_output.txt', 'utf8');
+            const exitCode = process.env.PLAN_EXITCODE;
+
+            let status = '✅ No changes';
+            if (exitCode === '2') status = '⚠️ Changes detected';
+            if (exitCode === '1') status = '❌ Error';
+
+            // Truncate if needed (GitHub comment limit is 65536 chars)
+            if (plan.length > 60000) {
+              plan = plan.substring(0, 60000) + '\n... (truncated)';
+            }
+
+            const body = `### Terraform Plan — ${status}\n<details><summary>Show Plan</summary>\n\n\`\`\`\n${plan}\n\`\`\`\n</details>`;
+
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: body
+            });
+
+  notify-failure:
+    name: Notify on failure
+    needs: plan
+    if: failure() && inputs.slack_channel_id != ''
+    uses: ./.github/workflows/automation-slack-notify.yml
+    secrets:
+      SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+    with:
+      notification-type: failure
+      channel-id: ${{ inputs.slack_channel_id }}

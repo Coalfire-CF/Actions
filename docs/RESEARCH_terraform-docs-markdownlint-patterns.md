@@ -12,7 +12,7 @@
 |-------|---------|----------|
 | markdownlint-cli2 | 0.23.2 (latest on npm) | `package.json:7` |
 | markdownlint | 0.41.1 (latest) | `package-lock.json:535` |
-| terraform-docs/gh-actions | v1.4.1 (latest release, 2025-05-13) | `org-terraform-docs.yml:52` |
+| terraform-docs/gh-actions | v1.4.1 (latest release, 2025-05-13) | `ci-terraform-docs.yml:52` |
 | terraform-docs in CI | **0.20.0** | action Dockerfile at tag and at pinned SHA |
 | terraform-docs latest | 0.24.0 | upstream releases |
 
@@ -54,7 +54,7 @@ We already have the pieces: `terraform-docs --output-check` exists in 0.20.0, an
 exposes `fail-on-diff`.
 
 Adopting it would delete the Dependabot actor gate and the drift-report step
-(`org-terraform-docs.yml:55-85`), and would sidestep the known problem that a
+(`ci-terraform-docs.yml:55-85`), and would sidestep the known problem that a
 GITHUB_TOKEN push does not retrigger required checks (upstream gh-actions issue #107).
 
 **But it cuts against this fleet.** Provider bumps change the version tables, so every
@@ -81,7 +81,7 @@ regenerate before pushing instead of waiting for a bot commit.
 
 ### 5. Local and CI parity for the lint policy itself
 
-`org-markdown-lint.yml:64-69` deletes every repo-local markdownlint config and heredocs a
+`ci-markdown.yml:64-69` deletes every repo-local markdownlint config and heredocs a
 canonical one. Two consequences:
 
 - A developer running markdownlint locally gets different results than CI.
@@ -178,7 +178,7 @@ That single design choice produces all of the following:
   writer stripped (issue #278). Two writers, one file.
 - Hand-emitted blank lines so the generated section satisfies MD022, MD031 and MD047.
 - Two separate actor-gated pushes, plus the Dependabot read-only drift report
-  (`org-terraform-docs.yml:55-85`), plus `cancel-in-progress` care so a main-writing run
+  (`ci-terraform-docs.yml:55-85`), plus `cancel-in-progress` care so a main-writing run
   is never cancelled.
 - Marker comments and lint pragmas inside an authored file.
 
@@ -197,7 +197,7 @@ That single design choice produces all of the following:
    MD033, MD034 and MD060 relaxations can be dropped fleet-wide, and no pragma is ever
    needed.
 4. **Regenerate on `push: main`, not on PR branches.** The workflow already supports this
-   mode (`org-terraform-docs.yml:47-49`). PR branches stop being mutated, which removes
+   mode (`ci-terraform-docs.yml:47-49`). PR branches stop being mutated, which removes
    both actor gates, the drift report, and the "did required checks rerun" problem. The
    fact that a GITHUB_TOKEN push does not retrigger workflows becomes useful here: it
    prevents the regen loop for free.
@@ -219,11 +219,11 @@ repo landing page, a link goes there instead.
    via a canonical `.terraform-docs.yml` using `output.template`. Verified on 0.20.0: the
    README lints to 0 issues with MD033, MD034 and MD060 all enabled, and authored prose
    outside the block still reports. Requires blanking `output-file`/`output-method` at
-   `org-terraform-docs.yml:62-63`, because the action documents that its CLI flags override
+   `ci-terraform-docs.yml:62-63`, because the action documents that its CLI flags override
    config-file `output:` keys. Zero fleet repos have a local `.terraform-docs.yml`, so there
    is no divergence to reconcile.
 2. **Then re-enable MD033, MD034, MD060** in both copies of the policy
-   (`.markdownlint-cli2.jsonc:33-34,42` and `org-markdown-lint.yml:96-97,105`). Order
+   (`.markdownlint-cli2.jsonc:33-34,42` and `ci-markdown.yml:96-97,105`). Order
    matters: step 1 must land first or README-touching PRs go red. Leave MD013 off.
 3. **Then fix the two-copies problem** (item 5). Independent of terraform-docs and the
    highest-value cleanup here.

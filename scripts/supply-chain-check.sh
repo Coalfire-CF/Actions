@@ -4,8 +4,8 @@
 # original heredoc idiom, intentional (not if-then-else) — kept byte-identical.
 #
 # supply-chain-check.sh — OSV + OpenSSF Scorecard supply-chain gate for the
-# Dependabot auto-merge workflow (.github/workflows/org-dependabot-auto-merge.yml,
-# job: supply_chain_check).
+# Dependabot auto-merge workflow (.github/workflows/automation-dependabot-auto-merge.yml,
+# job: supply-chain-check).
 #
 # EXTRACTED VERBATIM (grade-A plan #10) from the former inline
 # `/tmp/supply_chain_check.sh` heredoc so the logic is committed, unit-testable,

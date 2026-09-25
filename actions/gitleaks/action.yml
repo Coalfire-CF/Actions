@@ -60,7 +60,7 @@ runs:
           "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
         echo "${GITLEAKS_SHA256}  ${TARBALL}" | sha256sum -c -
         # L5/#211: sudo the extract — /usr/local/bin is not writable by the runner
-        # user on hardened/self-hosted runners (EACCES). Matches test-scripts.yml's
+        # user on hardened/self-hosted runners (EACCES). Matches ci-test-scripts.yml's
         # actionlint install (sudo tar … -C /usr/local/bin).
         sudo tar -xzf "${TARBALL}" -C /usr/local/bin gitleaks
         rm -f "${TARBALL}"

@@ -1,7 +1,7 @@
 # Label Taxonomy
 
 35 labels across 6 categories for the Dependabot auto-merge system. Labels are
-managed by the `org-label-sync.yml` workflow, which creates missing labels and
+managed by the `automation-label-sync.yml` workflow, which creates missing labels and
 corrects drifted colors/descriptions.
 
 ## Categories
@@ -150,7 +150,7 @@ org:Coalfire-CF is:pr is:open label:dep/github-actions author:app/dependabot
 ```yaml
 jobs:
   sync-labels:
-    uses: Coalfire-CF/Actions/.github/workflows/org-label-sync.yml@72d0360b99f80252dda40f6dfefc252f5a66edb3 # v0.10.0
+    uses: Coalfire-CF/Actions/.github/workflows/automation-label-sync.yml@72d0360b99f80252dda40f6dfefc252f5a66edb3 # v0.10.0
     secrets: inherit
 ```
 
@@ -164,7 +164,7 @@ on:
 
 jobs:
   sync-labels:
-    uses: Coalfire-CF/Actions/.github/workflows/org-label-sync.yml@72d0360b99f80252dda40f6dfefc252f5a66edb3 # v0.10.0
+    uses: Coalfire-CF/Actions/.github/workflows/automation-label-sync.yml@72d0360b99f80252dda40f6dfefc252f5a66edb3 # v0.10.0
     secrets: inherit
 ```
 

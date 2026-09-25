@@ -2,4 +2,4 @@
 # The gate MUST flag it (::error under strict, ::warning under advisory).
 jobs:
   release:
-    uses: Coalfire-CF/Actions/.github/workflows/org-release-clean.yml@main
+    uses: Coalfire-CF/Actions/.github/workflows/release-clean-archive.yml@main

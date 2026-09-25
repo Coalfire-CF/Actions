@@ -29,7 +29,7 @@ Documented exceptions, each needing an owner decision rather than a script:
 ## Scope
 
 Applies to every Coalfire-CF repo that calls
-`.github/workflows/org-terraform-docs.yml` and has a generated block in its root
+`.github/workflows/ci-terraform-docs.yml` and has a generated block in its root
 `README.md`. Repos with no Terraform, or with no generated block, are out of
 scope: there is nothing to generate.
 
@@ -172,7 +172,7 @@ it running on `.tf` changes.
 
 ## Verify-only workflow behavior
 
-`.github/workflows/org-terraform-docs.yml` never writes to a branch:
+`.github/workflows/ci-terraform-docs.yml` never writes to a branch:
 
 - `permissions: contents: read`
 - `git-push: 'false'`
@@ -220,7 +220,7 @@ Callers pin the reusable workflow to an immutable released SHA with the version 
 a trailing comment:
 
 ```yaml
-    uses: Coalfire-CF/Actions/.github/workflows/org-terraform-docs.yml@<40-hex-sha> # vX.Y.Z
+    uses: Coalfire-CF/Actions/.github/workflows/ci-terraform-docs.yml@<40-hex-sha> # vX.Y.Z
 ```
 
 Never pin a branch head or a movable tag. The sweep refuses to run in mutation
@@ -356,14 +356,14 @@ removed from their partials with
 The policy exists in two places and they must stay in sync:
 
 - `.markdownlint-cli2.jsonc`
-- the heredoc in `.github/workflows/org-markdown-lint.yml`
+- the heredoc in `.github/workflows/ci-markdown.yml`
 
 They had already drifted once, with `MD029` missing from the workflow copy. Check
 them mechanically rather than by eye:
 
 ```bash
 sed -n "/cat > .markdownlint-cli2.jsonc <<'JSONC'/,/^        JSONC$/p" \
-  .github/workflows/org-markdown-lint.yml | sed '1d;$d' | sed 's/^        //' > /tmp/pw.jsonc
+  .github/workflows/ci-markdown.yml | sed '1d;$d' | sed 's/^        //' > /tmp/pw.jsonc
 strip() { sed 's#//.*##' "$1" | grep -oE '"MD[0-9]+"[^,]*' | sed 's/[[:space:]]*$//' | sort; }
 diff <(strip /tmp/pw.jsonc) <(strip .markdownlint-cli2.jsonc)
 ```

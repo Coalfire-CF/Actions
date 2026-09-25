@@ -19,7 +19,7 @@ Sends Slack notifications from GitHub Actions workflows. Supports three notifica
 
 ### Release and Failure Notifications (built-in)
 
-All reusable workflows in this repo accept an optional `slack_channel_id` input. When provided, the workflow automatically sends a Slack notification on failure. The `org-release.yml` workflow also sends a release notification when a new version is cut.
+All reusable workflows in this repo accept an optional `slack_channel_id` input. When provided, the workflow automatically sends a Slack notification on failure. The `release-please.yml` workflow also sends a release notification when a new version is cut.
 
 No extra jobs are needed in downstream repos. Just add `slack_channel_id` to your existing workflow calls.
 
@@ -31,7 +31,7 @@ Add `slack_channel_id` to any workflow call. The release workflow requires `secr
 # Release workflow — gets both release and failure notifications
 jobs:
   create-release:
-    uses: Coalfire-CF/Actions/.github/workflows/org-release.yml@72d0360b99f80252dda40f6dfefc252f5a66edb3 # v0.10.0
+    uses: Coalfire-CF/Actions/.github/workflows/release-please.yml@72d0360b99f80252dda40f6dfefc252f5a66edb3 # v0.10.0
     secrets: inherit
     with:
       slack_channel_id: 'CXXXXXXXXX'
@@ -41,7 +41,7 @@ jobs:
 # PR workflows — get failure notifications
 jobs:
   trivy-scan:
-    uses: Coalfire-CF/Actions/.github/workflows/org-trivy-pr.yml@72d0360b99f80252dda40f6dfefc252f5a66edb3 # v0.10.0
+    uses: Coalfire-CF/Actions/.github/workflows/ci-security-trivy.yml@72d0360b99f80252dda40f6dfefc252f5a66edb3 # v0.10.0
     with:
       slack_channel_id: 'CXXXXXXXXX'
 ```
@@ -54,17 +54,17 @@ All reusable workflows support `slack_channel_id`:
 
 | Workflow | Notification Type |
 | -------- | ----------------- |
-| `org-release.yml` | Release + Failure |
-| `org-gitleaks-pr.yml` | Failure |
-| `org-trivy-pr.yml` | Failure |
-| `org-terraform-validate.yml` | Failure |
-| `org-terraform-fmt.yml` | Failure |
-| `org-terraform-docs.yml` | Failure |
+| `release-please.yml` | Release + Failure |
+| `ci-security-gitleaks.yml` | Failure |
+| `ci-security-trivy.yml` | Failure |
+| `ci-terraform-validate.yml` | Failure |
+| `ci-terraform-format.yml` | Failure |
+| `ci-terraform-docs.yml` | Failure |
 | `org-tree-readme.yml` | Failure |
-| `org-markdown-lint.yml` | Failure |
-| `org-dependabot.yml` | Failure |
-| `org-jira-sync.yml` | Failure |
-| `org-trivy-exception-review.yml` | Failure |
+| `ci-markdown.yml` | Failure |
+| `automation-dependabot-refresh.yml` | Failure |
+| `automation-jira-sync.yml` | Failure |
+| `automation-trivy-exception-review.yml` | Failure |
 
 ### Health Check (standalone)
 
@@ -79,7 +79,7 @@ on:
 
 jobs:
   check:
-    uses: Coalfire-CF/Actions/.github/workflows/org-slack-notify.yml@72d0360b99f80252dda40f6dfefc252f5a66edb3 # v0.10.0
+    uses: Coalfire-CF/Actions/.github/workflows/automation-slack-notify.yml@72d0360b99f80252dda40f6dfefc252f5a66edb3 # v0.10.0
     secrets: inherit
     with:
       notification-type: health-check
@@ -90,12 +90,12 @@ jobs:
 
 ### Direct Usage (advanced)
 
-The `org-slack-notify.yml` workflow can also be called directly for custom notification scenarios:
+The `automation-slack-notify.yml` workflow can also be called directly for custom notification scenarios:
 
 ```yaml
 jobs:
   notify:
-    uses: Coalfire-CF/Actions/.github/workflows/org-slack-notify.yml@72d0360b99f80252dda40f6dfefc252f5a66edb3 # v0.10.0
+    uses: Coalfire-CF/Actions/.github/workflows/automation-slack-notify.yml@72d0360b99f80252dda40f6dfefc252f5a66edb3 # v0.10.0
     secrets: inherit
     with:
       notification-type: release    # release, failure, or health-check

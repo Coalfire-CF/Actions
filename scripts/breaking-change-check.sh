@@ -5,7 +5,7 @@
 #
 # breaking-change-check.sh — semver + release-note (Bedrock) breaking-change
 # analysis for the Dependabot auto-merge workflow
-# (.github/workflows/org-dependabot-auto-merge.yml, job: breaking_change_check).
+# (.github/workflows/automation-dependabot-auto-merge.yml, job: breaking-change-check).
 #
 # EXTRACTED VERBATIM (grade-A plan #10) from the former inline
 # `/tmp/breaking_change_check.sh` heredoc so the logic is committed,

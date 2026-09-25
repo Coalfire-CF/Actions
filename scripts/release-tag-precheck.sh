@@ -2,7 +2,7 @@
 #
 # release-tag-precheck.sh — detect a pre-existing GitHub release/tag before
 # release-please publishes, so a hand-cut tag cannot 422 and silently skip the
-# clean tarball, cosign bundles, and Trivy/Gitleaks jobs (org-release.yml).
+# clean tarball, cosign bundles, and Trivy/Gitleaks jobs (release-please.yml).
 #
 # release-please applies `autorelease: tagged` BEFORE it errors on
 # already_exists, which wedges that version permanently. This script runs first,
