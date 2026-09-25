@@ -82,7 +82,7 @@ The `release-clean` job:
 If you already call `release-please.yml`, you automatically get clean tarballs on your next release:
 
 ```yaml
-# .github/workflows/internal-release.yml
+# .github/workflows/release-please.yml
 name: Release
 
 on:

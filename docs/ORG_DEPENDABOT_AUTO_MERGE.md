@@ -232,7 +232,7 @@ See [ORG_LABEL_TAXONOMY.md](ORG_LABEL_TAXONOMY.md) for the full label reference.
 
 ## Usage
 
-Add this workflow to each downstream repo as `.github/workflows/internal-dependabot-auto-merge.yml`:
+Add this workflow to each downstream repo as `.github/workflows/automation-dependabot-auto-merge.yml`:
 
 ```yaml
 name: Dependabot Auto-Merge
