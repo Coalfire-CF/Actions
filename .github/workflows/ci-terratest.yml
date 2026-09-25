@@ -484,7 +484,9 @@ jobs:
             failures="$(printf '%s' "$root" | grep -oE 'failures="[0-9]+"' | grep -oE '[0-9]+' || echo 0)"
             errors="$(printf '%s' "$root"   | grep -oE 'errors="[0-9]+"'   | grep -oE '[0-9]+' || echo 0)"
             time="$(printf '%s' "$root"     | grep -oE 'time="[0-9.]+"'    | grep -oE '[0-9.]+' || echo 0)"
-            skipped="$(grep -oE '<testsuite [^>]*>' "$XML" | grep -oE 'skipped="[0-9]+"' | grep -oE '[0-9]+' | awk '{s+=$1} END{print s+0}')"
+            # No skipped= attribute at all is normal; under pipefail the empty grep would
+            # otherwise fail this step on a passing run.
+            skipped="$({ grep -oE '<testsuite [^>]*>' "$XML" || true; } | { grep -oE 'skipped="[0-9]+"' || true; } | { grep -oE '[0-9]+' || true; } | awk '{s+=$1} END{print s+0}')"
           fi
 
           # result is derived from the gate exit code, NOT from the presence of the XML — a green
