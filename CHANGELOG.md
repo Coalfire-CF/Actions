@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.1.0](https://github.com/Coalfire-CF/Actions/compare/v1.0.1...v1.1.0) (2026-09-25)
+
+
+### Features
+
+* **release:** refresh caller example pins after each release ([#336](https://github.com/Coalfire-CF/Actions/issues/336)) ([6b4ccd9](https://github.com/Coalfire-CF/Actions/commit/6b4ccd9005c3643a0df27297458aa3cb83d40985))
+
+
+### Bug Fixes
+
+* **docs-sweep:** rename a pre-1.0 org-terraform-docs.yml caller during migration ([#333](https://github.com/Coalfire-CF/Actions/issues/333)) ([4e2086e](https://github.com/Coalfire-CF/Actions/commit/4e2086ec89b1dcc8e6843d1c1dae46eb69d31d6d))
+
+
+### Documentation
+
+* **examples:** refresh caller pins to v1.0.1 ([#334](https://github.com/Coalfire-CF/Actions/issues/334)) ([3618b05](https://github.com/Coalfire-CF/Actions/commit/3618b05efff552140f61438625fe9a6bdd94a8d0))
+
 ## [1.0.1](https://github.com/Coalfire-CF/Actions/compare/v1.0.0...v1.0.1) (2026-09-25)
 
 
