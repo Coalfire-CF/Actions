@@ -130,7 +130,8 @@ for variant in bare with; do
   if [ "$variant" = with ]; then
     grep -qx "      auto_merge_method: squash" "$f2" || fail "with: existing input lost"
   fi
-  uv run --quiet --with pyyaml python3 -c "import sys,yaml; d=yaml.safe_load(open(sys.argv[1])); w=d['jobs']['auto-merge']['with']; assert w['actions_ref']=='${PIN}', w" "$f2" \
+  # Ruby's bundled YAML parser is present on macOS and ubuntu runners; PyYAML is not.
+  ruby -ryaml -e 'w = YAML.safe_load(File.read(ARGV[0]))["jobs"]["auto-merge"]["with"]; exit(w["actions_ref"] == ARGV[1] ? 0 : 1)' "$f2" "$PIN" \
     || fail "${variant}: result is not valid YAML with actions_ref: $(cat "$f2")"
   echo "OK: actions_ref added (${variant})"
 done
