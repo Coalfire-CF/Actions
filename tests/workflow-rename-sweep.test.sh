@@ -49,6 +49,16 @@ jobs:
     uses: Coalfire-CF/Actions/.github/workflows/org-gitleaks-pr.yml@v0.18.2 # tag pin
   # uses: Coalfire-CF/Actions/.github/workflows/org-opa.yml@${OLD}
 EOF
+# Historical names that map onto one new file: the second must not clobber the first.
+cat > "$WF/org-gitleaks.yml" <<EOF
+name: Gitleaks
+on:
+  pull_request:
+jobs:
+  gitleaks:
+    uses: Coalfire-CF/Actions/.github/workflows/org-gitleaks-pr.yml@${OLD} # v0.18.2
+EOF
+cp "$WF/org-gitleaks.yml" "$WF/org-gitleaks-pr.yml"
 cat > "$WF/unrelated.yml" <<'EOF'
 name: Unrelated
 on: push
@@ -85,8 +95,16 @@ echo "OK: custom caller rewritten in place; commented example untouched"
 
 cmp -s "$WF/unrelated.yml" "$WORK/unrelated.orig" || fail "unrelated workflow modified"
 changed="$(grep -cE '^(renamed|rewrote) ' <<< "$out")"
-[ "$changed" = "3" ] || fail "expected 3 changed files, got ${changed}: ${out}"
-echo "OK: exactly 3 caller files changed, unrelated untouched"
+[ "$changed" = "5" ] || fail "expected 5 changed files, got ${changed}: ${out}"
+echo "OK: exactly 5 caller files changed, unrelated untouched"
+
+# Two historical names for one new file: one renamed, the other kept and repinned.
+[ -f "$WF/ci-security-gitleaks.yml" ] || fail "gitleaks caller not renamed"
+n_gl="$(ls "$WF" | grep -cE '^(org-gitleaks|org-gitleaks-pr|ci-security-gitleaks)\.yml$')"
+[ "$n_gl" = "2" ] || fail "expected 2 gitleaks callers after rename, got ${n_gl}: $(ls "$WF")"
+grep -l "org-gitleaks-pr.yml@" "$WF"/*.yml >/dev/null 2>&1 && fail "a gitleaks caller still calls org-gitleaks-pr.yml"
+grep -q "already exists" <<< "$out" || fail "collision was not reported"
+echo "OK: colliding historical names keep one old filename, both repinned"
 
 # Second run: nothing left to rewrite -> rc 3.
 MODE=rewrite TARGET_DIR="$REPO" ACTIONS_PIN="$PIN" ACTIONS_TAG=v1.0.0 bash "$SWEEP" >/dev/null 2>&1

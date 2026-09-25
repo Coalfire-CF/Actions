@@ -86,7 +86,9 @@ new_caller() {
     org-release.yml) echo 'release-please.yml|Release: Release Please' ;;
     org-dependabot-auto-merge.yml) echo 'automation-dependabot-auto-merge.yml|Automation: Dependabot auto-merge' ;;
     org-dependabot.yml) echo 'automation-dependabot-refresh.yml|Automation: Dependabot refresh' ;;
-    org-gitleaks-pr.yml) echo 'ci-security-gitleaks.yml|CI: Security Gitleaks' ;;
+    org-gitleaks-pr.yml|org-gitleaks.yml) echo 'ci-security-gitleaks.yml|CI: Security Gitleaks' ;;
+    org-trivy-pr.yml|org-trivy.yml) echo 'ci-security-trivy.yml|CI: Security Trivy' ;;
+    org-terratest.yml) echo 'ci-terratest.yml|CI: Terratest' ;;
     org-md-lint.yml|org-markdown-lint.yml) echo 'ci-markdown.yml|CI: Markdown' ;;
     org-terraform-docs.yml) echo 'ci-terraform-docs.yml|CI: Terraform docs' ;;
     org-terraform-fmt.yml) echo 'ci-terraform-format.yml|CI: Terraform format' ;;
