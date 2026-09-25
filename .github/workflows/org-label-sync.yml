@@ -101,6 +101,7 @@ jobs:
               { name: 'blocked/low-scorecard',    color: 'b60205', description: 'OpenSSF Scorecard below threshold' },
               { name: 'blocked/major-bump',       color: 'b60205', description: 'Major semver bump requires manual review' },
               { name: 'blocked/breaking-change',  color: 'b60205', description: 'Breaking change detected in changelog' },
+              { name: 'blocked/missing-uses-path', color: 'b60205', description: 'Bumped ref drops a first-party uses: path' },
               { name: 'blocked/analysis-error',   color: 'b60205', description: 'Automated analysis failed — needs manual check' },
               { name: 'blocked/terraform-no-tests', color: 'b60205', description: 'Terraform dep — unit tests not yet available' },
             ];

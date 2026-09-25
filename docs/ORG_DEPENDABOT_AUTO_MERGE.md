@@ -322,6 +322,7 @@ jobs:
 | Low scorecard | Block | `merge/blocked`, `risk/high`, `blocked/low-scorecard` |
 | Major version bump | Block | `merge/blocked`, `risk/high`, `blocked/major-bump` |
 | Breaking change in changelog | Block | `merge/blocked`, `risk/high`, `blocked/breaking-change` |
+| First-party `uses:` path missing at the new ref (renamed or removed upstream) | Block | `merge/blocked`, `risk/high`, `blocked/missing-uses-path` |
 
 ## Example: Blocked PR Comment
 

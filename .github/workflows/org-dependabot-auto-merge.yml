@@ -547,6 +547,20 @@ jobs:
           ref: ${{ inputs.actions_ref }}
           path: actions-tools
 
+      # A release can rename or remove a reusable workflow. Dependabot rewrites
+      # only the @ref, so block any bump whose first-party uses: path is gone
+      # at the new ref (the caller would fail at startup with no check-runs).
+      - name: Check first-party uses paths exist at the new ref
+        id: uses-paths
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          bash "${GITHUB_WORKSPACE}/actions-tools/scripts/uses-path-exists-check.sh"
+
       - name: Evaluate checks and decide
         id: decision
         env:
@@ -566,6 +580,8 @@ jobs:
           PARSE_ERROR: ${{ needs.classify.outputs.parse_error }}
           SC_ERRORS: ${{ needs.supply_chain_check.outputs.check_errors }}
           BC_ERRORS: ${{ needs.breaking_change_check.outputs.check_errors }}
+          USES_MISSING: ${{ steps.uses-paths.outputs.uses_missing }}
+          USES_ERROR: ${{ steps.uses-paths.outputs.uses_error }}
         run: |
           set -euo pipefail
           bash "${GITHUB_WORKSPACE}/actions-tools/scripts/auto-merge-decide.sh"

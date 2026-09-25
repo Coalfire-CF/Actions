@@ -101,6 +101,7 @@ simultaneously on a single PR.
 | `blocked/low-scorecard` | OpenSSF Scorecard below threshold |
 | `blocked/major-bump` | Major semver bump requires manual review |
 | `blocked/breaking-change` | Breaking change detected in changelog |
+| `blocked/missing-uses-path` | Bumped ref drops a first-party `uses:` path |
 | `blocked/analysis-error` | Automated analysis failed, needs manual check |
 | `blocked/terraform-no-tests` | Terraform dep, unit tests not yet available |
 
