@@ -74,7 +74,8 @@ new_reusable() {
     org-terraform-version-check) echo automation-terraform-version-check ;;
     org-terratest) echo ci-terratest ;;
     org-trivy-exception-review) echo automation-trivy-exception-review ;;
-    org-trivy-pr) echo ci-security-trivy ;;
+    # org-trivy.yml never existed upstream; a few callers point at it and fail.
+    org-trivy-pr|org-trivy) echo ci-security-trivy ;;
     org-trivy-release) echo release-security-trivy ;;
     *) echo "" ;;
   esac
