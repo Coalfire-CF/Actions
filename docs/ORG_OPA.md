@@ -1,4 +1,4 @@
-# org-opa — Policy-as-Code Runner (Tier-1 Advisory)
+# ci-policy-opa — Policy-as-Code Runner (Tier-1 Advisory)
 
 Reusable workflow that runs the org OPA/Rego policy set against a caller's
 Terraform. Authority: **ADR-0003** (OPA/Rego is the canonical policy engine) and

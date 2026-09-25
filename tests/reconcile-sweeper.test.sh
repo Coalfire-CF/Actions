@@ -190,7 +190,7 @@ echo "$OUT" | grep -q "SKIP #123 (author-not-allowlisted)" || fail "human-author
 echo "$TRACE" | grep -qE "$WRITE_VERBS_RE" && fail "human-authored issued a WRITE verb but must never merge"
 echo "OK: non-automation author → SKIP (author-not-allowlisted)"
 
-# ---- Case 6b: the ci-automerge-app's OWN PRs (org-repo-bootstrap baseline
+# ---- Case 6b: the ci-automerge-app's OWN PRs (automation-repo-bootstrap baseline
 #      proposals, labeled merge/approved) ARE swept — App slug in the default
 #      allowlist, both author representations. ----
 PV_APP="{\"state\":\"OPEN\",\"isDraft\":false,\"author\":{\"login\":\"app/ci-automerge-app\"},\"reviewDecision\":null,\"headRefOid\":\"${SHA}\"}"

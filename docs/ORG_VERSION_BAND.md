@@ -1,4 +1,4 @@
-# org-terraform-version-band — Terraform version band gate
+# ci-terraform-version-band — Terraform version band gate
 
 Reusable workflow enforcing the org-wide Terraform version band
 **`>= 1.15.7, < 2.0.0`** (RFC-0004 / ADR-0013). The band is authoritative in

@@ -2,7 +2,7 @@
 #
 # pr-template-sweep.sh — one-time org sweep to standardize .github/PULL_REQUEST_TEMPLATE.md
 #
-# New/empty repos receive the template via the org-repo-bootstrap bundle
+# New/empty repos receive the template via the automation-repo-bootstrap bundle
 # (templates/bootstrap/common/.github/PULL_REQUEST_TEMPLATE.md.tmpl). This
 # script handles the other half: repos that ALREADY carry a template, which the
 # bootstrap sweeper skips under its never-overwrite rule. It replaces the file

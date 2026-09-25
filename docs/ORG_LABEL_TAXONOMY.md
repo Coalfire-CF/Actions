@@ -43,7 +43,7 @@ The `decide` job removes conflicting labels before applying the new one.
 
 ### `bootstrap/` - Org Repo Bootstrap
 
-Applied by the org-repo-bootstrap sweeper ([docs](ORG_REPO_BOOTSTRAP.md)) to
+Applied by the automation-repo-bootstrap sweeper ([docs](ORG_REPO_BOOTSTRAP.md)) to
 baseline-adoption PRs it opens. These PRs also carry `merge/approved`, so the
 reconcile sweeper lands them once their checks are green.
 

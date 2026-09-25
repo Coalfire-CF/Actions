@@ -336,7 +336,7 @@ if [ "$verdict" = "COLLISION" ]; then
       echo "| Supply-chain jobs | \`${supply_chain}\` |"
       echo "| Associated PR | \`${pr_number:-none}\` |"
       echo
-      echo "A tag/release created outside org-release collided with the version"
+      echo "A tag/release created outside release-please collided with the version"
       echo "release-please is about to cut. release-please was **not** invoked,"
       echo "so it cannot apply \`autorelease: tagged\` and then 422."
     } >> "$GITHUB_STEP_SUMMARY"
