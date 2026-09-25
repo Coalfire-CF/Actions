@@ -72,6 +72,14 @@ run_emit "$XML_PASS" "0"
 [ "$(jq -r .counts.skipped "$RECORD")" = "1" ] || fail "1: skipped should be 1"
 [ "$(jq -r .duration_seconds "$RECORD")" = "12.5" ] || fail "1: duration should be 12.5"
 
+echo "== 1b. JUnit with no skipped= attribute (some go-junit-report output) → still emits =="
+# Regression: under pipefail the skipped pipeline exited 1 when no testsuite carried
+# skipped=, so a PASSING run went red in this step (terraform-aws-eks, 2026-09-25).
+run_emit '<testsuites tests="3" failures="0" errors="0" time="9.0"><testsuite name="x"></testsuite></testsuites>' "0"
+[ "$RC" -eq 0 ] || fail "1b: emit should succeed without skipped=, got $RC ($OUT)"
+[ "$(jq -r .counts.skipped "$RECORD")" = "0" ] || fail "1b: skipped should default to 0"
+[ "$(jq -r .counts.passed "$RECORD")" = "3" ] || fail "1b: passed should be 3"
+
 echo "== 2. failing XML + non-zero exit → fail, counts reflect failures =="
 run_emit "$XML_FAIL" "1"
 [ "$RC" -eq 0 ] || fail "2: emit itself should still succeed, got $RC"
