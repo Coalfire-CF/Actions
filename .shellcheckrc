@@ -1,0 +1,6 @@
+# Follow `# shellcheck source=...` directives without needing -x on the command
+# line. CI lints every script in one invocation (shellcheck scripts/*.sh), so a
+# sourced lib is always among the inputs there; per-file invocations (pre-commit
+# hooks, editor integrations) do not have it and would report SC1091 for every
+# script that sources scripts/retry-lib.sh. This makes both paths agree.
+external-sources=true
