@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.0.0](https://github.com/Coalfire-CF/Actions/compare/v0.19.0...v1.0.0) (2026-09-25)
+
+
+### ⚠ BREAKING CHANGES
+
+* the org-*.yml reusable workflows no longer exist. Callers must change the uses: path when they bump to this release.
+
+### Features
+
+* rename workflows to the cs-delta naming contract ([#326](https://github.com/Coalfire-CF/Actions/issues/326)) ([936d8e7](https://github.com/Coalfire-CF/Actions/commit/936d8e710287a9b8b92ddd28158ad9c4c819d7cd))
+
+
+### Miscellaneous
+
+* **main:** release 0.19.0 ([#325](https://github.com/Coalfire-CF/Actions/issues/325)) ([a9b5c58](https://github.com/Coalfire-CF/Actions/commit/a9b5c58c5118a540763a8ec7ea7cf4c4566f1802))
+
 ## [0.19.0](https://github.com/Coalfire-CF/Actions/compare/v0.18.2...v0.19.0) (2026-09-25)
 
 
