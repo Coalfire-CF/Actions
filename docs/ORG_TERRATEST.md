@@ -193,7 +193,7 @@ concurrency:
 
 jobs:
   terratest:
-    uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@23c6c8bc526102ed041f2e08a363e5ea2c2f0ec4 # v0.18.1
+    uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@d06776a5840b53ff374f80f3c45e84181425b6d6 # v0.18.2
     with:
       test_mode: pr
       go_version: "1.26"
@@ -241,7 +241,7 @@ concurrency:
 
 jobs:
   terratest-azure:
-    uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@23c6c8bc526102ed041f2e08a363e5ea2c2f0ec4 # v0.18.1
+    uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@d06776a5840b53ff374f80f3c45e84181425b6d6 # v0.18.2
     with:
       test_mode: pr
       go_version: "1.26"
@@ -277,7 +277,7 @@ concurrency:
 
 jobs:
   terratest:
-    uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@23c6c8bc526102ed041f2e08a363e5ea2c2f0ec4 # v0.18.1
+    uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@d06776a5840b53ff374f80f3c45e84181425b6d6 # v0.18.2
     with:
       test_mode: pr
       go_version: "1.26"
@@ -300,7 +300,7 @@ on:
 
 jobs:
   terratest:
-    uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@23c6c8bc526102ed041f2e08a363e5ea2c2f0ec4 # v0.18.1
+    uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@d06776a5840b53ff374f80f3c45e84181425b6d6 # v0.18.2
     with:
       test_mode: release
       go_version: "1.26"
@@ -309,7 +309,7 @@ jobs:
 
   release-clean:
     needs: terratest
-    uses: Coalfire-CF/Actions/.github/workflows/org-release-clean.yml@23c6c8bc526102ed041f2e08a363e5ea2c2f0ec4 # v0.18.1
+    uses: Coalfire-CF/Actions/.github/workflows/org-release-clean.yml@d06776a5840b53ff374f80f3c45e84181425b6d6 # v0.18.2
     with:
       tag_name: ${{ github.event.release.tag_name }}
 ```
@@ -483,7 +483,7 @@ permissions:
 
 jobs:
   terratest:
-    uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@23c6c8bc526102ed041f2e08a363e5ea2c2f0ec4 # v0.18.1
+    uses: Coalfire-CF/Actions/.github/workflows/org-terratest.yml@d06776a5840b53ff374f80f3c45e84181425b6d6 # v0.18.2
     with:
       test_directory: test
       test_timeout: 45m
