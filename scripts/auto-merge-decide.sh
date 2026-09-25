@@ -25,6 +25,7 @@
 #   DEP_NAME TO_VERSION IS_FIRST_PARTY UPDATE_TYPE_META DEP_GROUP PARSE_ERROR
 #                                                (classify.outputs.*)
 #   SC_ERRORS BC_ERRORS   per-job check-error counts (fail-closed inputs)
+#   USES_MISSING USES_ERROR  (uses-path-exists-check.sh outputs; optional)
 #   GITHUB_OUTPUT GITHUB_STEP_SUMMARY   (Actions-provided) output/summary files
 #
 # Outputs (appended to $GITHUB_OUTPUT):
@@ -47,6 +48,22 @@ if [ "${PARSE_ERROR:-false}" = "true" ] || [ "${SC_ERRORS:-0}" -gt 0 ] || [ "${B
   MANUAL="true"
   RISK_LEVEL="high"
   REASONS="${REASONS}\n- Per-dependency checks incomplete (parse_error=${PARSE_ERROR:-false}, supply_chain_errors=${SC_ERRORS:-0}, breaking_check_errors=${BC_ERRORS:-0}) — fail-closed to manual review"
+fi
+
+# Missing first-party path gate (uses-path-exists-check.sh): the bump points a
+# `uses:` at a path that does not exist at the new ref (renamed or removed
+# upstream). Semver cannot see this, so block it outright. A failed read is
+# partial data and downgrades to manual review like any other check error.
+if [ -n "${USES_MISSING:-}" ]; then
+  DECISION="block"
+  RISK_LEVEL="high"
+  BLOCKED_LABELS="${BLOCKED_LABELS} blocked/missing-uses-path"
+  REASONS="${REASONS}\n- Referenced path missing at the new ref: ${USES_MISSING}"
+fi
+if [ "${USES_ERROR:-false}" = "true" ]; then
+  MANUAL="true"
+  RISK_LEVEL="high"
+  REASONS="${REASONS}\n- Could not verify first-party uses: paths at the new ref, failing closed to manual review"
 fi
 
 # Authoritative group-aware major gate: fetch-metadata's update-type
@@ -151,6 +168,7 @@ echo "blocked_labels=${BLOCKED_LABELS}" >> "$GITHUB_OUTPUT"
   echo "| Update Type (max) | ${UPDATE_TYPE_META:-n/a} |"
   echo "| Dependency Group | ${DEP_GROUP:-—} |"
   echo "| Check Errors | supply=${SC_ERRORS:-0} breaking=${BC_ERRORS:-0} parse=${PARSE_ERROR:-false} |"
+  echo "| Missing uses: paths | ${USES_MISSING:-none} (error=${USES_ERROR:-false}) |"
   echo "| Breaking Changes | ${HAS_BREAKING} |"
   echo "| Applies to Repo | ${APPLIES_TO_REPO} |"
   echo "| Analysis | ${RISK_SUMMARY} |"

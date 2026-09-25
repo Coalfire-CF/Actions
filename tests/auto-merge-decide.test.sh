@@ -70,6 +70,9 @@ assert_path major_blocked      block   " blocked/major-bump"                    
 assert_path osv_blocked        block   " blocked/known-vuln"                    high
 assert_path parse_error_manual manual  ""                                       high
 assert_path first_party_waiver approve ""                                       medium
+# Same approvable inputs as first_party_waiver, plus uses-path-exists-check output.
+assert_path missing_uses_path_blocked block " blocked/missing-uses-path"        high
+assert_path uses_error_manual  manual  ""                                       high
 
 # ---- Sentinel (expected-FAIL guard): a semver-major bump must NEVER approve ----
 # If a future edit wrongly cleared the major gate to merge/approved, this fires.
