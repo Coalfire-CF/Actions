@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.19.0](https://github.com/Coalfire-CF/Actions/compare/v0.18.2...v0.19.0) (2026-09-25)
+
+
+### Features
+
+* **automerge:** block bumps whose first-party uses: path is gone ([#323](https://github.com/Coalfire-CF/Actions/issues/323)) ([da7b66a](https://github.com/Coalfire-CF/Actions/commit/da7b66a954fa0a775968e8e17dd9be3f656eb6a2))
+
+
+### Miscellaneous
+
+* **deps-dev:** bump markdownlint-cli2 in / ([#322](https://github.com/Coalfire-CF/Actions/issues/322)) ([b4bc4e0](https://github.com/Coalfire-CF/Actions/commit/b4bc4e03cd36fe5102ae1fdfa2adadd72754c485))
+* **deps:** bump Coalfire-CF/Actions/actions/gitleaks ([#321](https://github.com/Coalfire-CF/Actions/issues/321)) ([9f9c881](https://github.com/Coalfire-CF/Actions/commit/9f9c8817167f4d679563095843ded39b80701dcc))
+* **deps:** bump the third-party group across 1 directory with 2 updates ([#319](https://github.com/Coalfire-CF/Actions/issues/319)) ([a9294e2](https://github.com/Coalfire-CF/Actions/commit/a9294e244265cda563490c4af5c3b448332eac42))
+
 ## [0.18.2](https://github.com/Coalfire-CF/Actions/compare/v0.18.1...v0.18.2) (2026-09-17)
 
 
