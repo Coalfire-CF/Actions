@@ -104,10 +104,10 @@ jobs:
         run: |
           set -eo pipefail
           if [ -z "$POLICY_REF" ]; then
-            echo "::notice::org-opa: no policy_ref provided — skipping (advisory). Pin org-opa-policies by release SHA to enable."
+            echo "::notice::ci-policy-opa: no policy_ref provided — skipping (advisory). Pin org-opa-policies by release SHA to enable."
             echo "skip=true" >> "$GITHUB_OUTPUT"
           elif [ "$CHECKOUT_OUTCOME" != "success" ]; then
-            echo "::notice::org-opa: policy repo/ref unreachable (${POLICY_REPO}@${POLICY_REF}) — skipping (advisory)."
+            echo "::notice::ci-policy-opa: policy repo/ref unreachable (${POLICY_REPO}@${POLICY_REF}) — skipping (advisory)."
             echo "skip=true" >> "$GITHUB_OUTPUT"
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
@@ -189,25 +189,25 @@ jobs:
             INPUT="$(find "target/${WORKDIR}" -maxdepth 3 -name '*.tf.json' 2>/dev/null | head -1 || true)"
           fi
           if [ -z "$INPUT" ]; then
-            echo "::notice::org-opa: no JSON input to evaluate (provide plan_json_artifact for post-plan, or *.tf.json for pre-plan). fmt/check/test still ran."
+            echo "::notice::ci-policy-opa: no JSON input to evaluate (provide plan_json_artifact for post-plan, or *.tf.json for pre-plan). fmt/check/test still ran."
             exit 0
           fi
           # 'deny' is the org convention for violation messages (ADR-0003).
           DENY="$(opa eval -f raw -I -d "$POL" 'data.terraform.deny' < "$INPUT" 2>/dev/null || echo '[]')"
           COUNT="$(printf '%s' "$DENY" | opa eval -f raw -I 'count(input)' 2>/dev/null || echo 0)"
           if [ "${COUNT:-0}" -gt 0 ]; then
-            echo "::warning::org-opa: ${COUNT} policy violation(s):"
+            echo "::warning::ci-policy-opa: ${COUNT} policy violation(s):"
             printf '%s\n' "$DENY"
             if [ "$BLOCKING" = "true" ]; then
-              echo "::error::org-opa: blocking=true (Tier-2) — failing on ${COUNT} violation(s)."
+              echo "::error::ci-policy-opa: blocking=true (Tier-2) — failing on ${COUNT} violation(s)."
               exit 1
             fi
           else
-            echo "org-opa: no policy violations."
+            echo "ci-policy-opa: no policy violations."
           fi
           # Tier-1: policy-set validation problems never fail the pipeline; surface only.
           if [ "${policy_validation_rc:-0}" != "0" ] && [ "$BLOCKING" != "true" ]; then
-            echo "::notice::org-opa: policy-set validation had warnings (advisory)."
+            echo "::notice::ci-policy-opa: policy-set validation had warnings (advisory)."
           fi
 
   notify-failure:

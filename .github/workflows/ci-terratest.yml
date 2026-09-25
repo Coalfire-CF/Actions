@@ -188,7 +188,7 @@ env:
   # .terraform-version and passes no terraform_version input. A literal (not a raw fetch of
   # this repo's .terraform-version) because github.job_workflow_sha is EMPTY for cross-repo
   # reusable-workflow calls (actions/runner#2417) and github.sha is the CALLER's commit — so
-  # a raw fetch would resolve to the wrong repo/ref and 404. org-terraform-version-check keeps
+  # a raw fetch would resolve to the wrong repo/ref and 404. automation-terraform-version-check keeps
   # this literal in sync with .terraform-version across the org workflows.
   DEFAULT_TF_VERSION: '1.15.7'
 

@@ -90,7 +90,7 @@ IGNORE_CHECK_PREFIX="${IGNORE_CHECK_PREFIX:-auto-merge / }"
 # `pull_request.user.login` form is `<slug>[bot]`. Both forms are accepted so
 # the gate matches regardless of representation. A human/triager cannot forge
 # these. Besides Dependabot, the ci-automerge-app itself is trusted: the
-# org-repo-bootstrap sweeper authors baseline-adoption PRs as the App and labels
+# automation-repo-bootstrap sweeper authors baseline-adoption PRs as the App and labels
 # them merge/approved for this same green-gated pipeline to land.
 AUTHOR_ALLOWLIST="${AUTHOR_ALLOWLIST:-app/dependabot dependabot[bot] app/ci-automerge-app ci-automerge-app[bot]}"
 # Dependabot policy authorization is carried by the auto-merge App's APPROVED

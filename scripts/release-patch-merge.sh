@@ -104,7 +104,7 @@ DECISION_BODY=""
 upsert_comment() { # <decision-text>
   local body id
   body="${MARKER}
-**org-release auto-patch** — ${1}
+**release-please auto-patch** — ${1}
 ${DECISION_BODY}
 _run: ${RUN_URL:-n/a}_"
   # Locate an existing marker comment (edit, never re-post). M6/#203: --paginate so
@@ -121,7 +121,7 @@ _run: ${RUN_URL:-n/a}_"
 }
 summarize() { # <decision-text>
   if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
-    printf '### org-release auto-patch\n\n%s\n\n%s\n' "$1" "$DECISION_BODY" >> "$GITHUB_STEP_SUMMARY"
+    printf '### release-please auto-patch\n\n%s\n\n%s\n' "$1" "$DECISION_BODY" >> "$GITHUB_STEP_SUMMARY"
   fi
 }
 finish() { # <decision-line> <comment-text>
@@ -304,7 +304,7 @@ if [ "$DRY_RUN" != "false" ]; then
   would_merge "patch-only v${OLD_VER} -> v${NEW_VER}; checks green at ${HEAD_SHA}"
 fi
 
-MERGE_BODY="Auto-merged by org-release auto_release_patch policy: patch-only release v${OLD_VER} -> v${NEW_VER}; checks green at ${HEAD_SHA}; run ${RUN_URL:-n/a} (Coalfire-CF/Actions#148)"
+MERGE_BODY="Auto-merged by release-please auto_release_patch policy: patch-only release v${OLD_VER} -> v${NEW_VER}; checks green at ${HEAD_SHA}; run ${RUN_URL:-n/a} (Coalfire-CF/Actions#148)"
 MERGE_ERR="$(mktemp)"
 if gh pr merge "$PR_NUMBER" --repo "$REPO" "--${MERGE_METHOD}" --match-head-commit "$HEAD_SHA" --body "$MERGE_BODY" 2>"$MERGE_ERR"; then
   rm -f "$MERGE_ERR"
