@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.0.1](https://github.com/Coalfire-CF/Actions/compare/v1.0.0...v1.0.1) (2026-09-25)
+
+
+### Bug Fixes
+
+* **sweep:** map the never-published org-trivy.yml to ci-security-trivy ([#331](https://github.com/Coalfire-CF/Actions/issues/331)) ([db06875](https://github.com/Coalfire-CF/Actions/commit/db068758b54fb4b3004dc61628e57f965d910817))
+* **terratest:** emit telemetry when JUnit has no skipped attribute ([#332](https://github.com/Coalfire-CF/Actions/issues/332)) ([ec51a5b](https://github.com/Coalfire-CF/Actions/commit/ec51a5b14be34599cd7f928f251bef4d145aced4))
+
+
+### Miscellaneous
+
+* v1.0.0 follow-up (sweep caller names, example pins) ([#329](https://github.com/Coalfire-CF/Actions/issues/329)) ([b89565f](https://github.com/Coalfire-CF/Actions/commit/b89565fc65f16ea2f709e2b33646fd96cd1e32e9))
+
 ## [1.0.0](https://github.com/Coalfire-CF/Actions/compare/v0.19.0...v1.0.0) (2026-09-25)
 
 
