@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.1.1](https://github.com/Coalfire-CF/Actions/compare/v1.1.0...v1.1.1) (2026-09-26)
+
+
+### Bug Fixes
+
+* **reconcile:** skip PRs in archived repos ([#338](https://github.com/Coalfire-CF/Actions/issues/338)) ([bd58298](https://github.com/Coalfire-CF/Actions/commit/bd58298357c4543612186d18fdcf81709d436f2e))
+* **release:** publish drafts after assets upload ([#343](https://github.com/Coalfire-CF/Actions/issues/343)) ([52189e6](https://github.com/Coalfire-CF/Actions/commit/52189e6219893019ee7819a9bc81a49a8fa6b757))
+
+
+### Miscellaneous
+
+* add .shellcheckrc and the deferred versioning research doc ([#341](https://github.com/Coalfire-CF/Actions/issues/341)) ([1a2bdf8](https://github.com/Coalfire-CF/Actions/commit/1a2bdf8e44bb9dc2df99a299cc08dd9b57d3479f))
+
+
+### Documentation
+
+* use the v1.0.0 workflow names in prose, comments and log text ([#340](https://github.com/Coalfire-CF/Actions/issues/340)) ([e2c0246](https://github.com/Coalfire-CF/Actions/commit/e2c02463eecaac9ee8ca6c25e2896e01d1da91b5))
+
 ## [1.1.0](https://github.com/Coalfire-CF/Actions/compare/v1.0.1...v1.1.0) (2026-09-25)
 
 
