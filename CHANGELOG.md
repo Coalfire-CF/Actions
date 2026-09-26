@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.1.2](https://github.com/Coalfire-CF/Actions/compare/v1.1.1...v1.1.2) (2026-09-26)
+
+
+### Bug Fixes
+
+* **bootstrap:** start new repos on the draft release flow ([#345](https://github.com/Coalfire-CF/Actions/issues/345)) ([dd44000](https://github.com/Coalfire-CF/Actions/commit/dd4400029b2c5dc2fc2d7fb08c54111fe0bc2c9b))
+* **release:** resume a draft left by a failed run ([#347](https://github.com/Coalfire-CF/Actions/issues/347)) ([f66eb6e](https://github.com/Coalfire-CF/Actions/commit/f66eb6e435d22e27d58f9676c1409e6ddbb8d0e5))
+
 ## [1.1.1](https://github.com/Coalfire-CF/Actions/compare/v1.1.0...v1.1.1) (2026-09-26)
 
 
