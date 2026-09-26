@@ -116,7 +116,15 @@ cf_line="$(lineof '      coalfire-modules:')"
 tg_line="$(lineof '      terraform:')"
 [ -n "$cf_line" ] && [ -n "$tg_line" ] || fail "coalfire-modules or terraform group missing"
 { [ "$cf_line" -gt "$tf_line" ] && [ "$cf_line" -lt "$tg_line" ]; } || fail "coalfire-modules must precede the terraform group"
-[ "$(countc 'patterns: \["\*::github::Coalfire-CF/\*"\]')" = "1" ] || fail "coalfire-modules pattern wrong"
+[ "$(countc '        patterns: \["\*::github::Coalfire-CF/\*"\]')" = "1" ] || fail "coalfire-modules pattern wrong"
+# The catch-all terraform group must exclude first-party modules, or its
+# group-by subgroups claim them and no module PR is opened (pilot finding).
+# exclude-patterns: github-actions third-party + terraform catch-all = 2.
+[ "$(countc 'exclude-patterns:')" = "2" ] || fail "expected 2 exclude-patterns lines"
+ex_line="$(lineof 'exclude-patterns: \["\*::github::Coalfire-CF/\*"\]')"
+sec_line="$(lineof '      terraform-security:')"
+{ [ -n "$ex_line" ] && [ "$ex_line" -gt "$tg_line" ] && [ "$ex_line" -lt "$sec_line" ]; } \
+  || fail "terraform catch-all group must exclude *::github::Coalfire-CF/*"
 
 # 8. PR caps on terraform and the test entry only
 [ "$(countc 'open-pull-requests-limit: 2')" = "2" ] || fail "expected 2 open-pull-requests-limit lines"

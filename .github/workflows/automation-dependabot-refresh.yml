@@ -406,18 +406,27 @@ jobs:
                   # into one PR. No update-types: Dependabot cannot classify
                   # terraform git refs ("could not determine update type"), so
                   # an update-types filter drops every module from the group.
+                  # The catch-all group must exclude them: its group-by
+                  # dependency-name subgroups count as "more specific", take
+                  # every module from coalfire-modules, then skip them as
+                  # already handled, so no module PR is ever opened.
+                  local catchall_exclude=""
                   if [[ "$ecosystem" == "terraform" ]]; then
                     cat <<'YAML'
                 coalfire-modules:
                   applies-to: version-updates
                   patterns: ["*::github::Coalfire-CF/*"]
           YAML
+                    catchall_exclude='      exclude-patterns: ["*::github::Coalfire-CF/*"]'
                   fi
                   cat <<YAML
                 ${ecosystem}:
                   applies-to: version-updates
                   group-by: dependency-name
                   patterns: ["*"]
+          YAML
+                  [[ -n "$catchall_exclude" ]] && echo "  $catchall_exclude"
+                  cat <<YAML
                 ${ecosystem}-security:
                   applies-to: security-updates
                   group-by: dependency-name
