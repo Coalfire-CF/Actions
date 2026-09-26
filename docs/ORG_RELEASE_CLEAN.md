@@ -144,6 +144,43 @@ jobs:
 | `clean_release` | boolean | `true` | Set to `false` to skip clean tarball creation entirely |
 | `clean_exclude_dirs` | string | `.github,docs,.claude` | Comma-separated directories to remove |
 | `clean_exclude_files` | string | `CHANGELOG.md,release-please-config.json,.release-please-manifest.json,.gitignore,.gitattributes,CLAUDE.md,.claudeignore` | Comma-separated files to remove |
+| `publish_draft` | boolean | `false` | Publish the draft release after assets upload. See [Immutable releases](#immutable-releases). |
+
+## Immutable releases
+
+Immutable releases are on for the org. A published immutable release rejects
+asset uploads with `HTTP 422: Cannot upload assets to an immutable release`, so
+without the steps below the clean tarball, checksum, cosign bundles and scan
+results never attach. The workflow run still passes.
+
+1. In `release-please-config.json`, add both keys to the package:
+
+   ```json
+   "draft": true,
+   "force-tag-creation": true
+   ```
+
+   `force-tag-creation` creates the tag when the draft is created. Without it
+   the tag only appears on publish and release-please cannot find the last
+   release.
+
+2. In the caller, pass `publish_draft: true`:
+
+   ```yaml
+   uses: Coalfire-CF/Actions/.github/workflows/release-please.yml@<sha> # vX.Y.Z
+   with:
+     publish_draft: true
+   ```
+
+3. Verify on the next release: the release shows the `-clean.tar.gz`, `.sha256`
+   and `.bundle` assets and is marked immutable.
+
+The `publish-release` job publishes only when release-clean succeeded (or is
+off) and the `-clean.tar.gz` asset is attached. Otherwise it leaves the draft
+and exits non-zero. Re-run the failed jobs, then `publish-release`.
+
+Repos that publish the draft from their own workflow (mtcs-ksi, cs-anthracite,
+driftctlGov) keep `publish_draft` off.
 
 ## Secrets Reference (Optional)
 

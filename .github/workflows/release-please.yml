@@ -17,6 +17,13 @@ name: "Release: Release Please"
 #   2. trivy-scan     - Trivy security scan against the full repo
 #   3. gitleaks-scan  - Gitleaks secret detection against full repo history
 #
+# Immutable releases: a published immutable release rejects asset uploads
+# (HTTP 422), so the jobs above silently attach nothing. Fix per repo: set
+# "draft": true and "force-tag-creation": true in release-please-config.json
+# and pass publish_draft: true. The assets then upload to the draft and the
+# publish-release job publishes it last. The tag exists from the start, so
+# ?ref= pins work while the release is still a draft.
+#
 # Tag collision: if the version in .release-please-manifest.json already has a
 # GitHub Release (a hand-cut tag), running release-please 422s *after* it has
 # labelled the PR `autorelease: tagged`, which wedges that version and skips
@@ -147,6 +154,16 @@ on:
         default: true
       auto_release_allow_zero_checks:
         description: 'Permit auto-merging a patch release PR that has no status checks (default false = fail closed).'
+        required: false
+        type: boolean
+        default: false
+      publish_draft:
+        description: >-
+          Publish the draft release after release-clean, Trivy and Gitleaks
+          attach their assets. Immutable releases reject uploads once published,
+          so set "draft": true and "force-tag-creation": true in
+          release-please-config.json and turn this on. Leave it off when the
+          repo publishes the draft from its own workflow (e.g. release-binaries).
         required: false
         type: boolean
         default: false
@@ -396,6 +413,61 @@ jobs:
     permissions:
       contents: write
 
+  publish-release:
+    name: Publish Draft Release
+    needs: [release, release-clean, trivy-scan, gitleaks-scan]
+    # Last step of the draft flow: the release stays a draft (and mutable) while
+    # the jobs above upload, then goes public. Scan failures do not hold the
+    # release; a failed or missing clean tarball does.
+    if: >-
+      always() &&
+      !cancelled() &&
+      inputs.publish_draft &&
+      needs.release.outputs.release_created == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Check for GitHub App credentials
+        id: check-app
+        env:
+          APP_ID: ${{ secrets.RELEASE_APP_ID }}
+        run: |
+          if [[ -n "${APP_ID}" ]]; then
+            echo "available=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "available=false" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Generate GitHub App token
+        id: app-token
+        if: steps.check-app.outputs.available == 'true'
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
+      - name: Checkout Actions repo (publish script)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: Coalfire-CF/Actions
+          ref: ${{ inputs.actions_ref || 'main' }}
+          path: actions-tools
+          persist-credentials: false
+          sparse-checkout: scripts
+
+      - name: Publish the draft
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token || github.token }}
+          REPO: ${{ github.repository }}
+          TAG_NAME: ${{ needs.release.outputs.tag_name }}
+          CLEAN_RESULT: ${{ needs.release-clean.result }}
+          REQUIRE_ASSET: ${{ inputs.clean_release && '-clean.tar.gz' || '' }}
+        run: |
+          set -euo pipefail
+          bash "${GITHUB_WORKSPACE}/actions-tools/scripts/release-publish-draft.sh"
+
   notify-release:
     name: Slack Release Notification
     needs: release
@@ -414,7 +486,7 @@ jobs:
     name: Slack Failure Notification
     # #215: include auto-merge-patch + notify-release so a failure in either is
     # covered by the failure() Slack alert below (previously omitted).
-    needs: [release, release-clean, trivy-scan, gitleaks-scan, auto-merge-patch, notify-release]
+    needs: [release, release-clean, trivy-scan, gitleaks-scan, auto-merge-patch, publish-release, notify-release]
     if: failure() && inputs.slack_channel_id != ''
     uses: ./.github/workflows/automation-slack-notify.yml
     secrets:
