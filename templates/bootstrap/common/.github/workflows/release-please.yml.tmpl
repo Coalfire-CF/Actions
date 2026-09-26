@@ -17,4 +17,8 @@ jobs:
   create-release:
     name: Create release
     uses: Coalfire-CF/Actions/.github/workflows/release-please.yml@__ACTIONS_SHA__ # __ACTIONS_VERSION__
+    # Immutable releases: assets upload to the draft, then this publishes it
+    # (needs "draft" and "force-tag-creation" in release-please-config.json).
+    with:
+      publish_draft: true
     secrets: inherit
