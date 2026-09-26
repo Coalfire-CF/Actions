@@ -26,10 +26,12 @@ jobs:
   auto-merge:
     name: Auto-merge Dependabot updates
     # pull_request_target: only Dependabot PRs enter the pipeline. check_suite:
-    # pass through — the reusable workflow's remerge job resolves + filters the
-    # associated PR (open, dependabot-authored, merge/approved) itself.
+    # only suites on Dependabot branches; the reusable workflow's remerge job
+    # resolves + filters the associated PR (open, dependabot-authored,
+    # merge/approved) itself.
     if: >-
-      github.event_name == 'check_suite' ||
+      (github.event_name == 'check_suite' &&
+       startsWith(github.event.check_suite.head_branch, 'dependabot/')) ||
       github.event.pull_request.user.login == 'dependabot[bot]'
     uses: ./.github/workflows/automation-dependabot-auto-merge.yml
     with:

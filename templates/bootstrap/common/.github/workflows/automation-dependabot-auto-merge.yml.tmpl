@@ -19,11 +19,13 @@ permissions:
 
 jobs:
   auto-merge:
-    # pull_request_target: only Dependabot PRs. check_suite: pass through — the
-    # reusable workflow's remerge job resolves + filters the associated PR.
+    # pull_request_target: only Dependabot PRs. check_suite: only suites on
+    # Dependabot branches; the reusable workflow's remerge job resolves and
+    # filters the associated PR.
     name: Auto-merge Dependabot updates
     if: >-
-      github.event_name == 'check_suite' ||
+      (github.event_name == 'check_suite' &&
+       startsWith(github.event.check_suite.head_branch, 'dependabot/')) ||
       github.event.pull_request.user.login == 'dependabot[bot]'
     uses: Coalfire-CF/Actions/.github/workflows/automation-dependabot-auto-merge.yml@__ACTIONS_SHA__ # __ACTIONS_VERSION__
     with:

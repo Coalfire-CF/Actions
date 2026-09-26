@@ -47,6 +47,10 @@ on:
         description: 'Optional single repo (owner/name) to scope the sweep to — for canary / targeted runs. Empty = whole org.'
         type: string
         default: ''
+      close_duplicates:
+        description: 'Instead of merging, close Dependabot PRs that a newer PR already covers (scripts/dependabot-duplicate-close.sh). Honors dry_run.'
+        type: boolean
+        default: false
 
 # Least privilege: checkout only. Cross-repo merges across the org use the
 # GitHub App token generated below, not GITHUB_TOKEN.
@@ -66,6 +70,7 @@ concurrency:
 jobs:
   reconcile:
     name: Reconcile wedged merge/approved PRs
+    if: github.event_name == 'schedule' || !inputs.close_duplicates
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -138,4 +143,68 @@ jobs:
             echo "::endgroup::"
           done < <(printf '%s' "$PRS" | jq -r '.[] | [.repository.nameWithOwner, (.number | tostring)] | @tsv')
 
+          exit "$rc"
+
+  # Dispatch-only: close Dependabot PRs that a newer open PR already covers
+  # (same dependency, same files). Config changes such as grouping leave the old
+  # ungrouped PR open next to the new one. Not scheduled; dry-run by default.
+  close-duplicates:
+    name: Close duplicate Dependabot PRs
+    if: github.event_name == 'workflow_dispatch' && inputs.close_duplicates
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout (sweep script)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Generate GitHub App token (org-wide)
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.AUTOMERGE_CLIENT_ID }}
+          private-key: ${{ secrets.AUTOMERGE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
+      - name: Close duplicates
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          OWNER: ${{ github.repository_owner }}
+          DRY_RUN: ${{ inputs.dry_run == false && 'false' || 'true' }}
+          REPO_SCOPE: ${{ inputs.repo }}
+          MAX_PRS: '1000'
+        run: |
+          set -euo pipefail
+          : "${GH_TOKEN:?missing app token}"
+          if [ -n "${REPO_SCOPE}" ]; then
+            REPOS="${REPO_SCOPE}"
+          else
+            # Repos with open Dependabot PRs. Search caps at 1000 results; warn
+            # rather than silently skipping repos past the cap.
+            PRS="$(gh search prs --owner "$OWNER" --author 'app/dependabot' --state open --archived=false \
+              --limit "$MAX_PRS" --json repository)"
+            if [ "$(printf '%s' "$PRS" | jq 'length')" -ge "$MAX_PRS" ]; then
+              echo "::warning::search hit the ${MAX_PRS}-PR cap; some repos may be skipped this run"
+            fi
+            REPOS="$(printf '%s' "$PRS" | jq -r '[.[].repository.nameWithOwner] | unique | .[]')"
+          fi
+          [ -n "$REPOS" ] || { echo "No repos with open Dependabot PRs."; exit 0; }
+
+          rc=0
+          while read -r repo; do
+            [ -n "$repo" ] || continue
+            echo "::group::${repo}"
+            if ! REPO="$repo" DRY_RUN="$DRY_RUN" bash "${GITHUB_WORKSPACE}/scripts/dependabot-duplicate-close.sh" \
+                 | tee -a "$RUNNER_TEMP/dupes.log"; then
+              echo "::warning::duplicate sweep failed for ${repo}"
+              rc=1
+            fi
+            echo "::endgroup::"
+          done <<< "$REPOS"
+
+          {
+            echo "### Duplicate Dependabot PRs (dry_run=${DRY_RUN})"
+            echo ""
+            echo "Repos scanned: $(grep -c '^SUMMARY ' "$RUNNER_TEMP/dupes.log" || true)"
+            echo "Duplicates found: $(grep -c '^CLOSE ' "$RUNNER_TEMP/dupes.log" || true)"
+          } >> "$GITHUB_STEP_SUMMARY"
           exit "$rc"

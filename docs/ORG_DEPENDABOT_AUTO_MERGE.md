@@ -246,10 +246,11 @@ on:
 
 jobs:
   auto-merge:
-    # pull_request_target: only Dependabot PRs. check_suite: pass through — the
-    # reusable workflow's remerge job resolves + filters the associated PR.
+    # pull_request_target: only Dependabot PRs. check_suite: only suites on
+    # Dependabot branches (the reusable workflow applies the same filter).
     if: >-
-      github.event_name == 'check_suite' ||
+      (github.event_name == 'check_suite' &&
+       startsWith(github.event.check_suite.head_branch, 'dependabot/')) ||
       github.event.pull_request.user.login == 'dependabot[bot]'
     uses: <YOUR_ORG>/Actions/.github/workflows/automation-dependabot-auto-merge.yml@6976ca6fc363706ebbe5a5454a3719436303f027 # v1.1.0
     with:
@@ -407,3 +408,24 @@ groups:
 ```
 
 `automation-dependabot-refresh.yml`'s generator emits this block automatically for the github-actions ecosystem.
+
+## Generated config shape (automation-dependabot-refresh.yml)
+
+The generator writes each consumer's `dependabot.yml` to keep PR count and CI
+runs down:
+
+| Rule | Effect |
+|---|---|
+| Example dirs (`example/` or `examples/` path segment) are dropped | No PRs for example code. Set `include_examples: "true"` to keep them. |
+| Non-terraform test dirs (`test/` or `tests/`) get their own entry | All minor and patch test deps (for example the terratest `go.mod`) land in one PR, so one live test run per wave. Majors stay single PRs. |
+| Terraform `coalfire-modules` group (`*::github::Coalfire-CF/*`, minor and patch) | Dependabot names git modules per module call, so this puts every first-party module bump in a directory into one PR. |
+| `open-pull-requests-limit: 2` on terraform and test entries | Caps PRs that need a human. Security updates are not counted. |
+| `version_interval` (default `weekly`) for every ecosystem except github-actions | github-actions stays on `default_interval` (daily) because org-actions pin bumps carry generator fixes. |
+
+Terraform test fixtures stay in the main terraform entry so a provider bump
+still moves root and fixtures in one PR.
+
+Old PRs are not closed when the config changes. To close PRs that a newer PR
+already covers (same dependency, same files), dispatch
+`automation-dependabot-reconcile.yml` with `close_duplicates: true`. It is
+dry-run unless `dry_run: false` is passed; scope a canary with `repo`.
