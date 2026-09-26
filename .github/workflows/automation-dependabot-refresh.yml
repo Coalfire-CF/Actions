@@ -18,10 +18,20 @@ on:
         type: string
         default: "true"
       default_interval:
-        description: 'Schedule interval for all detected ecosystems'
+        description: 'Schedule interval for the github-actions ecosystem (org-actions pin bumps carry generator fixes, so keep it frequent)'
         required: false
         type: string
         default: "daily"
+      version_interval:
+        description: 'Schedule interval for version updates in every other ecosystem. Security updates are not bound to the schedule.'
+        required: false
+        type: string
+        default: "weekly"
+      include_examples:
+        description: 'Set "true" to keep example dirs (paths with an example/ or examples/ segment) in the generated config. Default drops them.'
+        required: false
+        type: string
+        default: "false"
       depb_path:
         description: "Path to dependabot.yml"
         required: false
@@ -70,6 +80,8 @@ jobs:
         id: run
         env:
           DEFAULT_INTERVAL: ${{ inputs.default_interval }}
+          VERSION_INTERVAL: ${{ inputs.version_interval }}
+          INCLUDE_EXAMPLES: ${{ inputs.include_examples }}
           REPO_ROOT: ${{ github.workspace }}
           DEPB_PATH: ${{ inputs.depb_path }}
           EXCLUDE_PATHS: ${{ inputs.exclude_paths }}
@@ -81,6 +93,8 @@ jobs:
 
           DEPB_PATH="${DEPB_PATH:-.github/dependabot.yml}"
           DEFAULT_INTERVAL="${DEFAULT_INTERVAL:-daily}"
+          VERSION_INTERVAL="${VERSION_INTERVAL:-weekly}"
+          INCLUDE_EXAMPLES="${INCLUDE_EXAMPLES:-false}"
           REPO_ROOT="${REPO_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
           EXCLUDE_PATHS="${EXCLUDE_PATHS:-}"
 
@@ -216,6 +230,26 @@ jobs:
             return 1
           }
 
+          # Example dirs are docs, not deployed code: bumping them only adds PRs.
+          # Matches an example/ or examples/ segment anywhere in the path.
+          EXAMPLE_DIR_RE='(^|/)examples?(/|$)'
+          is_example_dir() { [[ "$1" =~ $EXAMPLE_DIR_RE ]]; }
+
+          # Test dirs (test/ or tests/ segment). Their non-terraform deps (the
+          # terratest go.mod, test requirements) go in one grouped PR so a bump
+          # wave costs one live test run, not one per dependency.
+          TEST_DIR_RE='(^|/)tests?(/|$)'
+          is_test_dir() { [[ "$1" =~ $TEST_DIR_RE ]]; }
+
+          # Print a directories: list body for the given dirs.
+          directories_block() {
+            local out="" d
+            for d in "$@"; do
+              out+="      - \"${d}\""$'\n'
+            done
+            printf '%s' "${out%$'\n'}"
+          }
+
           # Map ecosystem names to dep/* labels for auto-merge system
           declare -A ECOSYSTEM_LABELS=(
             [bundler]="dep/bundler"
@@ -277,6 +311,10 @@ jobs:
                   log "  Excluding $ecosystem: $d (matched exclude pattern)"
                   continue
                 fi
+                if [[ "$ecosystem" != "github-actions" && "$INCLUDE_EXAMPLES" != "true" ]] && is_example_dir "$d"; then
+                  log "  Excluding $ecosystem: $d (example dir)"
+                  continue
+                fi
                 kept_dirs+=("$d")
               done
               if (( ${#kept_dirs[@]} == 0 )); then
@@ -328,34 +366,102 @@ jobs:
                 # into a single PR instead of one PR per directory. No
                 # update-types -> majors are included; group-by keeps each PR to
                 # one dependency, so a major only blocks its own PR at the gate.
-                local directories_block=""
+                # Test dirs split into their own entry (below), except for
+                # terraform: test fixtures must move with root provider bumps.
+                local main_dirs=() test_dirs=()
                 for d in "${kept_dirs[@]}"; do
-                  directories_block+="      - \"${d}\""$'\n'
+                  if [[ "$ecosystem" != "terraform" ]] && is_test_dir "$d"; then
+                    test_dirs+=("$d")
+                  else
+                    main_dirs+=("$d")
+                  fi
                 done
-                directories_block="${directories_block%$'\n'}"
-                cat <<YAML
+
+                if (( ${#main_dirs[@]} > 0 )); then
+                  cat <<YAML
             - package-ecosystem: "${ecosystem}"
               directories:
-          ${directories_block}
+          $(directories_block "${main_dirs[@]}")
               schedule:
-                interval: "${DEFAULT_INTERVAL}"
+                interval: "${VERSION_INTERVAL}"
                 time: "${STAGGER_TIME}"
+          YAML
+                  # Terraform PRs are never auto-merged, so cap how many wait on
+                  # a human. Security updates do not count against the limit.
+                  if [[ "$ecosystem" == "terraform" ]]; then
+                    echo "    open-pull-requests-limit: 2"
+                  fi
+                  cat <<YAML
               commit-message:
                 prefix: "chore"
                 include: "scope"
               labels:
                 - "${dep_label}"
               groups:
+          YAML
+                  # Dependabot names a git module per module call
+                  # (label::github::Coalfire-CF/repo::ref), so group-by cannot
+                  # join two calls to the same module. This group (first match
+                  # wins) puts every first-party module bump in a directory
+                  # into one PR. No update-types: Dependabot cannot classify
+                  # terraform git refs ("could not determine update type"), so
+                  # an update-types filter drops every module from the group.
+                  # The catch-all group must exclude them: its group-by
+                  # dependency-name subgroups count as "more specific", take
+                  # every module from coalfire-modules, then skip them as
+                  # already handled, so no module PR is ever opened.
+                  local catchall_exclude=""
+                  if [[ "$ecosystem" == "terraform" ]]; then
+                    cat <<'YAML'
+                coalfire-modules:
+                  applies-to: version-updates
+                  patterns: ["*::github::Coalfire-CF/*"]
+          YAML
+                    catchall_exclude='      exclude-patterns: ["*::github::Coalfire-CF/*"]'
+                  fi
+                  cat <<YAML
                 ${ecosystem}:
                   applies-to: version-updates
                   group-by: dependency-name
                   patterns: ["*"]
+          YAML
+                  [[ -n "$catchall_exclude" ]] && echo "  $catchall_exclude"
+                  cat <<YAML
                 ${ecosystem}-security:
                   applies-to: security-updates
                   group-by: dependency-name
                   patterns: ["*"]
           YAML
-                log "  Found ${ecosystem} in ${#kept_dirs[@]} dir(s)"
+                  log "  Found ${ecosystem} in ${#main_dirs[@]} dir(s)"
+                fi
+
+                # One PR for all minor/patch test deps; majors stay single PRs.
+                if (( ${#test_dirs[@]} > 0 )); then
+                  cat <<YAML
+            - package-ecosystem: "${ecosystem}"
+              directories:
+          $(directories_block "${test_dirs[@]}")
+              schedule:
+                interval: "${VERSION_INTERVAL}"
+                time: "${STAGGER_TIME}"
+              open-pull-requests-limit: 2
+              commit-message:
+                prefix: "chore"
+                include: "scope"
+              labels:
+                - "${dep_label}"
+              groups:
+                ${ecosystem}-test:
+                  applies-to: version-updates
+                  patterns: ["*"]
+                  update-types: ["minor", "patch"]
+                ${ecosystem}-test-security:
+                  applies-to: security-updates
+                  group-by: dependency-name
+                  patterns: ["*"]
+          YAML
+                  log "  Found ${ecosystem} test deps in ${#test_dirs[@]} dir(s)"
+                fi
               fi
 
             done

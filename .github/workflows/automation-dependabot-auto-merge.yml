@@ -133,6 +133,12 @@ concurrency:
 jobs:
   validate-actions-ref:
     name: Validate Actions ref
+    # Every job needs this one, so gating it here means a check_suite from a
+    # non-Dependabot branch (Wiz and other apps fire one on every PR and push)
+    # starts no jobs at all instead of two that exit early.
+    if: >-
+      github.event_name != 'check_suite' ||
+      startsWith(github.event.check_suite.head_branch, 'dependabot/')
     runs-on: ubuntu-latest
     steps:
       - name: Require an immutable Actions policy ref
