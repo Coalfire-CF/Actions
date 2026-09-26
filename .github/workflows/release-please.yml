@@ -419,11 +419,14 @@ jobs:
     # Last step of the draft flow: the release stays a draft (and mutable) while
     # the jobs above upload, then goes public. Scan failures do not hold the
     # release; a failed or missing clean tarball does.
+    # supply_chain covers a re-run that resumes a draft left by a failed run
+    # (precheck verdict RESUME) as well as a fresh release.
     if: >-
       always() &&
       !cancelled() &&
       inputs.publish_draft &&
-      needs.release.outputs.release_created == 'true'
+      needs.release.result == 'success' &&
+      (needs.release.outputs.release_created == 'true' || needs.release.outputs.supply_chain == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

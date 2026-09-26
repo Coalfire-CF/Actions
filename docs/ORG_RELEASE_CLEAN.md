@@ -179,6 +179,11 @@ The `publish-release` job publishes only when release-clean succeeded (or is
 off) and the `-clean.tar.gz` asset is attached. Otherwise it leaves the draft
 and exits non-zero. Re-run the failed jobs, then `publish-release`.
 
+If the run fails after release-please created the draft (for example a label
+error in the `Release` job), re-run the whole workflow run. The precheck finds
+the draft at the release commit (verdict `RESUME`), skips release-please, and
+runs the asset and publish jobs against it. Needs Actions v1.1.2 or later.
+
 Repos that publish the draft from their own workflow (mtcs-ksi, cs-anthracite,
 driftctlGov) keep `publish_draft` off.
 
