@@ -48,27 +48,32 @@ cat > "$MOCK_PRS" <<EOF
  {"number":13,"createdAt":"2026-07-01T00:00:00Z","title":"chore(deps): bump the org-actions group with 3 updates","files":[$(f .github/workflows/a.yml)]},
  {"number":23,"createdAt":"2026-09-01T00:00:00Z","title":"chore(deps): bump the org-actions group with 8 updates","files":[$(f .github/workflows/a.yml)]},
  {"number":14,"createdAt":"2026-07-01T00:00:00Z","title":"chore(deps): bump multer from 1.0.0 to 2.0.0","files":[$(f package.json),$(f package-lock.json)]},
- {"number":24,"createdAt":"2026-09-01T00:00:00Z","title":"chore(deps): bump multer from 1.0.0 to 2.4.0","files":[$(f package.json),$(f package-lock.json)]}
+ {"number":24,"createdAt":"2026-09-01T00:00:00Z","title":"chore(deps): bump multer from 1.0.0 to 2.4.0","files":[$(f package.json),$(f package-lock.json)]},
+ {"number":15,"createdAt":"2026-07-01T00:00:00Z","title":"chore(deps): bump github.com/foo/z from 1.0.0 to 1.1.0 in /test","files":[$(f test/go.mod),$(f test/go.sum)]},
+ {"number":25,"createdAt":"2026-09-26T00:00:00Z","title":"chore(deps): bump the gomod-test group across 1 directory with 1 update","body":"Bumps the gomod-test group.\n\nUpdates \`github.com/foo/z\` from 1.0.0 to 1.2.0\n","files":[$(f test/go.mod),$(f test/go.sum)]}
 ]
 EOF
 
-# ---- dry run (default): reports exactly #10 and #14, closes nothing ----
+# ---- dry run (default): reports exactly #10, #14 and #15 (group body), closes nothing ----
 : > "$GH_TRACE"
 OUT="$(REPO=Coalfire-CF/r bash "$SCRIPT")" || fail "dry run exited non-zero"
-[ "$(printf '%s\n' "$OUT" | grep -c '^CLOSE ')" = "2" ] || fail "expected 2 CLOSE lines, got: $OUT"
+[ "$(printf '%s\n' "$OUT" | grep -c '^CLOSE ')" = "3" ] || fail "expected 3 CLOSE lines, got: $OUT"
 printf '%s\n' "$OUT" | grep -q '^CLOSE Coalfire-CF/r#10 (covered by #20)' || fail "#10 should be covered by #20"
 printf '%s\n' "$OUT" | grep -q '^CLOSE Coalfire-CF/r#14 (covered by #24)' || fail "#14 should be covered by #24"
-printf '%s\n' "$OUT" | grep -q 'SUMMARY Coalfire-CF/r open=10 duplicates=2 dry_run=true' || fail "summary wrong: $OUT"
+printf '%s\n' "$OUT" | grep -q '^CLOSE Coalfire-CF/r#15 (covered by #25)' || fail "#15 should be covered by group #25 (body lists it)"
+printf '%s\n' "$OUT" | grep -q '^CLOSE Coalfire-CF/r#12 ' && fail "#12 is not listed in group #25 and must stay open"
+printf '%s\n' "$OUT" | grep -q 'SUMMARY Coalfire-CF/r open=12 duplicates=3 dry_run=true' || fail "summary wrong: $OUT"
 [ "$(grep -c '^pr close' "$GH_TRACE")" = "0" ] || fail "dry run issued pr close"
-echo "OK: dry run reports the 2 duplicates and closes nothing"
+echo "OK: dry run reports the 3 duplicates (one via a group PR body) and closes nothing"
 
 # ---- live: closes exactly #10 and #14 ----
 : > "$GH_TRACE"
 REPO=Coalfire-CF/r DRY_RUN=false bash "$SCRIPT" >/dev/null || fail "live run exited non-zero"
-[ "$(grep -c '^pr close' "$GH_TRACE")" = "2" ] || fail "expected 2 pr close calls"
+[ "$(grep -c '^pr close' "$GH_TRACE")" = "3" ] || fail "expected 3 pr close calls"
 grep -q '^pr close 10 -R Coalfire-CF/r' "$GH_TRACE" || fail "#10 not closed"
 grep -q '^pr close 14 -R Coalfire-CF/r' "$GH_TRACE" || fail "#14 not closed"
-echo "OK: live run closes exactly the 2 duplicates"
+grep -q '^pr close 15 -R Coalfire-CF/r' "$GH_TRACE" || fail "#15 not closed"
+echo "OK: live run closes exactly the 3 duplicates"
 
 # ---- missing REPO fails loudly ----
 if REPO='' bash "$SCRIPT" >/dev/null 2>&1; then fail "missing REPO should fail"; fi

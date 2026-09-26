@@ -402,14 +402,15 @@ jobs:
                   # Dependabot names a git module per module call
                   # (label::github::Coalfire-CF/repo::ref), so group-by cannot
                   # join two calls to the same module. This group (first match
-                  # wins) puts every first-party minor/patch module bump in a
-                  # directory into one PR. Majors fall through to group-by.
+                  # wins) puts every first-party module bump in a directory
+                  # into one PR. No update-types: Dependabot cannot classify
+                  # terraform git refs ("could not determine update type"), so
+                  # an update-types filter drops every module from the group.
                   if [[ "$ecosystem" == "terraform" ]]; then
                     cat <<'YAML'
                 coalfire-modules:
                   applies-to: version-updates
                   patterns: ["*::github::Coalfire-CF/*"]
-                  update-types: ["minor", "patch"]
           YAML
                   fi
                   cat <<YAML

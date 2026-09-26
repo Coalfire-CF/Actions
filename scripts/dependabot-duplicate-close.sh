@@ -6,8 +6,9 @@
 # group-by) makes it open a new PR for the same dependency, so both stay open.
 # A PR is a duplicate when a NEWER open Dependabot PR in the same repo bumps
 # the same dependency AND changes every file the older PR changes (README.md
-# ignored: terraform-docs rewrites it on some PRs and not others). Different
-# directories never match, so per-directory PRs are left alone.
+# ignored: terraform-docs rewrites it on some PRs and not others). A newer
+# group PR covers every dependency its body lists ("Updates `x` from ...").
+# Different directories never match, so per-directory PRs are left alone.
 #
 # Closing a Dependabot PR makes Dependabot skip that version. That is harmless
 # here because the newer PR carries the same or a later update.
@@ -25,29 +26,31 @@ set -euo pipefail
 DRY_RUN="${DRY_RUN:-true}"
 
 prs="$(gh pr list -R "$REPO" --author 'app/dependabot' --state open --limit 200 \
-  --json number,title,createdAt,files)"
+  --json number,title,body,createdAt,files)"
 
 # Dependency key from the title. Handles "bump X from a to b", "bump X in /d",
 # "update X requirement from ...". Terraform git module names differ between
 # grouped (label::github::Coalfire-CF/repo::ref) and ungrouped (label::repo)
 # titles, so normalise both to label::repo. Group titles ("bump the x group")
-# yield null and are never matched.
+# yield no title key; their body lists the dependencies they cover.
 dupes="$(printf '%s' "$prs" | jq -c '
-  def depkey:
-    (try (.title | capture("(?i)(?:bump|update) (?:the )?(?<d>\\S+?)(?: requirement)?(?: from | in |$)").d) catch null)
-    | if . == null then null
-      elif test("::") then
-        split("::") as $p
-        | $p[0] + "::" + ((if $p[1] == "github" then $p[-2] else $p[1] end) | split("/") | last)
-      else ascii_downcase end;
+  def norm:
+    if test("::") then
+      split("::") as $p
+      | $p[0] + "::" + ((if $p[1] == "github" then $p[-2] else $p[1] end) | split("/") | last)
+    else ascii_downcase end;
+  def titlekey:
+    ([.title | capture("(?i)(?:bump|update) (?:the )?(?<d>\\S+?)(?: requirement)?(?: from | in |$)") | .d] | first // null)
+    | if . == null then null else norm end;
+  def bodykeys: [(.body // "") | scan("Updates `([^`]+)` from") | .[0] | norm];
   def codefiles: [.files[].path | select(test("(^|/)README\\.md$") | not)];
-  [ .[] | . + {key: depkey, cf: codefiles} ] as $all
+  [ .[] | titlekey as $k | . + {key: $k, covers: ([$k | select(. != null)] + bodykeys), cf: codefiles} ] as $all
   | [ $all[] as $old
       | select($old.key != null and ($old.cf | length) > 0)
       | ([ $all[]
            | select(.number != $old.number
                     and .createdAt > $old.createdAt
-                    and .key == $old.key
+                    and (.covers | index($old.key)) != null
                     and (($old.cf - .cf) | length) == 0) ]
          | sort_by(.createdAt) | last) as $new
       | select($new != null)

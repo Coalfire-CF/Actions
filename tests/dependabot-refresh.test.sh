@@ -107,8 +107,9 @@ test_line="$(lineof '      - "/test"')"
 [ "$(countc 'group-by: dependency-name')" = "5" ] || fail "expected 5 group-by lines"
 [ "$(countc 'applies-to: security-updates')" = "3" ] || fail "expected a security-updates group per non-actions entry"
 
-# 6. update-types: github-actions x2 + coalfire-modules + gomod-test = 4
-[ "$(countc 'update-types:')" = "4" ] || fail "expected 4 update-types lines"
+# 6. update-types: github-actions x2 + gomod-test = 3 (coalfire-modules has none:
+#    Dependabot cannot classify terraform git refs, so the filter would empty it)
+[ "$(countc 'update-types:')" = "3" ] || fail "expected 3 update-types lines"
 
 # 7. coalfire-modules sits in the terraform entry, ahead of the terraform group (first match wins)
 cf_line="$(lineof '      coalfire-modules:')"
