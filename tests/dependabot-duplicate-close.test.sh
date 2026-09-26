@@ -30,6 +30,12 @@ cat > "$BIN/gh" <<'MOCK'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$GH_TRACE"
 if [ "$1" = "pr" ] && [ "$2" = "list" ]; then cat "$MOCK_PRS"; exit 0; fi
+# Group PR commits (REST, already shaped as the script's --jq would shape it).
+if [ "$1" = "api" ] && printf '%s' "$2" | grep -qE '/pulls/25/commits'; then
+  printf '[{"messageBody":"---\\nupdated-dependencies:\\n- dependency-name: github.com/foo/z\\n  dependency-version: 1.2.0\\n"}]\n'
+  exit 0
+fi
+if [ "$1" = "api" ] && printf '%s' "$2" | grep -qE '/pulls/[0-9]+/commits'; then echo '[]'; exit 0; fi
 if [ "$1" = "pr" ] && [ "$2" = "close" ]; then exit 0; fi
 echo "mock gh: unexpected call: $*" >&2; exit 1
 MOCK
@@ -50,7 +56,7 @@ cat > "$MOCK_PRS" <<EOF
  {"number":14,"createdAt":"2026-07-01T00:00:00Z","title":"chore(deps): bump multer from 1.0.0 to 2.0.0","files":[$(f package.json),$(f package-lock.json)]},
  {"number":24,"createdAt":"2026-09-01T00:00:00Z","title":"chore(deps): bump multer from 1.0.0 to 2.4.0","files":[$(f package.json),$(f package-lock.json)]},
  {"number":15,"createdAt":"2026-07-01T00:00:00Z","title":"chore(deps): bump github.com/foo/z from 1.0.0 to 1.1.0 in /test","files":[$(f test/go.mod),$(f test/go.sum)]},
- {"number":25,"createdAt":"2026-09-26T00:00:00Z","title":"chore(deps): bump the gomod-test group across 1 directory with 1 update","body":"Bumps the gomod-test group.\n\nUpdates \`github.com/foo/z\` from 1.0.0 to 1.2.0\n","files":[$(f test/go.mod),$(f test/go.sum)]}
+ {"number":25,"createdAt":"2026-09-26T00:00:00Z","title":"chore(deps): bump the gomod-test group across 1 directory with 1 update","body":"Bumps the gomod-test group. (body truncated)","files":[$(f test/go.mod),$(f test/go.sum)]}
 ]
 EOF
 
@@ -60,11 +66,11 @@ OUT="$(REPO=Coalfire-CF/r bash "$SCRIPT")" || fail "dry run exited non-zero"
 [ "$(printf '%s\n' "$OUT" | grep -c '^CLOSE ')" = "3" ] || fail "expected 3 CLOSE lines, got: $OUT"
 printf '%s\n' "$OUT" | grep -q '^CLOSE Coalfire-CF/r#10 (covered by #20)' || fail "#10 should be covered by #20"
 printf '%s\n' "$OUT" | grep -q '^CLOSE Coalfire-CF/r#14 (covered by #24)' || fail "#14 should be covered by #24"
-printf '%s\n' "$OUT" | grep -q '^CLOSE Coalfire-CF/r#15 (covered by #25)' || fail "#15 should be covered by group #25 (body lists it)"
+printf '%s\n' "$OUT" | grep -q '^CLOSE Coalfire-CF/r#15 (covered by #25)' || fail "#15 should be covered by group #25 (commit updated-dependencies lists it)"
 printf '%s\n' "$OUT" | grep -q '^CLOSE Coalfire-CF/r#12 ' && fail "#12 is not listed in group #25 and must stay open"
 printf '%s\n' "$OUT" | grep -q 'SUMMARY Coalfire-CF/r open=12 duplicates=3 dry_run=true' || fail "summary wrong: $OUT"
 [ "$(grep -c '^pr close' "$GH_TRACE")" = "0" ] || fail "dry run issued pr close"
-echo "OK: dry run reports the 3 duplicates (one via a group PR body) and closes nothing"
+echo "OK: dry run reports the 3 duplicates (one via a group PR commit) and closes nothing"
 
 # ---- live: closes exactly #10 and #14 ----
 : > "$GH_TRACE"

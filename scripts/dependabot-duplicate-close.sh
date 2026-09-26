@@ -7,7 +7,8 @@
 # A PR is a duplicate when a NEWER open Dependabot PR in the same repo bumps
 # the same dependency AND changes every file the older PR changes (README.md
 # ignored: terraform-docs rewrites it on some PRs and not others). A newer
-# group PR covers every dependency its body lists ("Updates `x` from ...").
+# group PR covers every dependency in its commit's updated-dependencies list
+# (the PR body is truncated on large groups, so it is only a fallback).
 # Different directories never match, so per-directory PRs are left alone.
 #
 # Closing a Dependabot PR makes Dependabot skip that version. That is harmless
@@ -28,6 +29,13 @@ DRY_RUN="${DRY_RUN:-true}"
 prs="$(gh pr list -R "$REPO" --author 'app/dependabot' --state open --limit 200 \
   --json number,title,body,createdAt,files)"
 
+# Group PRs name no dependency in the title; read their commit messages over
+# REST (listing commits for every PR in the GraphQL query exceeds its node limit).
+for n in $(jq -r '.[] | select(.title | test("(?i)bump the \\S+ group")) | .number' <<< "$prs"); do
+  msgs="$(gh api "repos/${REPO}/pulls/${n}/commits?per_page=100" --jq '[.[] | {messageBody: .commit.message}]')"
+  prs="$(jq --argjson n "$n" --argjson m "$msgs" 'map(if .number == $n then . + {commits: $m} else . end)' <<< "$prs")"
+done
+
 # Dependency key from the title. Handles "bump X from a to b", "bump X in /d",
 # "update X requirement from ...". Terraform git module names differ between
 # grouped (label::github::Coalfire-CF/repo::ref) and ungrouped (label::repo)
@@ -43,8 +51,9 @@ dupes="$(printf '%s' "$prs" | jq -c '
     ([.title | capture("(?i)(?:bump|update) (?:the )?(?<d>\\S+?)(?: requirement)?(?: from | in |$)") | .d] | first // null)
     | if . == null then null else norm end;
   def bodykeys: [(.body // "") | scan("Updates `([^`]+)` from") | .[0] | norm];
+  def commitkeys: [(.commits // [])[] | (.messageBody // "") | scan("dependency-name: (\\S+)") | .[0] | norm];
   def codefiles: [.files[].path | select(test("(^|/)README\\.md$") | not)];
-  [ .[] | titlekey as $k | . + {key: $k, covers: ([$k | select(. != null)] + bodykeys), cf: codefiles} ] as $all
+  [ .[] | titlekey as $k | . + {key: $k, covers: ([$k | select(. != null)] + commitkeys + bodykeys), cf: codefiles} ] as $all
   | [ $all[] as $old
       | select($old.key != null and ($old.cf | length) > 0)
       | ([ $all[]
