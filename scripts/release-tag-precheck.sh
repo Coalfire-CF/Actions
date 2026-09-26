@@ -178,6 +178,18 @@ if [ -n "$tag" ]; then
   fi
 fi
 
+# releases/tags/{tag} never returns drafts. The draft flow (publish_draft) can
+# leave a draft behind when a run fails after release-please created it; look
+# for one so a re-run resumes instead of finding nothing to do.
+release_draft=false
+if [ -n "$tag" ] && [ "$release_exists" != "true" ]; then
+  drafts="$(gh_read api "repos/${REPO}/releases?per_page=100" \
+    --jq "[.[] | select(.tag_name == \"${tag}\" and .draft == true)] | length" 2>/dev/null || echo 0)"
+  if [ "${drafts:-0}" -ge 1 ] 2>/dev/null; then
+    release_draft=true
+  fi
+fi
+
 # ---- is this run a release-please publish attempt? ----
 commit_json="$(gh_read api "repos/${REPO}/commits/${HEAD_SHA}" --jq '{message: .commit.message}' 2>/dev/null || true)"
 commit_subject="$(printf '%s' "$commit_json" | jq -r '.message // empty' | head -n1)"
@@ -251,7 +263,16 @@ if [ -z "$tag" ]; then
   exit 0
 fi
 
-if [ "$publish_attempt" = "true" ] && [ "$release_exists" = "true" ]; then
+if [ "$publish_attempt" = "true" ] && [ "$release_draft" = "true" ] && [ -n "$tag_sha" ] && [ "$tag_sha" = "$HEAD_SHA" ]; then
+  # Draft already created for this commit by an earlier run that failed later.
+  # Skip release-please (it would find nothing to do) and run the asset and
+  # publish jobs against the draft.
+  skip_release_please=true
+  collision=false
+  supply_chain=true
+  verdict=RESUME
+  apply_labels "${pr_number}" "autorelease: tagged" "autorelease: pending"
+elif [ "$publish_attempt" = "true" ] && [ "$release_exists" = "true" ]; then
   # The 422 case: GitHub Release already exists for this version.
   skip_release_please=true
   collision=true
@@ -306,6 +327,7 @@ write_output tag_sha "$tag_sha"
 write_output head_sha "$HEAD_SHA"
 write_output tag_exists "$tag_exists"
 write_output release_exists "$release_exists"
+write_output release_draft "$release_draft"
 write_output pr_number "${pr_number}"
 write_output verdict "$verdict"
 
@@ -345,6 +367,9 @@ if [ "$verdict" = "COLLISION" ]; then
 elif [ "$verdict" = "UNSTICK" ]; then
   echo "::warning title=Stuck release-please PR::Merged PR #${pr_number} is still labelled autorelease: pending while ${tag} already exists. Skipping release-please so later commits cannot 422." >&2
   emit UNSTICK "tag=${tag}" "pr=${pr_number}"
+elif [ "$verdict" = "RESUME" ]; then
+  echo "::notice title=Resuming draft release::Draft ${tag} already exists at this commit. Skipping release-please; attaching assets and publishing." >&2
+  emit RESUME "tag=${tag}"
 elif [ "$verdict" = "NO_PUBLISH" ]; then
   emit NO_PUBLISH "tag=${tag}"
 else

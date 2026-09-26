@@ -68,6 +68,10 @@ if [ "$1" = "api" ]; then
       if [ "${MOCK_RELEASE_EXISTS:-0}" != "1" ]; then echo "gh: Not Found (HTTP 404)" >&2; exit 1; fi
       echo '12345'
       exit 0 ;;
+    GET:*/releases?per_page=*)
+      # Draft lookup; script uses --jq to count drafts for the tag.
+      echo "${MOCK_DRAFT_EXISTS:-0}"
+      exit 0 ;;
     GET:*/commits/*/pulls)
       printf '%s' "${MOCK_PULLS:-[]}"
       exit 0 ;;
@@ -119,6 +123,7 @@ run() {
     MOCK_COMMIT_MSG="${MOCK_COMMIT_MSG:-feat: something}" \
     MOCK_PENDING_PRS="${MOCK_PENDING_PRS:-[]}" \
     MOCK_REJECT_LABELS="${MOCK_REJECT_LABELS:-0}" \
+    MOCK_DRAFT_EXISTS="${MOCK_DRAFT_EXISTS:-0}" \
     bash "$SCRIPT" 2>"$WORK/err")"
   RC=$?
   set -e
@@ -149,6 +154,39 @@ run "clear-mutates-to-collision"
 printf '%s' "$OUT" | grep -qE '^COLLISION ' || fail "adding a release must collide, got: $OUT"
 [ "$(out_key collision)" = "true" ] || fail "collision output not true"
 echo "OK: mutation — existing GitHub Release flips CLEAR to COLLISION"
+
+# ---- RESUME: draft left by a failed run, tag at this commit ----
+MOCK_COMMIT_MSG="chore(main): release 4.4.0"
+MOCK_PULLS="$RELEASE_PR"
+MOCK_TAG_EXISTS=1
+MOCK_RELEASE_EXISTS=0
+MOCK_DRAFT_EXISTS=1
+MOCK_TAG_SHA="$HEAD_SHA"
+APPLY_LABELS=true run "resume-draft"
+[ "$RC" -eq 0 ] || fail "RESUME should exit 0, got $RC"
+printf '%s' "$OUT" | grep -qE '^RESUME tag=v4.4.0$' || fail "expected RESUME tag=v4.4.0, got: $OUT"
+[ "$(out_key skip_release_please)" = "true" ] || fail "RESUME must skip release-please"
+[ "$(out_key collision)" = "false" ] || fail "RESUME is not a collision"
+[ "$(out_key supply_chain)" = "true" ] || fail "RESUME must run supply-chain jobs"
+[ "$(out_key release_draft)" = "true" ] || fail "release_draft output should be true"
+printf '%s' "$TRACE" | grep -q 'issues/338/labels' || fail "RESUME should repair labels on #338"
+echo "OK: RESUME skips release-please and runs asset jobs for a same-commit draft"
+
+# mutation: draft at a DIFFERENT commit must fail closed, not resume
+MOCK_TAG_SHA="$TAG_SHA"
+run "draft-other-commit"
+printf '%s' "$OUT" | grep -qE '^COLLISION ' || fail "draft at another commit must collide, got: $OUT"
+[ "$(out_key supply_chain)" = "false" ] || fail "draft at another commit must not run supply-chain"
+echo "OK: mutation — draft at another commit is a COLLISION"
+
+# mutation: no draft, tag at this commit, no release -> CLEAR (release-please runs)
+MOCK_DRAFT_EXISTS=0
+MOCK_TAG_EXISTS=0
+run "no-draft-clear"
+printf '%s' "$OUT" | grep -qE '^CLEAR ' || fail "no draft and no tag should be CLEAR, got: $OUT"
+echo "OK: mutation — without a draft the run is CLEAR"
+MOCK_DRAFT_EXISTS=0
+MOCK_TAG_SHA="$TAG_SHA"
 
 # ---- COLLISION: release exists at a DIFFERENT commit — skip RP, no supply-chain ----
 MOCK_COMMIT_MSG="chore(main): release 4.4.0"
