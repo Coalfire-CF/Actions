@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/Coalfire-CF/Actions/compare/v1.1.2...v1.2.0) (2026-09-26)
+
+
+### Features
+
+* **dependabot:** cut open PRs and no-op runs ([#342](https://github.com/Coalfire-CF/Actions/issues/342)) ([c029d78](https://github.com/Coalfire-CF/Actions/commit/c029d78616249f99010f659ee4f0a042cfe5194b))
+
 ## [1.1.2](https://github.com/Coalfire-CF/Actions/compare/v1.1.1...v1.1.2) (2026-09-26)
 
 
