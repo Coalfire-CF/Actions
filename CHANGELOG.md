@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.0](https://github.com/Coalfire-CF/Actions/compare/v1.2.0...v1.3.0) (2026-09-30)
+
+
+### Features
+
+* **dependabot:** load auto-merge scripts from the workflow's own SHA ([#356](https://github.com/Coalfire-CF/Actions/issues/356)) ([a088a72](https://github.com/Coalfire-CF/Actions/commit/a088a722ec137397a983ba12e677b21699935c3c))
+* **release:** sync org workflow templates on each release ([#353](https://github.com/Coalfire-CF/Actions/issues/353)) ([8f430d8](https://github.com/Coalfire-CF/Actions/commit/8f430d811bfa9bff63c3b2abfeaa09dc4e8dc113))
+
 ## [1.2.0](https://github.com/Coalfire-CF/Actions/compare/v1.1.2...v1.2.0) (2026-09-26)
 
 
