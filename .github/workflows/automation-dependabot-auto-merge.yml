@@ -26,8 +26,6 @@ name: "Automation: Dependabot auto-merge"
 #     auto-merge:
 #       if: github.event.pull_request.user.login == 'dependabot[bot]'
 #       uses: Coalfire-CF/Actions/.github/workflows/automation-dependabot-auto-merge.yml@<release-sha>
-#       with:
-#         actions_ref: <release-sha>
 #       secrets: inherit
 #
 # IMPORTANT: Use pull_request_target (not pull_request) so the workflow has
@@ -38,10 +36,10 @@ name: "Automation: Dependabot auto-merge"
 # decide steps run committed, unit-tested, shellcheck-clean scripts under
 # scripts/*.sh instead of inline heredocs. Because this is a reusable workflow
 # that runs in the CONSUMER's checkout, each of those jobs self-checks-out
-# Coalfire-CF/Actions into ./actions-tools at the required immutable
-# `inputs.actions_ref` and invokes actions-tools/scripts/<name>.sh. Pinning this
-# reusable workflow by SHA does not by itself pin a second checkout, so callers
-# must pass the same release SHA as `actions_ref`.
+# Coalfire-CF/Actions into ./actions-tools at this workflow's own commit
+# (`job.workflow_sha`, resolved in validate-actions-ref) and invokes
+# actions-tools/scripts/<name>.sh. Scripts therefore always match the caller's
+# `uses:` pin. Callers no longer pass `actions_ref`.
 
 on:
   workflow_call:
@@ -97,14 +95,15 @@ on:
         default: 30
       actions_ref:
         description: >-
-          Git ref of Coalfire-CF/Actions to load the extracted decision scripts
-          (scripts/supply-chain-check.sh, breaking-change-check.sh,
-          auto-merge-decide.sh and pr-green-merge.sh) from. This is
-          security-critical executable policy and must be an immutable 40-hex
-          commit SHA. Callers should pass the same SHA used to pin this reusable
-          workflow.
-        required: true
+          Deprecated. The decision scripts (scripts/supply-chain-check.sh,
+          breaking-change-check.sh, auto-merge-decide.sh and pr-green-merge.sh)
+          now load from this workflow's own commit (job.workflow_sha). This
+          input is ignored with a warning when it differs, and only used as a
+          fallback when job.workflow_sha is empty. Must be a 40-hex commit SHA
+          if set.
+        required: false
         type: string
+        default: ''
       slack_channel_id:
         description: 'Slack channel ID for failure notifications (optional)'
         required: false
@@ -140,16 +139,34 @@ jobs:
       github.event_name != 'check_suite' ||
       startsWith(github.event.check_suite.head_branch, 'dependabot/')
     runs-on: ubuntu-latest
+    outputs:
+      ref: ${{ steps.resolve.outputs.ref }}
     steps:
-      - name: Require an immutable Actions policy ref
+      # job.workflow_sha is the commit this reusable workflow was loaded from,
+      # so scripts always match the caller's uses: pin. Dependabot bumps uses:
+      # but never with: inputs, which is why a caller-supplied actions_ref drifts.
+      - name: Resolve Actions ref
+        id: resolve
         env:
-          ACTIONS_REF: ${{ inputs.actions_ref }}
+          SELF_SHA: ${{ job.workflow_sha }}
+          INPUT_REF: ${{ inputs.actions_ref }}
         run: |
           set -euo pipefail
-          if ! [[ "${ACTIONS_REF}" =~ ^[0-9a-fA-F]{40}$ ]]; then
-            echo "::error::actions_ref must be an immutable 40-hex commit SHA"
+          hex='^[0-9a-fA-F]{40}$'
+          if [[ "${SELF_SHA}" =~ $hex ]]; then
+            ref="${SELF_SHA}"
+            if [ -n "${INPUT_REF}" ] && [ "${INPUT_REF}" != "${SELF_SHA}" ]; then
+              echo "::warning::actions_ref (${INPUT_REF}) is ignored; loading scripts from this workflow's own commit ${SELF_SHA}. Remove actions_ref from the caller."
+            fi
+          elif [[ "${INPUT_REF}" =~ $hex ]]; then
+            ref="${INPUT_REF}"
+            echo "::warning::job.workflow_sha is empty; falling back to actions_ref ${INPUT_REF}"
+          else
+            echo "::error::cannot resolve an immutable Actions ref: job.workflow_sha is empty and actions_ref is not a 40-hex commit SHA"
             exit 1
           fi
+          echo "Loading Actions scripts from ${ref}"
+          echo "ref=${ref}" >> "$GITHUB_OUTPUT"
 
   # ----------------------------------------------------------------
   # Job 1: Classify the dependency and determine auto-merge eligibility
@@ -319,7 +336,7 @@ jobs:
   # ----------------------------------------------------------------
   supply-chain-check:
     name: Check supply chain
-    needs: classify
+    needs: [validate-actions-ref, classify]
     if: needs.classify.outputs.is_eligible == 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -343,7 +360,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: Coalfire-CF/Actions
-          ref: ${{ inputs.actions_ref }}
+          ref: ${{ needs.validate-actions-ref.outputs.ref }}
           path: actions-tools
 
       - name: Run supply chain checks
@@ -391,7 +408,7 @@ jobs:
   # ----------------------------------------------------------------
   breaking-change-check:
     name: Check breaking changes
-    needs: classify
+    needs: [validate-actions-ref, classify]
     if: needs.classify.outputs.is_eligible == 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -470,7 +487,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: Coalfire-CF/Actions
-          ref: ${{ inputs.actions_ref }}
+          ref: ${{ needs.validate-actions-ref.outputs.ref }}
           path: actions-tools
 
       - name: Run breaking change checks
@@ -536,7 +553,7 @@ jobs:
   # ----------------------------------------------------------------
   decide:
     name: Decide and merge
-    needs: [classify, supply-chain-check, breaking-change-check]
+    needs: [validate-actions-ref, classify, supply-chain-check, breaking-change-check]
     if: needs.classify.outputs.is_eligible == 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -555,7 +572,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: Coalfire-CF/Actions
-          ref: ${{ inputs.actions_ref }}
+          ref: ${{ needs.validate-actions-ref.outputs.ref }}
           path: actions-tools
 
       # A release can rename or remove a reusable workflow. Dependabot rewrites
@@ -794,7 +811,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: Coalfire-CF/Actions
-          ref: ${{ inputs.actions_ref }}
+          ref: ${{ needs.validate-actions-ref.outputs.ref }}
           path: actions-tools
 
       - name: Green-gate and bypass-merge if ready

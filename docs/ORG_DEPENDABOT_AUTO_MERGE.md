@@ -253,8 +253,6 @@ jobs:
        startsWith(github.event.check_suite.head_branch, 'dependabot/')) ||
       github.event.pull_request.user.login == 'dependabot[bot]'
     uses: <YOUR_ORG>/Actions/.github/workflows/automation-dependabot-auto-merge.yml@e63fdc45774e5963925b931238797256692cf040 # v1.2.0
-    with:
-      actions_ref: e63fdc45774e5963925b931238797256692cf040 # v1.2.0
     secrets: inherit
 ```
 
@@ -271,23 +269,16 @@ created by Dependabot"** to be enabled under Org Settings > Actions > General.
 
 The supply-chain, breaking-change, and decision steps run committed scripts
 (`scripts/supply-chain-check.sh`, `breaking-change-check.sh`,
-`auto-merge-decide.sh`) rather than inline heredocs. Because this is a reusable
-workflow that runs in **your** repo's checkout, each of those jobs self-checks-out
-`Coalfire-CF/Actions` and invokes the script from there. **Pinning the `uses:`
-line by SHA does not by itself pin the decision scripts** — they resolve at the
-required `actions_ref`, which must be an immutable 40-hex commit SHA.
+`auto-merge-decide.sh`, `pr-green-merge.sh`) rather than inline heredocs.
+Because this is a reusable workflow that runs in **your** repo's checkout, each
+of those jobs self-checks-out `Coalfire-CF/Actions` and invokes the script from
+there.
 
-Pass the same immutable SHA to `actions_ref`:
-
-```yaml
-jobs:
-  auto-merge:
-    if: github.actor == 'dependabot[bot]'
-    uses: <YOUR_ORG>/Actions/.github/workflows/automation-dependabot-auto-merge.yml@e63fdc45774e5963925b931238797256692cf040 # v1.2.0
-    with:
-      actions_ref: e63fdc45774e5963925b931238797256692cf040 # v1.2.0
-    secrets: inherit
-```
+The checkout uses the workflow's own commit (`job.workflow_sha`), so pinning
+the `uses:` line by SHA also pins the decision scripts. Dependabot bumps both
+together. Do not pass `actions_ref`. It is deprecated: a value that differs
+from the workflow's own commit is ignored with a warning, and it is only used
+as a fallback if `job.workflow_sha` is empty.
 
 ## Inputs
 
@@ -300,7 +291,7 @@ jobs:
 | `auto_merge_method` | No | `squash` | Merge method: merge, squash, or rebase |
 | `bedrock_model_id` | No | `us.anthropic.claude-haiku-4-5-20251001-v1:0` | Bedrock model ID for changelog analysis |
 | `cache_ttl_days` | No | `30` | Days before cached analysis expires |
-| `actions_ref` | **Yes** | - | Immutable 40-hex commit SHA of `Coalfire-CF/Actions` from which decision scripts are loaded. Use the same SHA as the reusable workflow pin. |
+| `actions_ref` | No | - | Deprecated. Ignored with a warning; scripts load from the workflow's own commit. Fallback only if `job.workflow_sha` is empty. |
 | `slack_channel_id` | No | - | Slack channel for failure alerts |
 
 ## Secrets

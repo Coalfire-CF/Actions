@@ -35,7 +35,8 @@ jobs:
       github.event.pull_request.user.login == 'dependabot[bot]'
     uses: ./.github/workflows/automation-dependabot-auto-merge.yml
     with:
-      # The workflow file and policy scripts resolve from the same trusted
-      # default-branch commit on pull_request_target/check_suite events.
+      # The reusable resolves scripts from job.workflow_sha. This is the
+      # fallback if that is empty for a local ./ call; both are the same
+      # trusted default-branch commit on pull_request_target/check_suite.
       actions_ref: ${{ github.workflow_sha }}
     secrets: inherit

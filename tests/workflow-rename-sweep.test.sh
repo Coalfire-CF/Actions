@@ -111,8 +111,8 @@ MODE=rewrite TARGET_DIR="$REPO" ACTIONS_PIN="$PIN" ACTIONS_TAG=v1.0.0 bash "$SWE
 [ $? -eq 3 ] || fail "second run should report nothing to rewrite (rc 3)"
 echo "OK: idempotent (second run rc=3)"
 
-# Pre-0.18.2 auto-merge callers have no actions_ref: add it, with and without an
-# existing with: block. The result must be one with: key holding both inputs.
+# Auto-merge callers without actions_ref stay without it: the reusable loads
+# scripts from its own commit (job.workflow_sha), so the input is deprecated.
 for variant in bare with; do
   R2="$WORK/r2-$variant"; mkdir -p "$R2/.github/workflows"
   {
@@ -125,15 +125,14 @@ for variant in bare with; do
   } > "$R2/.github/workflows/org-dependabot-auto-merge.yml"
   out2="$(MODE=rewrite TARGET_DIR="$R2" ACTIONS_PIN="$PIN" ACTIONS_TAG=v1.0.0 bash "$SWEEP" 2>&1)" || fail "${variant}: rewrite failed: $out2"
   f2="$R2/.github/workflows/automation-dependabot-auto-merge.yml"
-  grep -qx "      actions_ref: ${PIN} # v1.0.0" "$f2" || fail "${variant}: actions_ref not added: $(cat "$f2")"
-  [ "$(grep -c '^    with:$' "$f2")" = "1" ] || fail "${variant}: expected one with: key: $(cat "$f2")"
+  grep -qF "automation-dependabot-auto-merge.yml@${PIN} # v1.0.0" "$f2" || fail "${variant}: uses: not repinned: $(cat "$f2")"
+  grep -q 'actions_ref:' "$f2" && fail "${variant}: actions_ref was added: $(cat "$f2")"
   if [ "$variant" = with ]; then
     grep -qx "      auto_merge_method: squash" "$f2" || fail "with: existing input lost"
+  else
+    grep -q '^    with:' "$f2" && fail "bare: empty with: block added: $(cat "$f2")"
   fi
-  # Ruby's bundled YAML parser is present on macOS and ubuntu runners; PyYAML is not.
-  ruby -ryaml -e 'w = YAML.safe_load(File.read(ARGV[0]))["jobs"]["auto-merge"]["with"]; exit(w["actions_ref"] == ARGV[1] ? 0 : 1)' "$f2" "$PIN" \
-    || fail "${variant}: result is not valid YAML with actions_ref: $(cat "$f2")"
-  echo "OK: actions_ref added (${variant})"
+  echo "OK: actions_ref not added (${variant})"
 done
 
 # Guard: a bad pin is refused.
