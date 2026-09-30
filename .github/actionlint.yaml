@@ -1,0 +1,7 @@
+# actionlint 1.7.12 does not know the job.workflow_* context properties yet
+# (documented by GitHub and proven populated in cross-repo reusable calls).
+# Drop this ignore once a release adds them.
+paths:
+  .github/workflows/automation-dependabot-auto-merge.yml:
+    ignore:
+      - 'property "workflow_(sha|ref)" is not defined in object type'

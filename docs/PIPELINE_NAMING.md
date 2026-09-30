@@ -35,7 +35,7 @@ To migrate a caller:
 
 1. Rename the caller file to the new name in the table.
 2. Change the `uses:` path to the new reusable name, and pin it to the v1.0.0
-   SHA. For auto-merge, set `actions_ref` to the same SHA.
+   SHA.
 3. Set the caller `name:` and job `name:` to the values in
    `templates/bootstrap/`.
 4. If a repo ruleset requires one of these checks, update the required

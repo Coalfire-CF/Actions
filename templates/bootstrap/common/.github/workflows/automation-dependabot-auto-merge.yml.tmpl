@@ -28,6 +28,4 @@ jobs:
        startsWith(github.event.check_suite.head_branch, 'dependabot/')) ||
       github.event.pull_request.user.login == 'dependabot[bot]'
     uses: Coalfire-CF/Actions/.github/workflows/automation-dependabot-auto-merge.yml@__ACTIONS_SHA__ # __ACTIONS_VERSION__
-    with:
-      actions_ref: __ACTIONS_SHA__ # __ACTIONS_VERSION__
     secrets: inherit
