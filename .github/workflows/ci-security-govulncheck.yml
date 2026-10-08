@@ -1,0 +1,87 @@
+name: "CI: Security Govulncheck"
+
+# Scans a Go module for known vulnerabilities with govulncheck. It reports only
+# vulnerabilities in code the module can actually reach, so a finding is a real
+# call path, not just a vulnerable package in go.sum. Any finding fails the job.
+#
+# The Trivy reusable only scans Terraform files, so this is the dependency
+# vulnerability scan for Go repos. See docs/ORG_GOVULNCHECK.md.
+
+on:
+  workflow_call:
+    inputs:
+      working_directory:
+        description: 'Directory in the caller repo that holds go.mod. Default "." is the repo root. A repo with the module in a subdirectory MUST set this, or the job fails because it finds no go.mod there.'
+        required: false
+        type: string
+        default: '.'
+      go_version_file:
+        description: 'Path to the file that sets the Go version, relative to the repo root (go.mod or .go-version). Leave empty to use go.mod inside working_directory.'
+        required: false
+        type: string
+        default: ''
+      slack_channel_id:
+        description: 'Slack channel ID for failure notifications (optional)'
+        required: false
+        type: string
+        default: ''
+    secrets:
+      SLACK_BOT_TOKEN:
+        description: 'Slack bot token for failure notifications (required if slack_channel_id is set)'
+        required: false
+
+permissions:
+  contents: read
+
+env:
+  # Pinned govulncheck release (golang.org/x/vuln). The vulnerability database
+  # is fetched live on every run, so the pin controls the tool, not the data.
+  GOVULNCHECK_VERSION: v1.8.0
+
+jobs:
+  govulncheck:
+    name: Run govulncheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+    - name: Check for go.mod
+      env:
+        WORKING_DIRECTORY: ${{ inputs.working_directory }}
+      run: |
+        # A missing go.mod must fail. Otherwise a wrong working_directory
+        # scans nothing and reports a pass.
+        if [ ! -f "${WORKING_DIRECTORY}/go.mod" ]; then
+          echo "::error::No go.mod in '${WORKING_DIRECTORY}'. Set working_directory to the directory that holds go.mod."
+          exit 1
+        fi
+
+    - name: Set up Go
+      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version-file: ${{ inputs.go_version_file != '' && inputs.go_version_file || format('{0}/go.mod', inputs.working_directory) }}
+        cache-dependency-path: ${{ inputs.working_directory }}/go.sum
+
+    - name: Install govulncheck
+      run: go install "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}"
+
+    - name: Run govulncheck
+      working-directory: ${{ inputs.working_directory }}
+      run: |
+        # govulncheck exits 3 when it finds a reachable vulnerability.
+        govulncheck -version
+        govulncheck ./...
+
+  notify-failure:
+    name: Notify on failure
+    needs: govulncheck
+    if: failure() && inputs.slack_channel_id != ''
+    uses: ./.github/workflows/automation-slack-notify.yml
+    secrets:
+      SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+    with:
+      notification-type: failure
+      channel-id: ${{ inputs.slack_channel_id }}
