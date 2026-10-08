@@ -26,6 +26,7 @@ Called by downstream repos on pull requests.
 |----------|------|-------------|
 | Trivy PR | `ci-security-trivy.yml` | Security scanning of changed Terraform files |
 | Gitleaks | `ci-security-gitleaks.yml` | Secret detection on PR commits |
+| Govulncheck | `ci-security-govulncheck.yml` | Known-vulnerability scan for Go modules (reachable code only). Takes `working_directory` (default `.`) ([docs](docs/ORG_GOVULNCHECK.md)) |
 | Terraform Validate | `ci-terraform-validate.yml` | `terraform init` + `terraform validate` with PR comment. Takes `working_directory` (default `.`) — **repos with no root module must set or matrix it**, or the gate validates an empty directory |
 | Terraform fmt | `ci-terraform-format.yml` | Format check and auto-fix for Terraform files |
 | Terraform Docs | `ci-terraform-docs.yml` | Verifies `README.md` matches the module; never pushes. Authors regenerate locally with the pinned pre-commit hook. Drift fails human PRs with the diff and warns on Dependabot PRs ([docs](docs/ORG_TERRAFORM_DOCS.md)) |
