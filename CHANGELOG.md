@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.0](https://github.com/Coalfire-CF/Actions/compare/v1.4.0...v1.5.0) (2026-10-08)
+
+
+### Features
+
+* **bootstrap:** install govulncheck caller in Go repos ([#362](https://github.com/Coalfire-CF/Actions/issues/362)) ([f31cd5a](https://github.com/Coalfire-CF/Actions/commit/f31cd5a9b585c3c928801e3d2aba78abd9a4b9f9))
+
 ## [1.4.0](https://github.com/Coalfire-CF/Actions/compare/v1.3.0...v1.4.0) (2026-10-08)
 
 
