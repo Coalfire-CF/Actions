@@ -4,7 +4,7 @@
 # workflows (the "New workflow" picker in every Coalfire-CF repo) from the
 # bootstrap caller templates, pinned to a release.
 #
-# Source: templates/bootstrap/{common,terraform}/.github/workflows/*.yml.tmpl,
+# Source: templates/bootstrap/{common,terraform,go}/.github/workflows/*.yml.tmpl,
 # the same callers repo-bootstrap.sh delivers. Output: <out_dir>/<name>.yml plus
 # <name>.properties.json, the layout Coalfire-CF/.github/workflow-templates
 # expects. Run by the sync-workflow-templates job in internal-release.yml after
@@ -26,7 +26,7 @@ OUT="${3:?usage: sync-workflow-templates.sh <tag vX.Y.Z> <40-hex sha> <out_dir>}
 
 REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 TEMPLATE_DIR="${TEMPLATE_DIR:-${REPO_ROOT}/templates/bootstrap}"
-SETS=(common terraform)
+SETS=(common terraform go)
 
 # name|description|category for each caller. A new bootstrap caller without an
 # entry here is a hard failure, so it cannot ship without a picker entry.
@@ -37,6 +37,7 @@ props() {
     automation-dependabot-refresh) echo 'Coalfire: Dependabot refresh|Generates a grouped dependabot.yml for the repo on each PR|Automation' ;;
     ci-markdown) echo 'Coalfire: Markdown|Lint changed markdown files on PRs via the org reusable workflow|Continuous integration' ;;
     ci-security-gitleaks) echo 'Coalfire: Security Gitleaks|Scan PRs for committed secrets via the org reusable workflow|Code scanning' ;;
+    ci-security-govulncheck) echo 'Coalfire: Security Govulncheck|Scan a Go module for reachable vulnerabilities via the org reusable workflow|Code scanning' ;;
     ci-terraform-docs) echo 'Coalfire: Terraform docs|Generate the Terraform module README on PRs via the org reusable workflow|Continuous integration' ;;
     ci-terraform-format) echo 'Coalfire: Terraform format|Check terraform fmt on pushes and PRs via the org reusable workflow|Continuous integration' ;;
     ci-terraform-validate) echo 'Coalfire: Terraform validate|Run terraform validate on PRs via the org reusable workflow|Continuous integration' ;;

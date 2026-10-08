@@ -41,6 +41,8 @@
 #   BRANCH_PREFIX    optional — default "bootstrap/" (branch: bootstrap/baseline-<version>)
 #   VISIBILITY       optional — public|private; detected from metadata if unset
 #   IS_TERRAFORM     optional — true|false; detected via languages API if unset
+#   IS_GO            optional — true|false; detected if unset: languages API
+#                    lists Go AND go.mod exists at the repo root
 #   WORK_DIR         optional — parent dir for the clone/staging (default mktemp)
 #   RETRY_MAX        optional — max attempts for a transient gh read (default 3)
 #
@@ -160,6 +162,20 @@ if [ -z "${IS_TERRAFORM:-}" ]; then
   fi
 fi
 
+# Go: the govulncheck caller scans the module at the repo root, and the reusable
+# fails when go.mod is not there. So a Go language entry is not enough (a
+# Terraform repo with terratest has Go under test/ and no root go.mod). Require
+# both. An inconclusive probe means "not Go": a missed delivery retries on the
+# next sweep, a wrong one would add a failing check.
+if [ -z "${IS_GO:-}" ]; then
+  IS_GO=false
+  if LANGS_GO="$(gh_read api "repos/${TARGET_REPO}/languages")" \
+     && [ "$(printf '%s' "$LANGS_GO" | jq -r 'has("Go")')" = "true" ] \
+     && gh api "repos/${TARGET_REPO}/contents/go.mod" >/dev/null 2>&1; then
+    IS_GO=true
+  fi
+fi
+
 # ---- Render templates (placeholders → real values, .tmpl suffix stripped) ----
 WORK_ROOT="${WORK_DIR:-$(mktemp -d)}"
 RENDER_DIR="${WORK_ROOT}/render"
@@ -168,7 +184,7 @@ rm -rf "$RENDER_DIR"; mkdir -p "$RENDER_DIR"
 REPO_NAME="${TARGET_REPO#*/}"
 STAGGER_SLOT="$(bash "${SCRIPT_DIR}/stagger-slot.sh" "$REPO_NAME")"
 
-render_set() { # $1 = template subset dir (common|terraform|private)
+render_set() { # $1 = template subset dir (common|terraform|go|private)
   local src="${TEMPLATE_DIR}/$1"
   [ -d "$src" ] || return 0
   ( cd "$src" && find . -type f -name '*.tmpl' -print0 ) | while IFS= read -r -d '' rel; do
@@ -182,6 +198,7 @@ render_set() { # $1 = template subset dir (common|terraform|private)
 }
 render_set common
 [ "$IS_TERRAFORM" = "true" ] && render_set terraform
+[ "$IS_GO" = "true" ] && render_set go
 [ "$VISIBILITY" = "private" ] && render_set private
 
 # ---- Docs-migration guard: never ship empty partials next to a real README ----

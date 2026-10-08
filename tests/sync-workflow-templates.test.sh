@@ -25,7 +25,7 @@ touch "${out}/coalfire-org-release.yml" "${out}/coalfire-org-release.properties.
 bash "$SYNC" "$TAG" "$SHA" "$out" >/dev/null || fail "sync exited non-zero"
 
 want=0
-for t in "${REPO_ROOT}"/templates/bootstrap/{common,terraform}/.github/workflows/*.yml.tmpl; do
+for t in "${REPO_ROOT}"/templates/bootstrap/{common,terraform,go}/.github/workflows/*.yml.tmpl; do
   [ -e "$t" ] || continue
   want=$((want + 1))
   name="$(basename "$t" .yml.tmpl)"
@@ -39,6 +39,7 @@ for t in "${REPO_ROOT}"/templates/bootstrap/{common,terraform}/.github/workflows
   if grep -qE '(- main$|\[main\])' "$y"; then fail "${name}.yml has a literal main branch"; fi
 done
 [ "$want" -gt 0 ] || fail "no bootstrap caller templates found"
+[ -f "${out}/ci-security-govulncheck.yml" ] || fail "go set not rendered (ci-security-govulncheck.yml)"
 
 got="$(find "$out" -name '*.yml' | wc -l | tr -d ' ')"
 [ "$got" -eq "$want" ] || fail "rendered ${got} yml files, want ${want}"

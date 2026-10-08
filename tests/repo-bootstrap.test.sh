@@ -112,6 +112,8 @@ META_EXEMPT="$(meta false false public '["bootstrap-exempt"]')"
 
 LANGS_NONE='{"Python": 1234}'
 LANGS_HCL='{"HCL": 9999, "Shell": 12}'
+LANGS_GO='{"Go": 5000, "Shell": 12}'
+LANGS_HCL_GO='{"HCL": 9999, "Go": 800}'
 
 PRS_NONE='[]'
 PRS_OPEN_BOOT='[{"headRefName":"bootstrap/baseline-v0.12.1","state":"OPEN","mergedAt":null}]'
@@ -186,6 +188,35 @@ run_helper "$META_PUB" "$LANGS_NONE" "$PRS_NONE" ".github/workflows/org-gitleaks
 echo "$OUT" | grep -q "WOULD-BOOTSTRAP Coalfire-CF/new-repo (8 files)" || fail "legacy gitleaks caller should drop ci-security-gitleaks.yml, leaving 8 (got: $OUT)"
 echo "$OUT" | grep -q "ci-security-gitleaks.yml" && fail "ci-security-gitleaks.yml must not be proposed next to org-gitleaks-pr.yml"
 echo "OK: legacy org-gitleaks-pr.yml → renamed caller not proposed (8 files)"
+
+# ---- Case 3d: Go detection. The govulncheck caller is delivered only when the
+#      languages API lists Go AND go.mod exists at the repo root. ----
+run_helper "$META_PUB" "$LANGS_GO" "$PRS_NONE" "go.mod" true 1
+echo "$OUT" | grep -q "WOULD-BOOTSTRAP Coalfire-CF/new-repo (10 files)" || fail "Go repo with root go.mod should propose common(9)+go(1)=10 (got: $OUT)"
+echo "OK: Go + root go.mod → WOULD-BOOTSTRAP (10 files)"
+
+# Negative: Go listed but no root go.mod (module lives in a subdirectory).
+run_helper "$META_PUB" "$LANGS_GO" "$PRS_NONE" "" true 1
+echo "$OUT" | grep -q "WOULD-BOOTSTRAP Coalfire-CF/new-repo (9 files)" || fail "Go without root go.mod must get the common set only, 9 (got: $OUT)"
+# Negative: go.mod present but Go is not a listed language.
+run_helper "$META_PUB" "$LANGS_NONE" "$PRS_NONE" "go.mod" true 1
+echo "$OUT" | grep -q "WOULD-BOOTSTRAP Coalfire-CF/new-repo (9 files)" || fail "non-Go repo must get the common set only, 9 (got: $OUT)"
+# Negative: terraform repo with terratest Go under test/ and no root go.mod.
+run_helper "$META_PRIV" "$LANGS_HCL_GO" "$PRS_NONE" "" true 1
+echo "$OUT" | grep -q "WOULD-BOOTSTRAP Coalfire-CF/new-repo (17 files)" || fail "terraform+terratest without root go.mod must stay at 17 (got: $OUT)"
+# Never overwrite: an existing govulncheck caller is dropped.
+run_helper "$META_PUB" "$LANGS_GO" "$PRS_NONE" "go.mod
+.github/workflows/ci-security-govulncheck.yml" true 1
+echo "$OUT" | grep -q "WOULD-BOOTSTRAP Coalfire-CF/new-repo (9 files)" || fail "existing govulncheck caller must be dropped, leaving 9 (got: $OUT)"
+# Live render: the Go caller is delivered pinned, non-Go is not given it.
+run_helper "$META_PUB" "$LANGS_GO" "$PRS_NONE" "go.mod" false 0
+GOWF="$CLONE_DIR/render/.github/workflows/ci-security-govulncheck.yml"
+[ -f "$GOWF" ] || fail "Go repo live render should contain ci-security-govulncheck.yml"
+grep -q "ci-security-govulncheck.yml@${SHA_OK} # v0.12.1" "$GOWF" || fail "govulncheck caller must carry the SHA pin"
+run_helper "$META_PUB" "$LANGS_NONE" "$PRS_NONE" "go.mod" false 0
+[ -f "$CLONE_DIR/render/.github/workflows/release-please.yml" ] || fail "non-Go live render should still contain the common set"
+[ ! -e "$CLONE_DIR/render/.github/workflows/ci-security-govulncheck.yml" ] || fail "non-Go repo must not render the govulncheck caller"
+echo "OK: Go detection (positive, 4 negatives, never-overwrite, pinned render)"
 
 # ---- Case 4: opt-out gates — archived / fork / topic / marker file. ----
 run_helper "$META_ARCHIVED" "$LANGS_NONE" "$PRS_NONE" "" true 1

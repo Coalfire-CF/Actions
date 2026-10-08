@@ -17,7 +17,9 @@ adoption PR per repo.
 1. **Decide per repo** — `scripts/repo-bootstrap.sh` applies the opt-out gates
    (below), probes for adoption (`.github/workflows/release-please.yml` present ⇒
    compliant), classifies the repo (Terraform via the languages API → the
-   `terraform/` template set; private → `setup-bot-access.yml`), renders
+   `terraform/` template set; Go via the languages API plus a root `go.mod` → the
+   `go/` set, which adds `ci-security-govulncheck.yml`; private →
+   `setup-bot-access.yml`), renders
    `templates/bootstrap/` with the latest release pin, and **drops any file
    that already exists in the target repo** (never overwrites).
 1. **Deliver** — branch `bootstrap/baseline-<version>`, one commit, one PR
@@ -63,7 +65,7 @@ and its closed PR (or re-open it).
 | `TEMPLATE_DIR` | `templates/bootstrap` | template root |
 | `PR_LABELS` | `bootstrap/proposed,merge/approved` | applied to the PR (create-if-missing guarded) |
 | `BRANCH_PREFIX` | `bootstrap/` | branch + PR-history matching prefix |
-| `VISIBILITY` / `IS_TERRAFORM` | detected | classification overrides |
+| `VISIBILITY` / `IS_TERRAFORM` / `IS_GO` | detected | classification overrides |
 | `RETRY_MAX` | 3 | transient-read retries (retry-lib) |
 
 Decisions: `SKIP <repo> (<reason>)`, `WOULD-BOOTSTRAP <repo> (<n> files)`,
@@ -119,5 +121,5 @@ gh workflow run automation-repo-bootstrap.yml
 | `SKIP (read-unavailable)` everywhere | App token missing/expired scopes, or API outage — the worker fails closed by design |
 | Push rejected `refusing to allow a GitHub App to create or update workflow` | App lacks `workflows: write` (see One-time org setup) |
 | PR opened but never merges | Its own checks aren't green, or `pr-green-merge.sh` allowlist doesn't include the App author — check reconcile run logs |
-| Repo proposed the wrong file set | Languages API lag on brand-new repos; re-run after the first push, or set `IS_TERRAFORM` via a targeted dispatch |
+| Repo proposed the wrong file set | Languages API lag on brand-new repos; re-run after the first push, or set `IS_TERRAFORM` / `IS_GO` via a targeted dispatch |
 | Template change not reflected | Templates render from the checked-out ref of Actions at sweep time — merge template changes to `main` first |
