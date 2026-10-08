@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.0](https://github.com/Coalfire-CF/Actions/compare/v1.3.0...v1.4.0) (2026-10-08)
+
+
+### Features
+
+* **security:** add ci-security-govulncheck reusable for Go repos ([#359](https://github.com/Coalfire-CF/Actions/issues/359)) ([3e18f2b](https://github.com/Coalfire-CF/Actions/commit/3e18f2ba4662ea587118d1311c92b2a5ac14ae59))
+
 ## [1.3.0](https://github.com/Coalfire-CF/Actions/compare/v1.2.0...v1.3.0) (2026-09-30)
 
 
