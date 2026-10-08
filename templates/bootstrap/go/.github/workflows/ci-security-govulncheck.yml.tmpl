@@ -1,0 +1,17 @@
+name: "CI: Security Govulncheck"
+
+on:
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '17 6 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  govulncheck:
+    name: Run govulncheck
+    uses: Coalfire-CF/Actions/.github/workflows/ci-security-govulncheck.yml@__ACTIONS_SHA__ # __ACTIONS_VERSION__
+    with:
+      working_directory: '.'

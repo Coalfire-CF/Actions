@@ -8,7 +8,7 @@ name: "Automation: Repo bootstrap"
 # files. This sweeper is the convergence mechanism: it enumerates org repos,
 # finds ones missing the standard Actions baseline, and opens ONE bootstrap PR
 # per repo containing the pinned caller bundle rendered from
-# templates/bootstrap/ (common + terraform + private variants, classified per
+# templates/bootstrap/ (common + terraform + go + private variants, classified per
 # repo). Every merge decision beyond that belongs to the existing auto-merge
 # machinery: bootstrap PRs are labeled `bootstrap/proposed` + `merge/approved`,
 # so the reconcile sweeper lands them once their own checks are green.
