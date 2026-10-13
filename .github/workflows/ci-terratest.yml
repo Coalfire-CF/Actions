@@ -17,6 +17,8 @@ name: "CI: Terratest"
 #   - Step summary and artifacts for audit trail (AU-3)
 #   - Optional protected-environment gate for credentialed runs (#237, AC-6/CM-3)
 #   - Optional if:always() run-scoped NAT-EIP sweep backstops SIGKILL teardown (#273, CP-10)
+#   - Optional test_env TEST_* pairs: validated, exported only to the Go test step, values
+#     never printed by this workflow. Non-secret values only (SI-10)
 
 on:
   workflow_call:
@@ -133,6 +135,15 @@ on:
         required: false
         default: false
         type: boolean
+      # Non-secret values for the Go test (e.g. TEST_ACM_PCA_ARN). Opt-in, default empty, so it
+      # is a no-op for every current caller. Exported only into the "Run Terratest" step. The
+      # runner prints each step's env block in its log header, so values are visible in logs:
+      # never pass a secret here.
+      test_env:
+        description: 'Newline-separated KEY=VALUE pairs exported to the Go test. Keys must match ^TEST_[A-Z0-9_]+$. Non-secret values only: they appear in runner step headers.'
+        required: false
+        default: ''
+        type: string
     secrets:
       TERRATEST_APP_CLIENT_ID:
         description: 'GitHub App client ID for private module access'
@@ -224,6 +235,7 @@ jobs:
           AZURE_ENVIRONMENT: ${{ inputs.azure_environment }}
           GCP_WI_PROVIDER: ${{ inputs.gcp_workload_identity_provider }}
           GCP_SA: ${{ inputs.gcp_service_account }}
+          INPUT_TEST_ENV: ${{ inputs.test_env }}
         run: |
           set -eo pipefail
 
@@ -272,6 +284,52 @@ jobs:
           validate_input "azure_environment" "$AZURE_ENVIRONMENT" '^(azurecloud|azureusgovernment)$'
           validate_input "gcp_workload_identity_provider" "$GCP_WI_PROVIDER" '^projects/[0-9]+/locations/[a-z-]+/workloadIdentityPools/[a-zA-Z0-9._-]+/providers/[a-zA-Z0-9._-]+$'
           validate_input "gcp_service_account" "$GCP_SA" '^[a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.iam\.gserviceaccount\.com$'
+
+          # >>> test_env parse (byte-identical in "Validate inputs" and "Run Terratest")
+          # One KEY=VALUE per line. Blank and whitespace-only lines are skipped. The raw input
+          # arrives through env (INPUT_TEST_ENV), never through an expression in this script.
+          # Errors name the line number (and the key once it is valid), never the value.
+          te_keys=()
+          # shellcheck disable=SC2034 # te_vals is read by the Run Terratest copy
+          te_vals=()
+          if [[ -n "${INPUT_TEST_ENV}" ]]; then
+            te_line_no=0
+            while IFS= read -r te_line || [[ -n "${te_line}" ]]; do
+              te_line_no=$((te_line_no + 1))
+              if [[ "${te_line}" == *$'\r'* ]]; then
+                echo "::error::Invalid test_env line ${te_line_no}: carriage return not allowed"
+                exit 1
+              fi
+              if [[ "${te_line}" =~ ^[[:space:]]*$ ]]; then
+                continue
+              fi
+              if [[ "${te_line}" != *=* ]]; then
+                echo "::error::Invalid test_env line ${te_line_no}: expected KEY=VALUE"
+                exit 1
+              fi
+              te_key="${te_line%%=*}"
+              if [[ ! "${te_key}" =~ ^TEST_[A-Z0-9_]+$ ]]; then
+                echo "::error::Invalid test_env line ${te_line_no}: key must match ^TEST_[A-Z0-9_]+\$"
+                exit 1
+              fi
+              case "${te_key}" in
+                TEST_DIR | TEST_MODE | TEST_TIMEOUT)
+                  echo "::error::Invalid test_env line ${te_line_no}: ${te_key} is reserved by this workflow"
+                  exit 1
+                  ;;
+              esac
+              for te_seen in "${te_keys[@]}"; do
+                if [[ "${te_seen}" == "${te_key}" ]]; then
+                  echo "::error::Invalid test_env line ${te_line_no}: duplicate key ${te_key}"
+                  exit 1
+                fi
+              done
+              te_keys+=("${te_key}")
+              te_vals+=("${te_line#*=}")
+            done <<< "${INPUT_TEST_ENV}"
+          fi
+          echo "test_env: ${#te_keys[@]} key(s) validated"
+          # <<< test_env parse
 
           echo "Input validation passed"
 
@@ -410,7 +468,60 @@ jobs:
           TEST_DIR: ${{ inputs.test_directory }}
           TEST_TIMEOUT: ${{ inputs.test_timeout }}
           RERUN_FAILS: ${{ inputs.rerun_fails }}
+          INPUT_TEST_ENV: ${{ inputs.test_env }}
         run: |
+          # >>> test_env parse (byte-identical in "Validate inputs" and "Run Terratest")
+          # One KEY=VALUE per line. Blank and whitespace-only lines are skipped. The raw input
+          # arrives through env (INPUT_TEST_ENV), never through an expression in this script.
+          # Errors name the line number (and the key once it is valid), never the value.
+          te_keys=()
+          # shellcheck disable=SC2034 # te_vals is read by the Run Terratest copy
+          te_vals=()
+          if [[ -n "${INPUT_TEST_ENV}" ]]; then
+            te_line_no=0
+            while IFS= read -r te_line || [[ -n "${te_line}" ]]; do
+              te_line_no=$((te_line_no + 1))
+              if [[ "${te_line}" == *$'\r'* ]]; then
+                echo "::error::Invalid test_env line ${te_line_no}: carriage return not allowed"
+                exit 1
+              fi
+              if [[ "${te_line}" =~ ^[[:space:]]*$ ]]; then
+                continue
+              fi
+              if [[ "${te_line}" != *=* ]]; then
+                echo "::error::Invalid test_env line ${te_line_no}: expected KEY=VALUE"
+                exit 1
+              fi
+              te_key="${te_line%%=*}"
+              if [[ ! "${te_key}" =~ ^TEST_[A-Z0-9_]+$ ]]; then
+                echo "::error::Invalid test_env line ${te_line_no}: key must match ^TEST_[A-Z0-9_]+\$"
+                exit 1
+              fi
+              case "${te_key}" in
+                TEST_DIR | TEST_MODE | TEST_TIMEOUT)
+                  echo "::error::Invalid test_env line ${te_line_no}: ${te_key} is reserved by this workflow"
+                  exit 1
+                  ;;
+              esac
+              for te_seen in "${te_keys[@]}"; do
+                if [[ "${te_seen}" == "${te_key}" ]]; then
+                  echo "::error::Invalid test_env line ${te_line_no}: duplicate key ${te_key}"
+                  exit 1
+                fi
+              done
+              te_keys+=("${te_key}")
+              te_vals+=("${te_line#*=}")
+            done <<< "${INPUT_TEST_ENV}"
+          fi
+          echo "test_env: ${#te_keys[@]} key(s) validated"
+          # <<< test_env parse
+          # Export the validated pairs into THIS step only (gotestsum and go test inherit them).
+          # Not $GITHUB_ENV: that would leak them into every later step.
+          for te_i in "${!te_keys[@]}"; do
+            export "${te_keys[te_i]}=${te_vals[te_i]}"
+            echo "test_env: exported ${te_keys[te_i]}"
+          done
+
           set +e
           cd "${TEST_DIR}"
 

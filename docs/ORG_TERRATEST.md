@@ -18,7 +18,8 @@ adjacent `# vX.Y.Z` comment (SHA-preferred pinning, RFC-0008/ADR-0018) — check
 [releases page](https://github.com/Coalfire-CF/Actions/releases) for the current SHA rather
 than trusting a number frozen in this doc. The snippets below pin **v0.16.0**
 (`23aae589e2eb9c009fad0da45899db6ae59e8d02`); the `environment` and `enable_nat_eip_sweep`
-inputs ship from the release that lands #237/#273 — pin at or above it to use them.
+inputs ship from the release that lands #237/#273 — pin at or above it to use them. The
+`test_env` input ships in the first release after v1.5.0.
 
 - **AWS (GovCloud):** [`terraform-aws-vpc-nfw`](https://github.com/Coalfire-CF/terraform-aws-vpc-nfw)
   `.github/workflows/ci-terratest.yml` — the canonical **module-repo self-test** (PR #198).
@@ -454,6 +455,34 @@ exception with an exit, not a silent hole. The flake rate that justifies quarant
 un-quarantining) is surfaced per-module in the MTCS terratest posture scoreboard
 (`fleet/TERRATEST-POSTURE.md`).
 
+### Passing non-secret values to the test (`test_env`)
+
+Some suites read settings from the environment, for example `TEST_ACM_PCA_ARN`. Pass them with
+`test_env`, one `KEY=VALUE` per line:
+
+```yaml
+with:
+  test_env: |
+    TEST_ACM_PCA_ARN=arn:aws-us-gov:acm-pca:us-gov-west-1:123456789012:certificate-authority/example
+    TEST_TLS_EXTERNAL_DNS_NAME=splunk.example.com
+```
+
+Rules, checked in the first step before any cloud login or test run:
+
+- Keys must match `^TEST_[A-Z0-9_]+$`. `TEST_DIR`, `TEST_MODE` and `TEST_TIMEOUT` are reserved
+  by the workflow and rejected. A duplicate key is rejected.
+- The line is split on the first `=`. The value is kept as written, spaces included, and may be
+  empty (`TEST_X=`). Values cannot span lines, and a line with a carriage return is rejected.
+- Blank and whitespace-only lines are skipped. Any other line that is not `KEY=VALUE` fails
+  the run. Errors name the line number, never the value.
+
+The pairs are exported only into the "Run Terratest" step, not into earlier or later steps.
+
+**Non-secret values only.** The workflow never prints a value, but the runner prints each
+step's `env` block in the log header, so the values are visible in the run logs. GitHub also
+blocks the `secrets` context in a caller's `with:` block. Secrets need a declared workflow
+secret instead.
+
 ### Scheduled/nightly regression runs
 
 PR-triggered runs only catch regressions a human introduces. Nothing re-runs a suite between
@@ -574,6 +603,7 @@ The essentials:
 | `environment` | No | | GitHub Environment to gate the credentialed job (e.g. `terratest-gov`). Empty = no gate. See [Protected-environment gate](#protected-environment-gate-for-credentialed-runs). |
 | `enable_nat_eip_sweep` | No | `false` | Run an `if: always()` run-scoped NAT Elastic IP sweep after the tests (AWS only; requires `RunId`-tagged EIPs). See [Run-scoped resource tagging](#run-scoped-resource-tagging-and-the-nat-eip-sweep). |
 | `rerun_fails` | No | `0` | Max automatic re-runs of *failed* tests (`gotestsum --rerun-fails`). `0` disables. See [Flake strategy](#flake-strategy-rerun-and-quarantine). |
+| `test_env` | No | | Newline-separated `KEY=VALUE` pairs exported to the Go test step. Keys match `^TEST_[A-Z0-9_]+$`. Non-secret only: values appear in runner step headers. See [Passing non-secret values](#passing-non-secret-values-to-the-test-test_env). |
 
 ## Secrets Reference
 
