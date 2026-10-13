@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.0](https://github.com/Coalfire-CF/Actions/compare/v1.5.0...v1.6.0) (2026-10-13)
+
+
+### Features
+
+* **terratest:** add test_env input for TEST_* values ([#365](https://github.com/Coalfire-CF/Actions/issues/365)) ([4860f28](https://github.com/Coalfire-CF/Actions/commit/4860f285d51dc620abd2a8190d561c68a821d652))
+
 ## [1.5.0](https://github.com/Coalfire-CF/Actions/compare/v1.4.0...v1.5.0) (2026-10-08)
 
 
