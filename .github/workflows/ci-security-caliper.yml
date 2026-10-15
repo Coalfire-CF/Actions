@@ -125,7 +125,7 @@ jobs:
         # cf-gha-tf-pull-from-private-repo App (contents:read) → a ~1h token
         # scoped to just Coalfire-CF/caliper. No PAT; nothing personal; the
         # token dies with the job. Mirrors ci-terraform-validate's pattern.
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
           client-id: ${{ secrets.CF_TF_PULL_PRIVATE_APP_CLIENTID }}
           private-key: ${{ secrets.CF_TF_PULL_PRIVATE_APP_PRIVATE_KEY }}
@@ -202,7 +202,7 @@ jobs:
           echo "lint_ok=$([ $RC -eq 0 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: caliper-scan
           path: out/
@@ -287,7 +287,7 @@ jobs:
 
       - name: Configure AWS credentials (OIDC)
         if: steps.provisioned.outputs.ready == 'true'
-        uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c # v6.2.4
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ secrets.CALIPER_ROLE_ARN }}
           aws-region: ${{ inputs.aws_region }}
@@ -301,7 +301,7 @@ jobs:
       - name: Mint caliper read token (org App, scoped to caliper only)
         id: caliper_token
         if: steps.provisioned.outputs.ready == 'true'
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
           client-id: ${{ secrets.CF_TF_PULL_PRIVATE_APP_CLIENTID }}
           private-key: ${{ secrets.CF_TF_PULL_PRIVATE_APP_PRIVATE_KEY }}
@@ -324,7 +324,7 @@ jobs:
 
       - name: Download scan artifact
         if: steps.provisioned.outputs.ready == 'true'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: caliper-scan
           path: out
