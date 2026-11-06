@@ -29,7 +29,10 @@
     "MD009": false,                    // trailing spaces are invisible and harmless
     "MD010": { "code_blocks": false }, // tabs inside code fences are legitimate (Go/Makefile/TF)
     "MD012": false,                    // multiple blank lines (release-please, authored docs)
-    "MD013": false,                    // line length
+    // MD013: 120 is the org line length (Coalfire-CF/Actions#375).
+    // Tables and code cannot wrap, so they are exempt. A line with no
+    // space past column 120 (a long URL) passes because strict is off.
+    "MD013": { "line_length": 120, "code_blocks": false, "tables": false },
     "MD022": false,                    // blanks around headings — no GitHub render impact
     "MD024": false,                    // duplicate headings (changelogs, per-env sections)
     "MD025": false,                    // multiple H1 (terraform-docs merged READMEs)

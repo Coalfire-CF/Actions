@@ -358,14 +358,12 @@ The policy exists in two places and they must stay in sync:
 - `.markdownlint-cli2.jsonc`
 - the heredoc in `.github/workflows/ci-markdown.yml`
 
-They had already drifted once, with `MD029` missing from the workflow copy. Check
-them mechanically rather than by eye:
+They had already drifted once, with `MD029` missing from the workflow copy.
+`tests/markdownlint-policy-drift.test.sh` now parses both copies and fails when
+the configs differ. Comments and indentation may differ:
 
 ```bash
-sed -n "/cat > .markdownlint-cli2.jsonc <<'JSONC'/,/^        JSONC$/p" \
-  .github/workflows/ci-markdown.yml | sed '1d;$d' | sed 's/^        //' > /tmp/pw.jsonc
-strip() { sed 's#//.*##' "$1" | grep -oE '"MD[0-9]+"[^,]*' | sed 's/[[:space:]]*$//' | sort; }
-diff <(strip /tmp/pw.jsonc) <(strip .markdownlint-cli2.jsonc)
+bash tests/markdownlint-policy-drift.test.sh
 ```
 
 CI runs `markdownlint-cli2` 0.23.0. Census with that version, not the 0.23.2 that
