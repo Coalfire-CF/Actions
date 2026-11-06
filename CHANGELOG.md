@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.0](https://github.com/Coalfire-CF/Actions/compare/v1.6.0...v1.7.0) (2026-11-06)
+
+
+### Features
+
+* **markdown:** limit lines to 120 characters ([#375](https://github.com/Coalfire-CF/Actions/issues/375)) ([#376](https://github.com/Coalfire-CF/Actions/issues/376)) ([c0ccf10](https://github.com/Coalfire-CF/Actions/commit/c0ccf10422796da455c302943d1ce75f7cb5adbc))
+
 ## [1.6.0](https://github.com/Coalfire-CF/Actions/compare/v1.5.0...v1.6.0) (2026-10-13)
 
 
