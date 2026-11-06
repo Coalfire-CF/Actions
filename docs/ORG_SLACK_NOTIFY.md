@@ -13,19 +13,23 @@ Sends Slack notifications from GitHub Actions workflows. Supports three notifica
 1. **Slack App** — A Slack app with `chat:write` bot scope installed to your workspace
 1. **Org Secret** — `SLACK_BOT_TOKEN` stored as a GitHub org-level secret containing the bot's `xoxb-` token
 1. **Bot Invite** — The bot must be invited to each channel: `/invite @Slack App Name`
-1. **Channel ID** — Right-click the channel in Slack → View channel details → scroll to the bottom to find the Channel ID (starts with `C`)
+1. **Channel ID** — Right-click the channel in Slack → View channel details → scroll to the bottom to find the Channel
+   ID (starts with `C`)
 
 ## How It Works
 
 ### Release and Failure Notifications (built-in)
 
-All reusable workflows in this repo accept an optional `slack_channel_id` input. When provided, the workflow automatically sends a Slack notification on failure. The `release-please.yml` workflow also sends a release notification when a new version is cut.
+All reusable workflows in this repo accept an optional `slack_channel_id` input. When provided, the workflow
+automatically sends a Slack notification on failure. The `release-please.yml` workflow also sends a release notification
+when a new version is cut.
 
 No extra jobs are needed in downstream repos. Just add `slack_channel_id` to your existing workflow calls.
 
 ### Downstream Usage
 
-Add `slack_channel_id` to any workflow call. The release workflow requires `secrets: inherit` (for the GitHub App token used by release-please). PR workflows only need `SLACK_BOT_TOKEN` if you want failure notifications:
+Add `slack_channel_id` to any workflow call. The release workflow requires `secrets: inherit` (for the GitHub App token
+used by release-please). PR workflows only need `SLACK_BOT_TOKEN` if you want failure notifications:
 
 ```yaml
 # Release workflow — gets both release and failure notifications

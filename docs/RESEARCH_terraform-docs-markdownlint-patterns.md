@@ -26,8 +26,9 @@ Rules that actually fire on 0.20.0 output (rendered a real module, then linted):
   terraform-docs 0.24.0 pads the delimiter and is MD060 clean.
 - **MD013 does not fire.** markdownlint 0.41.1 exempts lines containing a link that are not
   part of a paragraph, and every generated row has `[name](#input\_name)`. A 222 char row
-  went unreported while a 116 char paragraph in the same file was flagged. MD013 is off in
-  our policy for authored-prose reasons, not for terraform-docs.
+  went unreported while a 116 char paragraph in the same file was flagged. The policy now
+  sets MD013 to 120 with `tables: false` (Coalfire-CF/Actions#375), so generated rows are
+  exempt either way.
 
 Anything inside the `BEGIN_TF_DOCS`/`END_TF_DOCS` markers is rewritten on every regen, so
 hand-fixing any of these never survives. The fix has to come from config or the generator.
@@ -224,7 +225,8 @@ repo landing page, a link goes there instead.
    is no divergence to reconcile.
 2. **Then re-enable MD033, MD034, MD060** in both copies of the policy
    (`.markdownlint-cli2.jsonc:33-34,42` and `ci-markdown.yml:96-97,105`). Order
-   matters: step 1 must land first or README-touching PRs go red. Leave MD013 off.
+   matters: step 1 must land first or README-touching PRs go red. MD013 was left off here;
+   #375 later set it to 120.
 3. **Then fix the two-copies problem** (item 5). Independent of terraform-docs and the
    highest-value cleanup here.
 4. **Then ship `.pre-commit-config.yaml` in the baseline** (item 4, cheap slice).

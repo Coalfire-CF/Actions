@@ -7,7 +7,8 @@ Centralized reusable GitHub Actions workflows for Coalfire Advisory repositories
 All workflows follow security-hardened patterns:
 
 - **SHA-pinned actions** — All third-party actions pinned to immutable commit SHAs, not mutable tags
-- **Script injection prevention** — All `${{ }}` expressions passed via `env:` blocks, never interpolated directly in `run:` scripts
+- **Script injection prevention** — All `${{ }}` expressions passed via `env:` blocks, never interpolated directly in
+  `run:` scripts
 - **Least-privilege permissions** — Each workflow declares minimum required `permissions:`
 - **Explicit secrets** — Secrets forwarded explicitly where possible instead of blanket `secrets: inherit`
 - **Dependency pinning** — Tools like markdownlint-cli2 and yq pinned to specific versions with integrity checks
@@ -32,7 +33,7 @@ Called by downstream repos on pull requests.
 | Terraform Docs | `ci-terraform-docs.yml` | Verifies `README.md` matches the module; never pushes. Authors regenerate locally with the pinned pre-commit hook. Drift fails human PRs with the diff and warns on Dependabot PRs ([docs](docs/ORG_TERRAFORM_DOCS.md)) |
 | Terraform Plan | `deploy-terraform-plan.yml` | Terraform plan with PR comment |
 | Terraform Apply | `deploy-terraform-apply.yml` | Terraform apply (manual trigger or post-merge) |
-| Markdown Lint | `ci-markdown.yml` | Lint changed markdown files with markdownlint-cli2 |
+| Markdown Lint | `ci-markdown.yml` | Lint changed markdown files with the org markdownlint policy. Lines are limited to 120 characters (tables and code exempt). Takes `ignore_globs` for generated Markdown |
 | Dependabot Refresh | `automation-dependabot-refresh.yml` | Auto-detect ecosystems and regenerate dependabot.yml |
 | Dependabot Auto-Merge | `automation-dependabot-auto-merge.yml` | Evaluate and auto-merge non-terraform Dependabot PRs ([docs](docs/ORG_DEPENDABOT_AUTO_MERGE.md)) |
 | Label Sync | `automation-label-sync.yml` | Sync Dependabot auto-merge label taxonomy to downstream repos ([taxonomy](docs/ORG_LABEL_TAXONOMY.md)) |
@@ -105,7 +106,8 @@ jobs:
 
 ### Terraform Validate — Private Repository Access
 
-Access to private Terraform module repositories is controlled using a GitHub App. The App ID and private key are stored as org-level secrets with visibility set to private repositories only.
+Access to private Terraform module repositories is controlled using a GitHub App. The App ID and private key are stored
+as org-level secrets with visibility set to private repositories only.
 
 ```yaml
 # Private repo — pass app credentials for module access
@@ -148,7 +150,8 @@ jobs:
 
 ### Slack Notifications
 
-All workflows accept an optional `slack_channel_id` input. When provided, failure notifications are sent automatically. The release workflow also sends release notifications.
+All workflows accept an optional `slack_channel_id` input. When provided, failure notifications are sent automatically.
+The release workflow also sends release notifications.
 
 See [docs/ORG_SLACK_NOTIFY.md](docs/ORG_SLACK_NOTIFY.md) for full setup instructions.
 
@@ -160,7 +163,8 @@ See [docs/ORG_JIRA_SYNC_SETUP.md](docs/ORG_JIRA_SYNC_SETUP.md) for setup instruc
 
 ### Release Artifact Cleaning
 
-Releases automatically include a cleaned tarball that strips non-essential files (.github/, docs/, etc.). Enabled by default.
+Releases automatically include a cleaned tarball that strips non-essential files (.github/, docs/, etc.). Enabled by
+default.
 
 See [docs/ORG_RELEASE_CLEAN.md](docs/ORG_RELEASE_CLEAN.md) for details and customization.
 

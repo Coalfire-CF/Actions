@@ -41,11 +41,13 @@ The `release-clean` job:
 1. Also uploads both as workflow artifacts (retained for 30 days)
 1. Writes a step summary with archive details for the Actions run log
 
-**Scan jobs are not affected.** They run on their own runners with a full, unmodified checkout — `.github/`, `docs/`, and everything else are still scanned.
+**Scan jobs are not affected.** They run on their own runners with a full, unmodified checkout — `.github/`, `docs/`,
+and everything else are still scanned.
 
 ## What Gets Removed by Default
 
-**This is on by default.** If you call `release-please.yml` without any `with:` overrides, the following are stripped from the clean tarball:
+**This is on by default.** If you call `release-please.yml` without any `with:` overrides, the following are stripped
+from the clean tarball:
 
 ### Directories
 
@@ -122,7 +124,8 @@ jobs:
       clean_exclude_files: 'CHANGELOG.md,Makefile,release-please-config.json,.release-please-manifest.json,.gitignore,.gitattributes,CLAUDE.md,.claudeignore'
 ```
 
-Values are **comma-separated, no spaces around commas**. Each entry must match `[a-zA-Z0-9._/-]` — special characters and `..` (path traversal) are rejected.
+Values are **comma-separated, no spaces around commas**. Each entry must match `[a-zA-Z0-9._/-]` — special characters
+and `..` (path traversal) are rejected.
 
 ### Disable Clean Release Entirely
 
@@ -194,7 +197,9 @@ driftctlGov) keep `publish_draft` off.
 | `RELEASE_APP_ID` | No | GitHub App ID for the release automation app |
 | `RELEASE_APP_PRIVATE_KEY` | No | GitHub App private key (PEM format) |
 
-When configured as **org-level secrets**, the workflow generates short-lived app tokens (1 hour expiry) for consistent permissions across public and private repos. If the secrets are not set, the workflow falls back to `github.token` automatically. Downstream repos pass these via `secrets: inherit`.
+When configured as **org-level secrets**, the workflow generates short-lived app tokens (1 hour expiry) for consistent
+permissions across public and private repos. If the secrets are not set, the workflow falls back to `github.token`
+automatically. Downstream repos pass these via `secrets: inherit`.
 
 ## Security Controls
 
@@ -224,7 +229,9 @@ ls <repo>-<tag>/
 
 ## Complementary: .gitattributes
 
-GitHub's auto-generated source archives (the default `.tar.gz` and `.zip` on every release) respect `.gitattributes` `export-ignore` directives. If you want those auto-generated archives cleaned as well, add a `.gitattributes` to your repo:
+GitHub's auto-generated source archives (the default `.tar.gz` and `.zip` on every release) respect `.gitattributes`
+`export-ignore` directives. If you want those auto-generated archives cleaned as well, add a `.gitattributes` to your
+repo:
 
 ```gitattributes
 .github/ export-ignore
@@ -237,7 +244,8 @@ release-please-config.json export-ignore
 .release-please-manifest.json export-ignore
 ```
 
-This is **complementary** — the workflow handles the explicit `-clean.tar.gz` asset, `.gitattributes` handles the auto-generated archives. Both approaches leave the repository untouched.
+This is **complementary** — the workflow handles the explicit `-clean.tar.gz` asset, `.gitattributes` handles the
+auto-generated archives. Both approaches leave the repository untouched.
 
 ## FAQ
 
@@ -245,13 +253,17 @@ This is **complementary** — the workflow handles the explicit `-clean.tar.gz` 
 No. Each scan job runs on its own isolated runner with a fresh, full checkout. They never see the cleaned copy.
 
 **Q: Does this modify my repository, branches, or tags?**
-No. The job checks out code into an ephemeral runner workspace, deletes files from that workspace only, packages the result, and the runner is destroyed when the job finishes.
+No. The job checks out code into an ephemeral runner workspace, deletes files from that workspace only, packages the
+result, and the runner is destroyed when the job finishes.
 
 **Q: What if I list a file/directory that doesn't exist in my repo?**
 It is skipped with a log message. The workflow continues without error.
 
 **Q: Does this need any additional secrets?**
-Optionally. If the org-level secrets `RELEASE_APP_ID` and `RELEASE_APP_PRIVATE_KEY` are configured, the workflow uses a GitHub App for authentication with short-lived tokens (1 hour). If not configured, it falls back to `github.token` automatically. Downstream repos should use `secrets: inherit` to pass these through.
+Optionally. If the org-level secrets `RELEASE_APP_ID` and `RELEASE_APP_PRIVATE_KEY` are configured, the workflow uses a
+GitHub App for authentication with short-lived tokens (1 hour). If not configured, it falls back to `github.token`
+automatically. Downstream repos should use `secrets: inherit` to pass these through.
 
 **Q: Can someone inject malicious input through the exclusion lists?**
-Inputs are validated against a strict allowlist regex (`^[a-zA-Z0-9._/,-]+$`) and checked for path traversal (`..`). Invalid inputs fail the workflow immediately.
+Inputs are validated against a strict allowlist regex (`^[a-zA-Z0-9._/,-]+$`) and checked for path traversal (`..`).
+Invalid inputs fail the workflow immediately.

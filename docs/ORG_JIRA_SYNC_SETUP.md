@@ -11,7 +11,8 @@ The workflow supports two authentication methods. Choose the one that matches yo
 | **Jira Cloud** (yourcompany.atlassian.net) | Basic Authentication | API Token (`JIRA_API_TOKEN`) |
 | **Jira Data Center/Server** (self-hosted) | Bearer Token | Personal Access Token (`JIRA_PAT`) |
 
-**Note**: If you previously had issues with Basic Auth being disabled, you're likely using **Jira Data Center/Server** and should use the Personal Access Token (PAT) method.
+**Note**: If you previously had issues with Basic Auth being disabled, you're likely using **Jira Data Center/Server**
+and should use the Personal Access Token (PAT) method.
 
 ## Authentication Methods
 
@@ -214,7 +215,8 @@ All configuration values are **Repository Secrets** (Settings → Secrets and va
 
 ## Usage in Your Repository
 
-To use this workflow in your repository, create a workflow file (e.g., `.github/workflows/jira-sync.yml`) with the following content:
+To use this workflow in your repository, create a workflow file (e.g., `.github/workflows/jira-sync.yml`) with the
+following content:
 
 ### For Jira Cloud (API Token)
 
@@ -276,5 +278,6 @@ jobs:
 
 - All secrets must be passed explicitly when calling the reusable workflow
 - You can use **organization secrets** or **repository secrets** - both work identically
-- Even if a secret is not needed for your authentication method (e.g., `JIRA_USER_EMAIL` for PAT auth), you still need to include it in the secrets list (it will simply be ignored)
+- Even if a secret is not needed for your authentication method (e.g., `JIRA_USER_EMAIL` for PAT auth), you still need
+  to include it in the secrets list (it will simply be ignored)
 - Replace `@main` with a specific version tag (e.g., `@v1.0.0`) for production use

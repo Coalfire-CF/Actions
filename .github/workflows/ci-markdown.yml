@@ -7,6 +7,14 @@ on:
       - main
   workflow_call:
     inputs:
+      ignore_globs:
+        description: >-
+          Newline-separated markdownlint-cli2 globs to skip, for generated Markdown
+          (for example docs/sdr/**). Merged into the org config's ignores, next to
+          CHANGELOG.md. Hand-written docs must not be listed.
+        required: false
+        type: string
+        default: ''
       slack_channel_id:
         description: 'Slack channel ID for failure notifications (optional)'
         required: false
@@ -93,7 +101,10 @@ jobs:
             "MD009": false,                    // trailing spaces are invisible and harmless
             "MD010": { "code_blocks": false }, // tabs inside code fences are legitimate (Go/Makefile/TF)
             "MD012": false,                    // multiple blank lines (release-please, authored docs)
-            "MD013": false,                    // line length
+            // MD013: 120 is the org line length (Coalfire-CF/Actions#375).
+            // Tables and code cannot wrap, so they are exempt. A line with no
+            // space past column 120 (a long URL) passes because strict is off.
+            "MD013": { "line_length": 120, "code_blocks": false, "tables": false },
             "MD022": false,                    // blanks around headings — no GitHub render impact
             "MD024": false,                    // duplicate headings (changelogs, per-env sections)
             "MD025": false,                    // multiple H1 (terraform-docs merged READMEs)
@@ -117,6 +128,28 @@ jobs:
           }
         }
         JSONC
+
+    - name: Add caller ignore globs
+      if: steps.get-md-files.outputs.has_files == 'true' && inputs.ignore_globs != ''
+      env:
+        IGNORE_GLOBS: ${{ inputs.ignore_globs }}
+      run: |
+        # Generated Markdown (released artifacts, coverage tables) is exempted by
+        # the caller, because the step above deletes every repo-local config.
+        # markdownlint-cli2 applies ignores to explicit file arguments too, and
+        # lints 0 files with exit 0 when every changed file is ignored.
+        python3 - <<'PY'
+        import json, os
+        path = ".markdownlint-cli2.jsonc"
+        base = '"ignores": ["CHANGELOG.md", "**/CHANGELOG.md"],'
+        extra = [g.strip() for g in os.environ["IGNORE_GLOBS"].splitlines() if g.strip()]
+        text = open(path).read()
+        if text.count(base) != 1:
+            raise SystemExit("org config ignores line not found; update this step with the heredoc")
+        merged = ["CHANGELOG.md", "**/CHANGELOG.md"] + extra
+        open(path, "w").write(text.replace(base, '"ignores": ' + json.dumps(merged) + ","))
+        print("ignores:", merged)
+        PY
 
     - name: Lint Markdown files
       if: steps.get-md-files.outputs.has_files == 'true'
