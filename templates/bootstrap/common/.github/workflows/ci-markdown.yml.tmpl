@@ -5,9 +5,9 @@ permissions:
   pull-requests: write
 
 on:
+  # No paths filter: the reusable workflow passes when no .md file changed, and a
+  # filtered workflow never reports, which leaves a required check pending.
   pull_request:
-    paths:
-      - "**.md"
     branches:
       - "**"
   workflow_call:
