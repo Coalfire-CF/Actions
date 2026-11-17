@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.7.1](https://github.com/Coalfire-CF/Actions/compare/v1.7.0...v1.7.1) (2026-11-17)
+
+
+### Miscellaneous
+
+* **deps-dev:** bump markdownlint-cli2 in / ([#373](https://github.com/Coalfire-CF/Actions/issues/373)) ([288faf2](https://github.com/Coalfire-CF/Actions/commit/288faf20bd99ee837164bf5925788a3d704cb332))
+* **deps:** bump Coalfire-CF/Actions/actions/gitleaks ([#379](https://github.com/Coalfire-CF/Actions/issues/379)) ([30fc97e](https://github.com/Coalfire-CF/Actions/commit/30fc97ef3879a27b533e7f2f44e7940922d62682))
+* **deps:** bump the third-party group across 1 directory with 7 updates ([#380](https://github.com/Coalfire-CF/Actions/issues/380)) ([55224d9](https://github.com/Coalfire-CF/Actions/commit/55224d93c6138b91ac0dba887774470872101208))
+
 ## [1.7.0](https://github.com/Coalfire-CF/Actions/compare/v1.6.0...v1.7.0) (2026-11-06)
 
 
