@@ -116,7 +116,7 @@ jobs:
     - name: Generate GitHub App token
       id: app-token
       if: steps.check-app.outputs.available == 'true'
-      uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+      uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
       with:
         client-id: ${{ secrets.RELEASE_APP_ID }}
         private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
@@ -194,7 +194,7 @@ jobs:
 
     - name: Install cosign
       if: inputs.cosign_sign
-      uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+      uses: sigstore/cosign-installer@881c63bd87e38389154debd8331404ce7ca8a3ab # v4.1.4
 
     - name: Write cosign public key
       if: inputs.cosign_sign
