@@ -125,7 +125,7 @@ jobs:
         # cf-gha-tf-pull-from-private-repo App (contents:read) → a ~1h token
         # scoped to just Coalfire-CF/caliper. No PAT; nothing personal; the
         # token dies with the job. Mirrors ci-terraform-validate's pattern.
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
         with:
           client-id: ${{ secrets.CF_TF_PULL_PRIVATE_APP_CLIENTID }}
           private-key: ${{ secrets.CF_TF_PULL_PRIVATE_APP_PRIVATE_KEY }}
@@ -301,7 +301,7 @@ jobs:
       - name: Mint caliper read token (org App, scoped to caliper only)
         id: caliper_token
         if: steps.provisioned.outputs.ready == 'true'
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
         with:
           client-id: ${{ secrets.CF_TF_PULL_PRIVATE_APP_CLIENTID }}
           private-key: ${{ secrets.CF_TF_PULL_PRIVATE_APP_PRIVATE_KEY }}
